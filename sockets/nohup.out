@@ -1,0 +1,10 @@
+socket created
+bind to :4567
+listening
+socket created
+bind to :4567
+listening
+Traceback (most recent call last):
+  File "tcpserver.py", line 25, in <module>
+    ct = client_thread(clientsocket)
+NameError: name 'client_thread' is not defined
