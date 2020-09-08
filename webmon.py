@@ -12,8 +12,6 @@ server_address = (IP, PORT)
 
 def processRequest(req,data):
     [head,tail] = os.path.split(req)
-    print(head)
-    print(tail)
     return 'ok'
 
 def doStart():
