@@ -4,9 +4,13 @@ import numpy as np
 
 frameWidth = 640
 frameHeight = 480
-cap = cv2.VideoCapture(1)
-cap.set(3, frameWidth)
-cap.set(4, frameHeight)
+#cap = cv2.VideoCapture(1)
+#cap.set(3, frameWidth)
+#cap.set(4, frameHeight)
+
+coneimg = '../../images/cones/train/IMG_20200623_174503.jpg'
+#coneimg = '../../images/cones/train/IMG_20200623_174509.jpg'
+#coneimg = '../../images/cones/train/IMG_20200623_174519.jpg'
 
 deadZone=100
 global imgContour
@@ -16,8 +20,8 @@ def empty(a):
 
 cv2.namedWindow("HSV")
 cv2.resizeWindow("HSV",640,240)
-cv2.createTrackbar("HUE Min","HSV",19,179,empty)
-cv2.createTrackbar("HUE Max","HSV",35,179,empty)
+cv2.createTrackbar("HUE Min","HSV",0,179,empty)
+cv2.createTrackbar("HUE Max","HSV",8,179,empty)
 cv2.createTrackbar("SAT Min","HSV",107,255,empty)
 cv2.createTrackbar("SAT Max","HSV",255,255,empty)
 cv2.createTrackbar("VALUE Min","HSV",89,255,empty)
@@ -25,9 +29,9 @@ cv2.createTrackbar("VALUE Max","HSV",255,255,empty)
 
 cv2.namedWindow("Parameters")
 cv2.resizeWindow("Parameters",640,240)
-cv2.createTrackbar("Threshold1","Parameters",166,255,empty)
-cv2.createTrackbar("Threshold2","Parameters",171,255,empty)
-cv2.createTrackbar("Area","Parameters",3750,30000,empty)
+cv2.createTrackbar("Threshold1","Parameters",82,255,empty)
+cv2.createTrackbar("Threshold2","Parameters",127,255,empty)
+cv2.createTrackbar("Area","Parameters",324,30000,empty)
 
 
 def stackImages(scale,imgArray):
@@ -63,7 +67,8 @@ def stackImages(scale,imgArray):
 
 def getContours(img,imgContour):
 
-    contours, hierarchy = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    arena = {'l':frameWidth, 't':frameHeight, 'r':0, 'b':0}
+    img2, contours, hierarchy = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     for cnt in contours:
         area = cv2.contourArea(cnt)
         areaMin = cv2.getTrackbarPos("Area", "Parameters")
@@ -71,7 +76,7 @@ def getContours(img,imgContour):
             cv2.drawContours(imgContour, cnt, -1, (255, 0, 255), 7)
             peri = cv2.arcLength(cnt, True)
             approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
-            print(len(approx))
+            #print(len(approx))
             x , y , w, h = cv2.boundingRect(approx)
             cv2.rectangle(imgContour, (x , y ), (x + w , y + h ), (0, 255, 0), 5)
 
@@ -87,20 +92,38 @@ def getContours(img,imgContour):
 
             if (cx <int(frameWidth/2)-deadZone):
                 cv2.putText(imgContour, " GO LEFT " , (20, 50), cv2.FONT_HERSHEY_COMPLEX,1,(0, 0, 255), 3)
-                cv2.rectangle(imgContour,(0,int(frameHeight/2-deadZone)),(int(frameWidth/2)-deadZone,int(frameHeight/2)+deadZone),(0,0,255),cv2.FILLED)
+                #cv2.rectangle(imgContour,(0,int(frameHeight/2-deadZone)),(int(frameWidth/2)-deadZone,int(frameHeight/2)+deadZone),(0,0,255),cv2.FILLED)
             elif (cx > int(frameWidth / 2) + deadZone):
                 cv2.putText(imgContour, " GO RIGHT ", (20, 50), cv2.FONT_HERSHEY_COMPLEX,1,(0, 0, 255), 3)
-                cv2.rectangle(imgContour,(int(frameWidth/2+deadZone),int(frameHeight/2-deadZone)),(frameWidth,int(frameHeight/2)+deadZone),(0,0,255),cv2.FILLED)
+                #cv2.rectangle(imgContour,(int(frameWidth/2+deadZone),int(frameHeight/2-deadZone)),(frameWidth,int(frameHeight/2)+deadZone),(0,0,255),cv2.FILLED)
             elif (cy < int(frameHeight / 2) - deadZone):
                 cv2.putText(imgContour, " GO UP ", (20, 50), cv2.FONT_HERSHEY_COMPLEX,1,(0, 0, 255), 3)
-                cv2.rectangle(imgContour,(int(frameWidth/2-deadZone),0),(int(frameWidth/2+deadZone),int(frameHeight/2)-deadZone),(0,0,255),cv2.FILLED)
+                #cv2.rectangle(imgContour,(int(frameWidth/2-deadZone),0),(int(frameWidth/2+deadZone),int(frameHeight/2)-deadZone),(0,0,255),cv2.FILLED)
             elif (cy > int(frameHeight / 2) + deadZone):
                 cv2.putText(imgContour, " GO DOWN ", (20, 50), cv2.FONT_HERSHEY_COMPLEX, 1,(0, 0, 255), 3)
-                cv2.rectangle(imgContour,(int(frameWidth/2-deadZone),int(frameHeight/2)+deadZone),(int(frameWidth/2+deadZone),frameHeight),(0,0,255),cv2.FILLED)
+                #cv2.rectangle(imgContour,(int(frameWidth/2-deadZone),int(frameHeight/2)+deadZone),(int(frameWidth/2+deadZone),frameHeight),(0,0,255),cv2.FILLED)
 
 
             cv2.line(imgContour, (int(frameWidth/2),int(frameHeight/2)), (cx,cy),
                      (0, 0, 255), 3)
+            if x < arena['l']:
+                arena['l'] = x
+            if y < arena['t']:
+                arena['t'] = y
+            if (x+w) > arena['r']:
+                arena['r'] = x+w
+            if (y+h) > arena['b']:
+                arena['b'] = y+h
+
+            barrel_radius = 20
+            cv2.circle(imgContour,(cx,cy),barrel_radius,(0,0,0),1)
+
+    arena_margin = 10
+    arena['l'] -= arena_margin;
+    arena['t'] -= arena_margin;
+    arena['r'] += arena_margin;
+    arena['b'] += arena_margin;
+    cv2.rectangle(imgContour, (arena['l'], arena['t'] ), (arena['r'], arena['b'] ), (0, 0, 0), 1)
 
 def display(img):
     cv2.line(img,(int(frameWidth/2)-deadZone,0),(int(frameWidth/2)-deadZone,frameHeight),(255,255,0),3)
@@ -112,7 +135,10 @@ def display(img):
 
 while True:
 
-    _, img = cap.read()
+    #_, img = cap.read()
+    img = cv2.imread(coneimg, cv2.IMREAD_UNCHANGED)
+    # 720 x 405 x 3   print(f'original:{img.shape}')
+    frameHeight,frameWidth,frameDepth = img.shape
     imgContour = img.copy()
     imgHsv = cv2.cvtColor(img,cv2.COLOR_BGR2HSV)
 
@@ -122,7 +148,6 @@ while True:
     s_max = cv2.getTrackbarPos("SAT Max", "HSV")
     v_min = cv2.getTrackbarPos("VALUE Min", "HSV")
     v_max = cv2.getTrackbarPos("VALUE Max", "HSV")
-    print(h_min)
 
     lower = np.array([h_min,s_min,v_min])
     upper = np.array([h_max,s_max,v_max])
@@ -143,8 +168,8 @@ while True:
     stack = stackImages(0.7,([img,result],[imgDil,imgContour]))
 
     cv2.imshow('Horizontal Stacking', stack)
-    if cv2.waitKey(1) &amp; 0xFF == ord('q'):
+    if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
-cap.release()
+#cap.release()
 cv2.destroyAllWindows()

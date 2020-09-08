@@ -14,7 +14,20 @@ def processRequest(req,data):
     [head,tail] = os.path.split(req)
     print(head)
     print(tail)
-    return 'this is it, baby'
+    return 'ok'
+
+def doStart():
+    return 'ok'
+
+def doStop():
+    return 'ok'
+
+def doEmer():
+    return 'ok'
+
+def doGetData():
+    judsonbattery: random(1,100)
+    return 'ok'
 
 class AjaxServer(http.server.SimpleHTTPRequestHandler):
 
@@ -40,7 +53,7 @@ class AjaxServer(http.server.SimpleHTTPRequestHandler):
         postout = 'response to ajax call'
         postout = processRequest(req,postin)
         self.send_response(200)
-        self.log_message('req:{}, in:{}, out:{}'.format(req, postin, postout))
+        self.log_message(f'req:{req}, in:{postin}, out:{postout}')
         self.send_header("Content-type", "text/plain")
         self.end_headers()
         self.flush_headers()
