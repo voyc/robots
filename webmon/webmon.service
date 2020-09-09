@@ -1,0 +1,10 @@
+[Unit]
+Description=Skateboard monitor webservice.
+
+[Service]
+Type=simple
+ExecStart=/bin//bash /usr/bin/webmon.sh
+
+[Install]
+WantedBy=multi-user.target
+
