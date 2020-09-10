@@ -50,8 +50,9 @@ class AjaxServer(http.server.SimpleHTTPRequestHandler):
         postin = self.rfile.read(length)
         postout = 'response to ajax call'
         postout = processRequest(req,postin)
-        self.send_response(200)
-        self.log_message(f'req:{req}, in:{postin}, out:{postout}')
+        #self.log_message(f'req:{req}, in:{postin}, out:{postout}')  # to stderr
+        #msg = f'req:{req}, in:{postin}, out:{postout}'
+        self.send_response(451)  # 200
         self.send_header("Content-type", "text/plain")
         self.end_headers()
         self.flush_headers()
