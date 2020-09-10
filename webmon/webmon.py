@@ -1,5 +1,6 @@
 import http.server
 import os
+import psutil
 
 PORT = 8080
 IP = ''
@@ -11,37 +12,49 @@ server_address = (IP, PORT)
 # python -m http.server 8000 # start server with SimpleHTTPRequestHandler
 
 def processRequest(req,data):
-    [head,tail] = os.path.split(req)
-    return 'ok'
+    [path,svc] = os.path.split(req)
+    code = 200
+    out = ''
+    if svc == 'go':
+        out = 'started'
+    elif svc == 'stop':
+        out = 'stopped'
+    elif svc == 'emer':
+        out = 'emergency stopped'
+    elif svc == 'getmap':
+        out = 'mapdata '
+        #out += getBattery()
+    else:
+        code = 403
+    return [code,out]
 
-def doStart():
-    return 'ok'
-
-def doStop():
-    return 'ok'
-
-def doEmer():
-    return 'ok'
-
-def doGetData():
-    judsonbattery: random(1,100)
-    return 'ok'
+def getBattery():
+    battery = psutil.sensors_battery()  # returns null
+    plugged = battery.power_plugged
+    percent = str(battery.percent) 
+    plugged = "Plugged In" if plugged else "Not Plugged In"
+    return str(battery.percent)+'%, '+plugged
 
 class AjaxServer(http.server.SimpleHTTPRequestHandler):
 
-    #def do_GET(self):
-    #    if self.path == '/':
-    #        self.path = '/index.html'
-    #    try:
-    #        file_contents = open(self.path[1:]).read()
-    #        self.send_response(200)
-    #    except:
-    #        file_contents = "File not found"
-    #        self.send_response(404)
-    #    self.send_header("Content-type", "text/html")
-    #    self.end_headers()
-    #    self.flush_headers()
-    #    self.wfile.write(bytes(file_contents, 'utf-8'))
+    def do_GET(self):
+        filename = 'index.html'
+        if self.path == '/':
+            try:
+                #file_contents = open(self.path[1:]).read()
+                file_contents = open(filename).read()
+                self.send_response(200)
+            except:
+                file_contents = "File not found"
+                self.send_response(404)
+        else:
+            file_contents = "File not found"
+            self.send_response(403)
+
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
+        self.flush_headers()
+        self.wfile.write(bytes(file_contents, 'utf-8'))
 
     def do_POST(self):
         #print(self.headers)
@@ -49,15 +62,15 @@ class AjaxServer(http.server.SimpleHTTPRequestHandler):
         req = self.path
         postin = self.rfile.read(length)
         postout = 'response to ajax call'
-        postout = processRequest(req,postin)
+        [code,postout] = processRequest(req,postin)
         #self.log_message(f'req:{req}, in:{postin}, out:{postout}')  # to stderr
         #msg = f'req:{req}, in:{postin}, out:{postout}'
-        self.send_response(451)  # 200
+        self.send_response(code)  # 200
         self.send_header("Content-type", "text/plain")
         self.end_headers()
         self.flush_headers()
         self.wfile.write(postout.encode())
 
-print('Serving HTTP...')
 server = http.server.HTTPServer(server_address, AjaxServer)
 server.serve_forever()
+server_message('starting')
