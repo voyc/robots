@@ -9,6 +9,22 @@ import numpy as np
 import cv2 as cv
 #import platform  
 
+# This program executes missions.  For example.
+#      flyMission(demo)
+
+# missions
+takeoffland = ('takeoff\n'
+               'sleep 3\n'
+               'land')
+testheight  = ('height?\n'
+               'tof?\n'
+               'baro?')
+demo        = ('takeoff\n'
+               'up 20\n'
+               'cw 360\n'
+               'right 20\n'
+               'land')
+
 # UDP client socket to send and receive commands
 cmdsock = False
 cmdsock_timeout = 10 
@@ -53,19 +69,6 @@ video_maxlen = 1518 #?
 video_thread = False
 video_thread_status = 'init' # init, stopping, running
 
-# missions
-takeoffland = ('takeoff\n'
-               'sleep 3\n'
-               'land')
-testheight  = ('height?\n'
-               'tof?\n'
-               'baro?')
-demo        = ('takeoff\n'
-               'up 20\n'
-               'cw 360\n'
-               'right 20\n'
-               'land')
-
 # function to print string with timestamp
 def log(s):
     tm = datetime.now().strftime("%H:%M:%S.%f")
@@ -83,7 +86,7 @@ def flyMission(s):
             sendCommand(cmd)
 
 # function to send command and get return message
-# the demo programs create a thread with a loop doing the recvfrom.  Why?
+# The demo programs create a thread with a loop doing the recvfrom.  Why? Can the recvfrom block?
 def sendCommand(cmd):
     global cmdsock,tello_address
     rmsg = 'error'

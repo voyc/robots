@@ -1,0 +1,51 @@
+
+
+the tello exposes a character api to a socket
+
+we could make a arduino program to do the same thing for the skate
+	forward 20 cm
+	reverse 20 cm
+	right 10 degrees
+	left 5 degrees
+	forward speed 28 kph or cps
+	reverse speed 14 kph
+	stop
+
+
+eyes.py  - flies tello missions
+
+eyes.py - continous loop
+	read the video feed
+	read the telemetry data
+	convert to map data
+	make adjustments to keep tello in stable hover
+	listen for commands to move
+	listen for command to stop
+	one mission to land on the skate
+
+wheels.py
+	keep skate on course and at correct speed
+	
+
+
+brain.py
+	continous loop
+		look at map data
+		make decision about next cone
+		make decision about speed
+		drive the skate
+		drive the tello
+		check batteries
+		check for human input
+		make decision to quit
+
+
+commands sent from brain to wheels
+	forward at speed 5 kph
+	proceed to cone 8, circle clockwise, enter at 178 degrees, exit at 98 degrees
+	increase speed to 30 kph
+	slow to 14 kph
+	proceed to base
+	stop
+
+
