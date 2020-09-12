@@ -1,0 +1,6 @@
+# ignore build output
+html/index.php
+html/min.js
+html/min.css
+html/robots.txt
+__pycache__

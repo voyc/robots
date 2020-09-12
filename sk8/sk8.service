@@ -3,8 +3,8 @@ Description=Skateboard monitor webservice.
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/webmon.sh
-#StandardOutput=fd:/var/log/skate/webmon.log
+ExecStart=/usr/bin/sk8.sh
+#StandardOutput=fd:/var/log/skate/sk8.log
 
 [Install]
 WantedBy=multi-user.target
