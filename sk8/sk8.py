@@ -1,8 +1,8 @@
 import sys
 
-sys.path.append('/home/john/webapps/robots/robots/skate/')
-sys.path.append('/home/john/webapps/robots/robots/webmon')
-sys.path.append('/home/john/webapps/robots/robots/eyes')
+sys.path.append('/home/john/webapps/robots/robots/sk8/')
+sys.path.append('/home/john/webapps/robots/robots/sk8/webmon')
+sys.path.append('/home/john/webapps/robots/robots/sk8/eyes')
 
 #import importlib.util
 #spec = importlib.util.spec_from_file_location('webmon', '../webmon/webmon.py')
