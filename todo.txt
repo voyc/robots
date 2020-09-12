@@ -25,8 +25,21 @@ eyes.py - continous loop
 
 wheels.py
 	keep skate on course and at correct speed
-	
-
+	connect arduino to jetson with usb cable
+	talk to arduino via /dev/ttyUSB0, how? socket?
+	connect to skateboard:
+		rear: stack
+			arduino
+			jetson
+			perfboard, spacers, screws
+		center: two linear servos
+			battery for arduino
+			battery for jetson
+			additional weight
+		front: tello deck
+			paint, tape, pad, carpet
+	auduino programming
+		api, similar to tello
 
 brain.py
 	continous loop
@@ -48,4 +61,21 @@ commands sent from brain to wheels
 	proceed to base
 	stop
 
+
+Skate 
+   Eyes
+   Wheels (future)
+   Webmon
+
+Put webmon in a thread
+
+Start skate at boot
+
+Skate 
+   import and start webmon and eyes
+
+Go - run Tello mission
+Emer - abort mission
+
+Manual wifi connect
 
