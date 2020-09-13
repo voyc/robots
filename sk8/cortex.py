@@ -6,7 +6,7 @@ class Brain:
 	def __init__(self):
 		thread = threading.Thread(target=self.loop)
 		thread.start()
-		print('brain started')
+		print('cortex started')
 
 	def loop(self):
 		while state.state != 'stopped':
@@ -14,5 +14,5 @@ class Brain:
 			# move eyes
 			# move wheels	
 			time.sleep(1)
-			print('brain activity')
+			print('cortex activity')
 
