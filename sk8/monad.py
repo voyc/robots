@@ -1,1 +1,2 @@
 state = 'sleeping'
+telem = {} 

@@ -32,10 +32,10 @@ class Portal:
 		code = 200
 		out = ''
 		if svc == 'go':
-			monad.state = 'started'
+			monad.state = 'awake'
 			out = monad.state
 		elif svc == 'stop':
-			monad.state = 'stopped'
+			monad.state = 'stopping'
 			out = monad.state
 		elif svc == 'emer':
 			monad.state = 'emergency'

@@ -17,6 +17,10 @@ class Cortex:
 			if counter > maxawake:
 				break
 			counter += 1
+			if monad.eyes.checkBattery() == False:
+				monad.state = 'landing'
+			if monad.eyes.checkTemperature() == False:
+				monad.state = 'landing'
 			# plan next move, based on mapdata
 			# move eyes
 			# move wheels	
