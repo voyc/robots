@@ -1,15 +1,12 @@
-import sys
+# top level module for sk8
 
-sys.path.append('/home/john/webapps/robots/robots/sk8/')
-sys.path.append('/home/john/webapps/robots/robots/sk8/webmon')
-sys.path.append('/home/john/webapps/robots/robots/sk8/eyes')
+import state   # global state variables
+import cortex
+import portal
+import eyes
+import wheels
 
-#import importlib.util
-#spec = importlib.util.spec_from_file_location('webmon', '../webmon/webmon.py')
-#webmon = importlib.util.module_from_spec(spec)
-#spec.loader.exec_module(webmon)
-
-import webmon
-import eyes.py
-
-
+cortex = cortex.Cortex()  # reads map, chooses route, drives eyes and wheels
+eyes = eyes.Eyes()   # flies the tello drone, receives video and telemetry, maintains map
+wheels = wheels.Wheels()  # drives the skateboard via the arduino
+portal = portal.Portal()  # webserver, provides human interface to start, stop, monitor 

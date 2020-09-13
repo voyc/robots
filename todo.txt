@@ -1,4 +1,18 @@
 
+put webmon http.server in thread
+backup eyes.py and rewrite
+
+Go - run Tello mission
+Emer - abort mission
+
+
+manual
+	poweron tello  - starts wifi hub
+	poweron arduno  - ?
+	poweron judson  - starts eyes, webmon threads, opens sockets to tello, arduino
+	connect phone to tello wifi
+	connect phone to browser webmon
+
 
 the tello exposes a character api to a socket
 
@@ -60,22 +74,4 @@ commands sent from brain to wheels
 	slow to 14 kph
 	proceed to base
 	stop
-
-
-Skate 
-   Eyes
-   Wheels (future)
-   Webmon
-
-Put webmon in a thread
-
-Start skate at boot
-
-Skate 
-   import and start webmon and eyes
-
-Go - run Tello mission
-Emer - abort mission
-
-Manual wifi connect
 

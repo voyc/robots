@@ -1,6 +1,7 @@
 import http.server
 import os
 import psutil
+import threading
 
 PORT = 8080
 IP = ''
@@ -111,11 +112,9 @@ def getBattery():
 class AjaxServer(http.server.SimpleHTTPRequestHandler):
 
 	def do_GET(self):
-		filename = 'index.html'
 		if self.path == '/':
 			try:
 				#file_contents = open(self.path[1:]).read()
-				#file_contents = open(filename).read()
 				file_contents = shtml
 				self.send_response(200)
 			except:
@@ -146,5 +145,12 @@ class AjaxServer(http.server.SimpleHTTPRequestHandler):
 		self.wfile.write(postout.encode())
 
 server = http.server.HTTPServer(server_address, AjaxServer)
-server.serve_forever()
-server_message('starting')
+thread = threading.Thread(target = server.serve_forever)
+thread.daemon = True
+try:
+	thread.start()
+except KeyboardInterrupt:
+	server.shutdown()
+	sys.exit(0)
+
+print('webmon starting')
