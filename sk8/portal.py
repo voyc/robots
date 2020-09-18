@@ -34,8 +34,8 @@ class Portal:
 		if svc == 'go':
 			monad.state = 'awake'
 			out = monad.state
-		elif svc == 'stop':
-			monad.state = 'stopping'
+		elif svc == 'land':
+			monad.state = 'landing'
 			out = monad.state
 		elif svc == 'emer':
 			monad.state = 'emergency'
@@ -149,7 +149,7 @@ mapdata = {
 	<body>
 		<p>Skateboard Monitor</p>
 		<button id='go'>Go</button>
-		<button id='stop'>Stop</button>
+		<button id='land'>Land</button>
 		<button id='emer'>Stop!!!</button>
 		<br/>
 		<button id='getmap'>Get Map</button>

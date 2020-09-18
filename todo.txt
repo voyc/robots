@@ -1,6 +1,24 @@
+disconnect ethernet cable
+plugin wifi card
+prevent connect to jasmine
+force connect to tello
 
-put webmon http.server in thread
-backup eyes.py and rewrite
+on judson, force priority connect tello, secondary to jasmine
+
+on phone, force priority connect to tello when present
+
+
+
+go, land, stop!
+go takeoff - land land
+capture telem, build map trail data in portal
+capture video
+	count frames
+	detect cones
+	fix map
+	travel cone to cone
+
+
 
 Go - run Tello mission
 Emer - abort mission

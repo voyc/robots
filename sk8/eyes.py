@@ -36,9 +36,12 @@ class Eyes:
 		self.startTele()
 		self.startVideo()
 
-		rc = self.sendCommand('command')
-		rc = self.sendCommand('streamon')
-
+		rc = self.sendCommand('command', wait=True)
+		if rc != 'ok':
+			print('tello command command failed')
+		rc = self.sendCommand('streamon', wait=True)
+		if  rc != 'ok':
+			print('tello streamon command failed')
 		print('eyes started')	
 
 	def startTele(self):
@@ -140,27 +143,28 @@ class Eyes:
 		# UDP client socket to send and receive commands
 		self.cmd_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		self.cmd_sock.settimeout(self.cmd_timeout)
-		#cmdsock_address = (tello_ip, cmd_port)  # addr not needed here, used in send/recv
-		#sock.bind(locaddr) # bind is for server ???
+		print('cmd socket open')
 
-	def sendCommand(self,cmd):
+	def sendCommand(self,cmd, wait=False):
 		global monad
 		rmsg = ''
 		try:
 			msg = cmd.encode(encoding="utf-8")
 			len = self.cmd_sock.sendto(msg, self.cmd_address)
+			print(f'command {cmd} sent')
 		except Exception as ex:
 			print(cmd + ' sendto failed:'+str(ex))
 			monad.state = 'shutdown'
 		else:
-			try:
-				data, server = self.cmd_sock.recvfrom(self.cmd_maxlen) # ? warning, this blocks
-				rmsg = data.decode(encoding="utf-8")
-			except Exception as ex:
-				print(cmd + ' recvfrom failed:'+str(ex))
-				monad.state = 'shutdown'
-			else:
-				print(cmd + ' : ' + rmsg)
+			if wait:
+				try:
+					data, server = self.cmd_sock.recvfrom(self.cmd_maxlen) # blocking
+					rmsg = data.decode(encoding="utf-8")
+				except Exception as ex:
+					print(cmd + ' recvfrom failed:'+str(ex))
+					monad.state = 'shutdown'
+				else:
+					print(cmd + ' : ' + rmsg)
 		return rmsg;
 
 	def checkBattery(self):
