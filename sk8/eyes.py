@@ -5,11 +5,11 @@ import threading
 import cv2 as cv
 import monad
 import os
+import subprocess
 
 class Eyes:
 	tello_admin_ip = '192.168.1.1'  # ???  console of tello wifi hub, unknown
 	tello_ip = '192.168.10.1'  # tello controller is first device connected to the hub
-	tello_ip = '192.168.10.2'  # tello controller is first device connected to the hub
 	# only one other device, the most recent, can be connected to the tello hub
 
 	cmd_port = 8889  # may need to open firewall to these ports
@@ -35,16 +35,26 @@ class Eyes:
 	def __init__(self):
 		pass
 
-	def connect(self):
+	def connecti(self):
 		print('eyes connecting')	
 
 		# connect to tello wifi hub
+	#	rc = os.system('nmcli dev wifi list --rescan yes
 	#	rc = os.system('nmcli dev wifi connect TELLO_591FFC')
 	#	if rc != 0:
 	#		print('tello connect failed')
 	#		return
 	#	print('eyes connected to tello')
+	def disconnect(self):
+		rc = os.system('nmcli dev wifi disconnect TELLO_591FFC')
 
+	def isConnectedTo(self):
+		cmd = 'nmcli -f IN-USE,SSID dev wifi list | grep \*'
+		s = subprocess.check_output(cmd, shell=True)
+		y = str(s)[4:len(str(s))-4].strip()
+		return y
+
+	def initializeTello(self):
 		# open command socket
 		self.startCmd()
 

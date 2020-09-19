@@ -41,6 +41,10 @@ class Cortex:
 						print('tello takeoff command failed')	
 			if monad.state == 'wakeup':
 				rc = monad.eyes.connect()
+			if monad.state == 'kill':
+				if flying:
+					rc = monad.eyes.sendCommand('emergency', wait=True)
+				monad.state == 'stopped'	
 
 			# plan next move, based on mapdata
 			# move eyes

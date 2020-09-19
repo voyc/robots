@@ -1,4 +1,5 @@
-# webserver, human interface to start, stop, monitor
+# webserver, human interface to monitor and emergency stop
+# in browser, localhost:8080 or 127.0.0.1:8080
 
 # http.server.HTTPServer is a socketserver.TCPServer subclass
 # http.server.BaseHTTPRequestHandler, no handlers
@@ -31,22 +32,24 @@ class Portal:
 		[path,svc] = os.path.split(req)
 		code = 200
 		out = ''
-		if svc == 'go':
-			monad.state = 'wakeup'
-			out = monad.state
-		elif svc == 'land':
+		if svc == 'land':
 			monad.state = 'landing'
 			out = monad.state
-		elif svc == 'emer':
-			monad.state = 'emergency'
+		elif svc == 'kill':
+			monad.state = 'kill'
 			out = monad.state
-		elif svc == 'getmap':
-			out = 'mapdata '
+		elif svc == 'getwifi':
+			out = self.getWifi()
+		elif svc == 'getstate':
 			#out += getBattery()
+			out = monad.state 
 		else:
 			code = 403
 		return [code,out]
 	
+	def getWifi(self):
+		return monad.eyes.isConnectedTo()  
+
 	def getBattery(self):
 		battery = psutil.sensors_battery()  # returns null
 		plugged = battery.power_plugged
@@ -95,30 +98,59 @@ shtml = '''
 	<head>
 		<meta http-equiv=Content-Type content='text/html; charset=UTF-8'>
 		<meta name='viewport' content='width=device-width, initial-scale=1, maximum-scale=1'>
-		<title>Skateboard Monitor</title>
+		<title>sk8 portal</title>
 		<style>[hidden] {display:none ! important;}</style>
-	<script type='text/javascript'>
-		function xml_http_post(url, data) {
-			var req = new XMLHttpRequest();
-			req.open('POST', url, true);
-			req.onreadystatechange = function() {
-				if (req.readyState == 4) {
-					console.log(req.responseText);
+		<script type='text/javascript'>
+			function xml_http_post(url, data, func) {
+				var req = new XMLHttpRequest();
+				req.open('POST', url, true);
+				req.onreadystatechange = function() {
+					if (req.readyState == 4) {
+						console.log(req.responseText);
+						if (func) {
+							func(req.responseText);
+						}
+					}
 				}
+				req.send(data);
 			}
-			req.send(data);
-		}
-		
-		window.addEventListener('load', function() {
-			var list = document.querySelectorAll('button');
-			list.forEach(function(el) {
-				el.addEventListener('click', function(e) {
-					var action = e.currentTarget.id;
-					xml_http_post('svc/'+action, action)
+			
+			window.addEventListener('load', function() {
+				var list = document.querySelectorAll('button');
+				list.forEach(function(el) {
+					el.addEventListener('click', function(e) {
+						var action = e.currentTarget.id;
+						xml_http_post('svc/'+action, action, false)
+					});
+				});
+				getWifi();
+				document.getElementById('getwifi').addEventListener('click', function(e) {
+					getWifi();
 				});
 			});
-		});
-/*
+
+			function getWifi() {
+				xml_http_post('svc/getwifi', 'getwifi', function(response) {
+					document.getElementById('wifi').innerHTML = response;
+				})
+			}
+
+			function getState() {
+			}
+	</script>
+	</head>	
+	<body>
+		<p>sk8 portal</p>
+		<p>wifi: <span id='wifi'></span> <input type='button' id='getwifi' value='&#x21bb' /></p>
+		<p>state: <span id='state'></span></p>
+		<button id='land'>Land</button>
+		<button id='kill'>Kill</button>
+		<div id='map'></div>
+	</body>
+</html>
+
+
+<!--
 once every second, 
 	call for map data
 	draw the map
@@ -132,8 +164,8 @@ mapdata = {
 	altitude:800,
 	h:300,
 	w:600,
-	skate:{x:23,y:40},
-	drone:{x:150,y:300},
+	wheels:{x:23,y:40},
+	eyes:{x:150,y:300},
 	origin:{x:0, y:6},
 	cones: [
 		{x:30,y:60},
@@ -141,20 +173,6 @@ mapdata = {
 		{x:30,y:60}
 	]
 };
-
-*/
-
-	</script>
-	</head>	
-	<body>
-		<p>Skateboard Monitor</p>
-		<button id='go'>Go</button>
-		<button id='land'>Land</button>
-		<button id='emer'>Stop!!!</button>
-		<br/>
-		<button id='getmap'>Get Map</button>
-		<div id='map'></div>
-	</body>
-</html>
+-->
 '''
 	

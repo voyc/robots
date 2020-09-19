@@ -1,3 +1,61 @@
+nmcli cannot see Tello, but gnome ui can
+nmcli cannot see device, but gnome ui can
+
+wifi: JASMINE
+wifi: TELLO-591FFC
+
+sleeping  - program running, not connect to tello
+wakeup    - connected to tello
+awake     - rtf
+flying    - takeoff
+kill      - emergency stop
+landing   - normal completion in progress
+stopped   - landed, cortex stopped
+shutdown  - stop threads, close sockets
+
+
+
+connect to wifi
+open cmd socket
+command
+streamon
+open sockets, start threads
+rtf
+takeoff
+flying
+
+
+asleep  
+awake
+
+awake conscious - cortex loop running
+sentient - eyes open
+
+
+monad.cortex.state
+asleep - initial state
+awake  - loop running
+dead   - loop stopped, program ended
+
+monad.eyes.state
+eyes state
+connect to wifi
+open cmd socket
+command
+streamon
+open sockets, start threads
+rtf
+takeoff
+flying
+
+monad.portal.state
+connected to JASMINE
+connected to TELLO
+always connected to localhost
+which wifi are we connected to?
+
+------------------------
+
 sudo apt install python3-pip
 pip3 install psutil
 pip3 install opencv-python
