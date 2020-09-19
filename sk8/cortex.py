@@ -39,6 +39,9 @@ class Cortex:
 					rc = monad.eyes.sendCommand('takeoff', wait=True)
 					if rc != 'ok':
 						print('tello takeoff command failed')	
+			if monad.state == 'wakeup':
+				rc = monad.eyes.connect()
+
 			# plan next move, based on mapdata
 			# move eyes
 			# move wheels	

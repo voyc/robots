@@ -4,45 +4,68 @@ import socket
 import threading
 import cv2 as cv
 import monad
+import os
 
 class Eyes:
+	tello_admin_ip = '192.168.1.1'  # ???  console of tello wifi hub, unknown
+	tello_ip = '192.168.10.1'  # tello controller is first device connected to the hub
+	tello_ip = '192.168.10.2'  # tello controller is first device connected to the hub
+	# only one other device, the most recent, can be connected to the tello hub
+
+	cmd_port = 8889  # may need to open firewall to these ports
+	cmd_address = (tello_ip, cmd_port)
+	cmd_maxlen = 1518
+	cmd_timeout = 10
+
+	tele_port = 8890  # telemetry
+	tele_address = ('',tele_port)
+	tele_maxlen = 1518 #?
+	tele_timeout = 10
+	tele_thread = None
+
+	video_port = 11111
+	video_address = ('',video_port)
+	video_maxlen = 1518 #?
+	video_timeout = 10
+	video_thread = None
+
+	safe_battery = 20
+	safe_temparature = 25
+
 	def __init__(self):
-		print('eyes starting')	
-		# test: cap = cv.VideoCapture('udp://'+str(tello_ip)+':'+str(video_port))
+		pass
 
-		# tello defined
-		self.tello_admin_ip = '192.168.1.1'  # ???  config console of tello wifi hub
-		self.tello_ip = '192.168.10.1'  # tello controller is first device connected to the hub
-		self.cmd_port = 8889  # may need to open firewall to these ports
-		self.tele_port = 8890  # telemetry
-		self.video_port = 11111
-		self.cmd_maxlen = 1518
-		self.tele_maxlen = 1518 #?
-		self.videe_maxlen = 1518 #?
-		self.safe_battery = 20
-		self.safe_temparature = 25
+	def connect(self):
+		print('eyes connecting')	
 
-		self.cmd_address = (self.tello_ip, self.cmd_port)
-		self.tele_address = ('',self.tele_port)
-		self.video_address = ('',self.video_port)
+		# connect to tello wifi hub
+	#	rc = os.system('nmcli dev wifi connect TELLO_591FFC')
+	#	if rc != 0:
+	#		print('tello connect failed')
+	#		return
+	#	print('eyes connected to tello')
 
-		# config
-		self.cmd_timeout = 10
-		self.tele_timeout = 10
-		self.video_timeout = 10
-
-		# start all threads immediately. execution controlled by global state
+		# open command socket
 		self.startCmd()
-		self.startTele()
-		self.startVideo()
 
+
+		# start tello command processing
 		rc = self.sendCommand('command', wait=True)
 		if rc != 'ok':
 			print('tello command command failed')
+			return
+
+		# start tello streaming, video and telemetry
 		rc = self.sendCommand('streamon', wait=True)
 		if  rc != 'ok':
 			print('tello streamon command failed')
-		print('eyes started')	
+			return
+
+		# open sockets and start threads, to receive video and telemetry
+		self.startTele()
+		self.startVideo()
+
+		print('eyes connected')	
 
 	def startTele(self):
 		# UDP server socket to receive telemetry (tello is broadcasting on a client socket)

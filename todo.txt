@@ -1,3 +1,12 @@
+sudo apt install python3-pip
+pip3 install psutil
+pip3 install opencv-python
+
+192.168.1.1  admin/admin   DHCP Server -> Clients List
+192.168.1.103:8080
+
+set showmode
+
 disconnect ethernet cable
 plugin wifi card
 prevent connect to jasmine
