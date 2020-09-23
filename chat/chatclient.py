@@ -1,3 +1,8 @@
+
+# I don't remember where I got this sample program.
+# A client does not see messages from other users until he sends a message.
+# We would need to add a thread for the recv loop, effectively polling.
+
 import socket
 import select
 import errno

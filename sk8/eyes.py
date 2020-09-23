@@ -24,9 +24,6 @@ class Eyes:
 	tele_thread = None
 
 	video_port = 11111
-	video_address = ('',video_port)
-	video_maxlen = 1518 #?
-	video_timeout = 10
 	video_thread = None
 
 	safe_battery = 20
@@ -35,16 +32,24 @@ class Eyes:
 	def __init__(self):
 		pass
 
-	def connecti(self):
+	def connect(self):
 		print('eyes connecting')	
+		ret = True
+		cmd = 'nmcli dev wifi list --rescan yes'
+		try:
+			s = subprocess.check_output(cmd, shell=True)
+		except:
+			pass
 
-		# connect to tello wifi hub
-	#	rc = os.system('nmcli dev wifi list --rescan yes
-	#	rc = os.system('nmcli dev wifi connect TELLO_591FFC')
-	#	if rc != 0:
-	#		print('tello connect failed')
-	#		return
-	#	print('eyes connected to tello')
+		cmd = 'nmcli dev wifi connect TELLO-591FFC'
+		try:
+			s = subprocess.check_output(cmd, shell=True)
+		except:
+			ret = False
+
+		print(f'connect to Tello: {ret}')
+		return ret
+
 	def disconnect(self):
 		rc = os.system('nmcli dev wifi disconnect TELLO_591FFC')
 
@@ -54,7 +59,7 @@ class Eyes:
 		y = str(s)[4:len(str(s))-4].strip()
 		return y
 
-	def initializeTello(self):
+	def init(self):
 		# open command socket
 		self.startCmd()
 
@@ -122,14 +127,7 @@ class Eyes:
 			else:
 				monad.telem[name] = int(value);
 		
-
 	def startVideo(self):
-		# UDP server socket to receive video (tello is broadcasting on a client socket)
-		self.video_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-		self.video_sock.settimeout(self.video_timeout)
-		self.video_sock.bind(self.video_address)
-
-		# thread to read the videometry socket
 		self.video_thread = threading.Thread(target=self.videoLoop)
 		self.video_thread.start()
 		print('video thread started')
@@ -141,25 +139,21 @@ class Eyes:
 			print("Cannot open camera")
 			monad.state = 'shutdown'
 			return
-		count = 1
+		count = 0
 		while True: 
+			count += 1
 			if monad.state == 'shutdown':
 				break;  # thread stops
-			count += 1
-			# Capture frame-by-frame
-			ret, frame = cap.read()
-			# if frame is read correctly ret is True
-			if not ret:
-				print("Cannot receive frame (stream end?). Exiting ...")
-				monad.state - 'shutdown'
-				break
-			# Our operations on the frame come here
-			gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
-			# Display the resulting frame
-			#cv.imshow('frame', gray)
-			#if cv.waitKey(1) == ord('q'):
+			#ret, frame = cap.read()  # ret=bool, frame=data
+			#if not ret:
+			#	print("Cannot receive frame (stream end?). Exiting ...")
+			#	monad.state - 'shutdown'
 			#	break
-			# When everything done, release the capture
+			#gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
+
+			##cv.imshow('frame', gray)
+			##if cv.waitKey(1) == ord('q'):
+			##	break
 			
 			self.processFrame()
 			self.updateMap()
@@ -215,6 +209,6 @@ class Eyes:
 		if 'temph' in monad.telem:
 			temp = monad.telem['temph']
 		if int(temp) > self.safe_battery:
-			tempok = false
+			tempok = False
 		return tempok
 

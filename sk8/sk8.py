@@ -10,3 +10,5 @@ monad.eyes = eyes.Eyes()   # flies the tello drone, receives video and telemetry
 monad.wheels = wheels.Wheels()  # drives the skateboard via the arduino
 monad.cortex = cortex.Cortex()  # reads map, chooses route, drives eyes and wheels
 monad.portal = portal.Portal()  # webserver, provides human interface to start, stop, monitor 
+
+monad.state = 'wakeup'

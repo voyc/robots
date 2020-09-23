@@ -32,46 +32,34 @@ class Portal:
 		[path,svc] = os.path.split(req)
 		code = 200
 		out = ''
-		if svc == 'land':
-			monad.state = 'landing'
-			out = monad.state
-		elif svc == 'kill':
-			monad.state = 'kill'
-			out = monad.state
+		if svc in ['go','stop','land','kill':
+			monad.cortex.command(svc)
 		elif svc == 'getwifi':
-			out = self.getWifi()
+			out = monad.eyes.getConnect()
 		elif svc == 'getstate':
-			#out += getBattery()
-			out = monad.state 
+			out = monad.eyes.getState() 
 		else:
 			code = 403
 		return [code,out]
 	
-	def getWifi(self):
-		return monad.eyes.isConnectedTo()  
-
-	def getBattery(self):
-		battery = psutil.sensors_battery()  # returns null
-		plugged = battery.power_plugged
-		percent = str(battery.percent) 
-		plugged = "Plugged In" if plugged else "Not Plugged In"
-		return str(battery.percent)+'%, '+plugged
-	
 	class AjaxServer(http.server.SimpleHTTPRequestHandler):
 		def do_GET(self):
 			global shtml
+			code = 200
 			if self.path == '/':
 				try:
 					#file_contents = open(self.path[1:]).read()
 					file_contents = shtml
-					self.send_response(200)
 				except:
 					file_contents = "File not found"
-					self.send_response(404)
+					code = 404
+			elif self.path == 'favicon.ico':
+				file_contents = open(self.path[1:]).read()
 			else:
 				file_contents = "File not found"
-				self.send_response(403)
+				code = 403
 	
+			self.send_response(code)
 			self.send_header("Content-type", "text/html")
 			self.end_headers()
 			self.flush_headers()
@@ -143,7 +131,9 @@ shtml = '''
 		<p>sk8 portal</p>
 		<p>wifi: <span id='wifi'></span> <input type='button' id='getwifi' value='&#x21bb' /></p>
 		<p>state: <span id='state'></span></p>
+		<button id='go'>Go</button>
 		<button id='land'>Land</button>
+		<button id='stop'>Stop</button>
 		<button id='kill'>Kill</button>
 		<div id='map'></div>
 	</body>

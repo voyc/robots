@@ -1,3 +1,9 @@
+
+implement websockets chat server on sam or mai 
+implement websockets chat server in portal for getting log, state, map data.  
+Learn how to combine webserver and socket server.
+
+
 nmcli cannot see Tello, but gnome ui can
 nmcli cannot see device, but gnome ui can
 
@@ -59,6 +65,7 @@ which wifi are we connected to?
 sudo apt install python3-pip
 pip3 install psutil
 pip3 install opencv-python
+pip3 install python-networkmanager
 
 192.168.1.1  admin/admin   DHCP Server -> Clients List
 192.168.1.103:8080
