@@ -1,7 +1,11 @@
+1. Implement threaded state machine for sk8.
+2. Implement websockets server and client to show log, state, map.
+3. Implement webchat for Sam.
+4. Fork Mai for new server-based implementation.
 
-implement websockets chat server on sam or mai 
-implement websockets chat server in portal for getting log, state, map data.  
-Learn how to combine webserver and socket server.
+Future considerations for Sam and mai
+Authentication:  php or python
+A2hosting: nginx or custom python server
 
 
 nmcli cannot see Tello, but gnome ui can
