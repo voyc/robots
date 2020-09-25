@@ -30,7 +30,7 @@ class Eyes:
 	safe_temparature = 25
 
 	def __init__(self):
-		pass
+		monad.log('eyes object created')
 
 	def connect(self):
 		monad.log('eyes connecting')	

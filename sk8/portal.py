@@ -26,7 +26,7 @@ class Portal:
 		except KeyboardInterrupt:
 			server.shutdown()
 			sys.exit(0)
-		print('portal started')
+		monad.log('portal server thread started')
 
 	def processRequest(self,req,data):
 		[path,svc] = os.path.split(req)
@@ -46,34 +46,30 @@ class Portal:
 		def do_GET(self):
 			global shtml
 			code = 200
-			if self.path == '/':
-				try:
-					#file_contents = open(self.path[1:]).read()
+			output = ''
+			if self.path == '/favicon.ico':
+				file_contents = open(self.path[1:], 'rb').read()
+				output = bytes(file_contents)
+			else:
+				if self.path == '/':
 					file_contents = shtml
-				except:
+				else:
 					file_contents = "File not found"
 					code = 404
-			elif self.path == 'favicon.ico':
-				file_contents = open(self.path[1:]).read()
-			else:
-				file_contents = "File not found"
-				code = 403
+				output = bytes(file_contents, 'utf-8')
 	
 			self.send_response(code)
 			self.send_header("Content-type", "text/html")
 			self.end_headers()
 			self.flush_headers()
-			self.wfile.write(bytes(file_contents, 'utf-8'))
+			self.wfile.write(output)
 	
 		def do_POST(self):
-			#print(self.headers)
 			length = int(self.headers.get_all('content-length')[0])
 			req = self.path
 			postin = self.rfile.read(length)
 			postout = 'response to ajax call'
 			[code,postout] = monad.portal.processRequest(req,postin)
-			#self.log_message(f'req:{req}, in:{postin}, out:{postout}')  # to stderr
-			#msg = f'req:{req}, in:{postin}, out:{postout}'
 			self.send_response(code)  # 200
 			self.send_header("Content-type", "text/plain")
 			self.end_headers()
@@ -94,7 +90,6 @@ shtml = '''
 				req.open('POST', url, true);
 				req.onreadystatechange = function() {
 					if (req.readyState == 4) {
-						console.log(req.responseText);
 						if (func) {
 							func(req.responseText);
 						}

@@ -1,3 +1,7 @@
+# wheels.py
+
+import monad
+
 class Wheels:
 	def __init__(self):
-		print('wheels started')
+		monad.log('wheels object created')

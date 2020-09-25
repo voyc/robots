@@ -4,16 +4,6 @@ import threading
 import time
 import monad
 
-
-# state machine
-#	asleep
-#	waking
-#	connected
-#	ready
-#		flying
-#			taking off
-#			plotting map (exploring for cones
-
 # state machine
 #	asleep
 #	awake
@@ -55,7 +45,7 @@ class Cortex:
 
 		thread = threading.Thread(target=self.loop)
 		thread.start()
-		print('cortex started')
+		monad.log('cortex thread started')
 
 
 	def loop(self):
@@ -92,39 +82,6 @@ class Cortex:
 					monad.log('eyes open failed')
 					self.command('kill')
 				#monad.wheels.wake()
-
-
-			#if monad.state == 'wakeup':
-			#	nw = monad.eyes.getConnection()
-			#	if nw[0:5] == 'TELLO':
-			#		rc = monad.eyes.init()
-			#		if rc:
-			#			monad.state = 'awake'
-			#		else:
-			#			print('awake, rtf')
-			#			monad.state = 'shutdown'
-			#	else:
-			#		print('TELLO wifi not connected. Please connect now.')
-
-			#if monad.state == 'rtf':
-			#	self.ctrAwake += 1
-			#	if self.ctrAwake == 1:
-			#		rc = monad.eyes.sendCommand('takeoff', wait=True)
-			#		if rc:
-			#			monad.state = 'flying'
-			#			print('flying')
-			#		if rc != 'ok':
-			#			print('tello takeoff command failed')	
-			#if monad.state == 'kill':
-			#	if flying:
-			#		rc = monad.eyes.sendCommand('emergency', wait=True)
-			#	monad.state == 'stopped'	
-
-			#if monad.state == 'flying':
-			#	# plan next move, based on mapdata
-			#	# move eyes
-			#	# move wheels	monad.log('flying') else:
-			#	monad.log('thinking')
 
 	def plot(self):
 		pass
