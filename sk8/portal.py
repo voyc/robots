@@ -32,10 +32,10 @@ class Portal:
 		[path,svc] = os.path.split(req)
 		code = 200
 		out = ''
-		if svc in ['go','stop','land','kill':
+		if svc in ['start','stop','resume','home','kill']:
 			monad.cortex.command(svc)
 		elif svc == 'getwifi':
-			out = monad.eyes.getConnect()
+			out = monad.eyes.getConnection()
 		elif svc == 'getstate':
 			out = monad.eyes.getState() 
 		else:
@@ -131,10 +131,11 @@ shtml = '''
 		<p>sk8 portal</p>
 		<p>wifi: <span id='wifi'></span> <input type='button' id='getwifi' value='&#x21bb' /></p>
 		<p>state: <span id='state'></span></p>
-		<button id='go'>Go</button>
-		<button id='land'>Land</button>
-		<button id='stop'>Stop</button>
-		<button id='kill'>Kill</button>
+		<button id='start' >Start</button>
+		<button id='stop'  >Stop</button>
+		<button id='resume'>Resume</button>
+		<button id='home'  >Home</button>
+		<button id='kill'  >Kill</button>
 		<div id='map'></div>
 	</body>
 </html>

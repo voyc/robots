@@ -6,9 +6,9 @@ import portal
 import eyes
 import wheels
 
-monad.eyes = eyes.Eyes()   # flies the tello drone, receives video and telemetry, maintains map
-monad.wheels = wheels.Wheels()  # drives the skateboard via the arduino
-monad.cortex = cortex.Cortex()  # reads map, chooses route, drives eyes and wheels
-monad.portal = portal.Portal()  # webserver, provides human interface to start, stop, monitor 
+monad.eyes = eyes.Eyes()   # fly the drone, recv video & telemetry, maintain map
+monad.wheels = wheels.Wheels()  # drive the skateboard via the arduino
+monad.cortex = cortex.Cortex()  # read map, plot route
+monad.portal = portal.Portal()  # webserver, human interface
 
-monad.state = 'wakeup'
+monad.cortex.command('wakeup')

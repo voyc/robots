@@ -33,7 +33,7 @@ class Eyes:
 		pass
 
 	def connect(self):
-		print('eyes connecting')	
+		monad.log('eyes connecting')	
 		ret = True
 		cmd = 'nmcli dev wifi list --rescan yes'
 		try:
@@ -47,40 +47,45 @@ class Eyes:
 		except:
 			ret = False
 
-		print(f'connect to Tello: {ret}')
+		monad.log(f'connect to Tello: {ret}')
 		return ret
 
 	def disconnect(self):
 		rc = os.system('nmcli dev wifi disconnect TELLO_591FFC')
 
-	def isConnectedTo(self):
+	def getConnection(self):
 		cmd = 'nmcli -f IN-USE,SSID dev wifi list | grep \*'
 		s = subprocess.check_output(cmd, shell=True)
 		y = str(s)[4:len(str(s))-4].strip()
 		return y
 
-	def init(self):
+	def checkConnection(self):
+		nw = self.getConnection()
+		rc = nw[0:5] == 'TELLO'
+		return rc
+
+	def open(self):
 		# open command socket
 		self.startCmd()
-
 
 		# start tello command processing
 		rc = self.sendCommand('command', wait=True)
 		if rc != 'ok':
-			print('tello command command failed')
-			return
+			monad.log('tello command command failed')
+			return False 
 
 		# start tello streaming, video and telemetry
 		rc = self.sendCommand('streamon', wait=True)
 		if  rc != 'ok':
-			print('tello streamon command failed')
-			return
+			monad.log('tello streamon command failed')
+			return False
 
 		# open sockets and start threads, to receive video and telemetry
 		self.startTele()
 		self.startVideo()
 
-		print('eyes connected')	
+		monad.log('eyes connected')	
+		return True
 
 	def startTele(self):
 		# UDP server socket to receive telemetry (tello is broadcasting on a client socket)
@@ -91,7 +96,7 @@ class Eyes:
 		# thread to read the telemetry socket
 		self.tele_thread = threading.Thread(target=self.teleLoop)
 		self.tele_thread.start()
-		print('telemetry thread started')
+		monad.log('telemetry thread started')
 
 	def teleLoop(self):
 		global monad
@@ -102,16 +107,16 @@ class Eyes:
 			try:
 				data, server = self.tele_sock.recvfrom(self.tele_maxlen)
 			except Exception as ex:
-				print('Telemetry recvfrom failed: ' + str(ex))
+				monad.log('Telemetry recvfrom failed: ' + str(ex))
 				monad.state = 'shutdown'
 				break
 			count += 1
 			self.storeTele(data)
 			if count%10 == 0:
-				print(data.decode(encoding="utf-8"))
+				monad.log(data.decode(encoding="utf-8"))
 	
 			# check battery and temperature
-			print('battery:' + str(monad.telem['bat']) + ', high temperature:' + str(monad.telem['temph']))
+			monad.log('battery:' + str(monad.telem['bat']) + ', high temperature:' + str(monad.telem['temph']))
 	
 	def storeTele(self,data):
 		# data=b'pitch:-2;roll:-2;yaw:2;vgx:0;vgy:0;vgz:0;templ:62;temph:65;tof:6553;h:0;bat:42;baro:404.45;time:0;agx:-37.00;agy:48.00;agz:-1008.00;'
@@ -130,13 +135,13 @@ class Eyes:
 	def startVideo(self):
 		self.video_thread = threading.Thread(target=self.videoLoop)
 		self.video_thread.start()
-		print('video thread started')
+		monad.log('video thread started')
 
 	def videoLoop(self):
 		global monad
 		cap = cv.VideoCapture('udp://'+self.tello_ip+':'+str(self.video_port))
 		if not cap.isOpened():
-			print("Cannot open camera")
+			monad.log("Cannot open camera")
 			monad.state = 'shutdown'
 			return
 		count = 0
@@ -146,7 +151,7 @@ class Eyes:
 				break;  # thread stops
 			#ret, frame = cap.read()  # ret=bool, frame=data
 			#if not ret:
-			#	print("Cannot receive frame (stream end?). Exiting ...")
+			#	monad.log("Cannot receive frame (stream end?). Exiting ...")
 			#	monad.state - 'shutdown'
 			#	break
 			#gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
@@ -170,7 +175,7 @@ class Eyes:
 		# UDP client socket to send and receive commands
 		self.cmd_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		self.cmd_sock.settimeout(self.cmd_timeout)
-		print('cmd socket open')
+		monad.log('cmd socket open')
 
 	def sendCommand(self,cmd, wait=False):
 		global monad
@@ -178,9 +183,9 @@ class Eyes:
 		try:
 			msg = cmd.encode(encoding="utf-8")
 			len = self.cmd_sock.sendto(msg, self.cmd_address)
-			print(f'command {cmd} sent')
+			monad.log(f'command {cmd} sent')
 		except Exception as ex:
-			print(cmd + ' sendto failed:'+str(ex))
+			monad.log(cmd + ' sendto failed:'+str(ex))
 			monad.state = 'shutdown'
 		else:
 			if wait:
@@ -188,10 +193,10 @@ class Eyes:
 					data, server = self.cmd_sock.recvfrom(self.cmd_maxlen) # blocking
 					rmsg = data.decode(encoding="utf-8")
 				except Exception as ex:
-					print(cmd + ' recvfrom failed:'+str(ex))
+					monad.log(cmd + ' recvfrom failed:'+str(ex))
 					monad.state = 'shutdown'
 				else:
-					print(cmd + ' : ' + rmsg)
+					monad.log(cmd + ' : ' + rmsg)
 		return rmsg;
 
 	def checkBattery(self):
@@ -211,4 +216,15 @@ class Eyes:
 		if int(temp) > self.safe_battery:
 			tempok = False
 		return tempok
+
+	def start(self):
+		pass
+	def stop(self):
+		pass
+	def resume(self):
+		pass
+	def home(self):
+		pass
+	def kill(self):
+		pass
 
