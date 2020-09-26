@@ -1,0 +1,52 @@
+<!doctype html>
+<!-- chat.html -->
+<!-- /home/john/webapps/robots/robots/sam/html/chat.html -->	
+<html>
+	<head>
+		<meta http-equiv=Content-Type content='text/html; charset=UTF-8'>
+		<meta name='viewport' content='width=device-width, initial-scale=1, maximum-scale=1'>
+		<title>Chat</title>
+		<style>[hidden] {display:none ! important;}</style>
+		<script>
+			voyc = {};
+			window.addEventListener('load', function() {
+				voyc.chat = new voyc.Chat();
+				voyc.chat.setup(document.getElementById('chatcontainer'));
+				voyc.idhost = voyc.chat.addUser('Sam', true, false);
+				voyc.idguest = voyc.chat.addUser('John', false, true);
+
+				voyc.chat.post(voyc.idhost, 'Good morning, John.');
+				voyc.chat.post(voyc.idguest, 'Hi Teacher.');
+				voyc.chat.post(voyc.idhost, 'Are you ready to begin?', ['yes', 'no']);
+
+				document.getElementById('chatcontainer').style.height = window.innerHeight + 'px';
+				voyc.chat.resize(window.innerHeight);
+
+				voyc.ws = new WebSocket("ws://127.0.0.1:5678/");
+				voyc.ws.onmessage = function (event) {
+					voyc.chat.post(voyc.idhost, event.data);
+				};
+				voyc.ws.onopen = function (event) {
+					voyc.chat.post(voyc.idhost, 'opened');
+				};
+				voyc.ws.onclose = function (event) {
+					voyc.chat.post(voyc.idhost, 'close');
+				};
+				voyc.ws.onerror = function (event) {
+					voyc.chat.post(voyc.idhost, 'error');
+				};
+			});
+			window.addEventListener('resize', function() {
+				document.getElementById('chatcontainer').style.height = window.innerHeight + 'px';
+				voyc.chat.resize(window.innerHeight);
+			});
+		</script>
+		<link  href='css/chat.css' rel='stylesheet' type='text/css'></link>
+		<script src='jslib/chat.js'></script>
+	</head>
+	<body>
+		<div id='chatcontainer'></div>
+		<div id='footer' style='height: 2px; position: fixed; bottom: 0px;'></div>
+	</body>
+</html>
+
