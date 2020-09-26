@@ -12,34 +12,20 @@
 			window.addEventListener('load', function() {
 				voyc.chat = new voyc.Chat();
 				voyc.chat.setup(document.getElementById('chatcontainer'));
-				voyc.idhost = voyc.chat.addUser('Sam', true, false);
-				voyc.idguest = voyc.chat.addUser('John', false, true);
-
-				voyc.chat.post(voyc.idhost, 'Good morning, John.');
-				voyc.chat.post(voyc.idguest, 'Hi Teacher.');
-				voyc.chat.post(voyc.idhost, 'Are you ready to begin?', ['yes', 'no']);
-
 				document.getElementById('chatcontainer').style.height = window.innerHeight + 'px';
 				voyc.chat.resize(window.innerHeight);
 
-				voyc.ws = new WebSocket("ws://127.0.0.1:5678/");
-				voyc.ws.onmessage = function (event) {
-					voyc.chat.post(voyc.idhost, event.data);
-				};
-				voyc.ws.onopen = function (event) {
-					voyc.chat.post(voyc.idhost, 'opened');
-				};
-				voyc.ws.onclose = function (event) {
-					voyc.chat.post(voyc.idhost, 'close');
-				};
-				voyc.ws.onerror = function (event) {
-					voyc.chat.post(voyc.idhost, 'error');
-				};
+				setTimeout( function login() {
+					name = prompt('What is your name?', 'John');
+					voyc.chat.login(name);
+				},200);
+
 			});
 			window.addEventListener('resize', function() {
 				document.getElementById('chatcontainer').style.height = window.innerHeight + 'px';
 				voyc.chat.resize(window.innerHeight);
 			});
+
 		</script>
 		<link  href='css/chat.css' rel='stylesheet' type='text/css'></link>
 		<script src='jslib/chat.js'></script>

@@ -1,155 +1,137 @@
 /**
-        class Chat
-        @constructor
+	class Chat
+	@constructor
 **/
 voyc.Chat = function() {
-        this.chatcontainer = {};
-        this.chatscroller = {};
-        this.chatcontent = {};
-        this.eEntry = {};
-        this.users = [];
-        this.idhost = 0;
-        this.idguest = 0;
+	this.chatcontainer = {};
+	this.chatscroller = {};
+	this.chatcontent = {};
+	this.eEntry = {};
+	this.ws = false;
+	this.username = '';
 }
 
 voyc.Chat.containertemplate = `
-        <div id='chatscroller'>
-                <div id='chatcontent'></div>
-        </div>
-        <div id='chatfoot'>
-                <table id='chatentry' class='chatentry'>
-                        <td><textarea id='guestpost'></textarea></td>
-                        <td><div id='mchoices'>yes no</div></td>
-                        <td><button id='guestpostbtn'>></button></td>
-                </table>
-        </div>
+	<div id='chatscroller'>
+		<div id='chatcontent'></div>
+	</div>
+	<div id='chatfoot'>
+		<table id='chatentry' class='chatentry'>
+			<td><textarea id='mmsg'></textarea></td>
+			<td><div id='mchoices'>yes no</div></td>
+			<td><button id='mbtn'>></button></td>
+		</table>
+	</div>
 `;
 
-voyc.Chat.posttemplate = "<div class='chatline clearfix'><div class='chatuser f%side%'>%user%</div><div class='chatmsg f%side%'>%message%</div><div class='chattime f%side%'>%time%</div></div>";
-voyc.Chat.entrytemplate = "";
+voyc.Chat.linetemplate = `
+	<div class='chatline clearfix'>
+		<div class='chatuser f%side%'>%user%</div>
+		<div class='chatmsg f%side%'>%message%</div>
+		<div class='chattime f%side%'>%time%</div>
+	</div>
+`;
 
 voyc.Chat.prototype.setup = function(container) {
-        this.chatcontainer = container;
-        this.chatcontainer.innerHTML = voyc.Chat.containertemplate;
-        this.chatscroller = document.getElementById('chatscroller');
-        this.chatcontent = document.getElementById('chatcontent');
+	this.chatcontainer = container;
+	this.chatcontainer.innerHTML = voyc.Chat.containertemplate;
+	this.chatscroller = document.getElementById('chatscroller');
+	this.chatcontent = document.getElementById('chatcontent');
 
-        var self = this;
-        document.getElementById('guestpostbtn').addEventListener('click', function(e) {
-                var s = document.getElementById('guestpost').value;
-                //self.post(self.idguest, s);
-				voyc.ws.send(s)
-                document.getElementById('guestpost').value = '';
-        }, false);
-        document.getElementById('guestpost').addEventListener('keydown', function(e) {
-                if (e.keyCode == 13) {
-                        document.getElementById('guestpostbtn').click();
-                        e.preventDefault();
-                }
-        }, false);
+	var self = this;
+	document.getElementById('mbtn').addEventListener('click', function(e) {
+		var s = document.getElementById('mmsg').value;
+		voyc.chat.post(s, false)
+		document.getElementById('mmsg').value = '';
+	}, false);
+	document.getElementById('mmsg').addEventListener('keydown', function(e) {
+		if (e.keyCode == 13) {
+			document.getElementById('mbtn').click();
+			e.preventDefault();
+		}
+	}, false);
+
+	voyc.idhost = 0;
+
+	this.ws = new WebSocket("ws://127.0.0.1:5678/");
+	this.ws.onmessage = function (event) {
+		var a = event.data.split('~')
+		user = a[0];
+		message = a[1];
+		voyc.chat.display(user, message, false);
+	};
+	this.ws.onopen = function (event) {
+		console.log('opened');
+	};
+	this.ws.onclose = function (event) {
+		console.log('close');
+	};
+	this.ws.onerror = function (event) {
+		console.log('error');
+	};
 }
 
 voyc.Chat.prototype.resize = function(height) {
-        this.chatscroller.style.height = height - document.getElementById('chatfoot').offsetHeight + 'px';
-}
-voyc.Chat.prototype.addUser = function(name, host, guest) {
-        var ndx = this.users.length;
-        var id = ndx + 1;
-        var host = host || false;
-        var guest = guest || false;
-        this.users.push({id:id, name:name, host:host, guest:guest});
-        if (host) {
-                this.idhost = id;
-        }
-        if (guest) {
-                this.idguest = id;
-        }
-        return id;
+	this.chatscroller.style.height = height - document.getElementById('chatfoot').offsetHeight + 'px';
 }
 
-voyc.Chat.prototype.changeHost = function(id) {
-        this.idhost = id;
+voyc.Chat.prototype.login = function(username) {
+	this.username = username;	
+	this.ws.send('login~'+username+'~')
 }
 
-/**
-        method post()
-        If multiple humans are using this,
-        each human will have his own instance of the screen,
-        with himself on the right, and the others on the left.
-        
-        In normal usage, Samantha is the host and I am the guest.
-        Sam is on the left, I am on the right.
-**/
-voyc.Chat.prototype.post = function(id, message, mchoice) {
-        var user = this.users[id - 1];
-        var side = 'right';
-        var name = '';
-        if (id == this.idhost) {
-                side = 'left';
-                name = user.name + ':';
-        }
-
-        var dtime = new Date();
-        var hh = dtime.getHours();
-        var mm = dtime.getMinutes();
-        var smm = mm.toString();
-        smm = (smm.length > 1) ? smm : '0' + smm;
-        var stime = hh + ':' + smm;
-
-        // add message box to chat box
-        var s = voyc.Chat.posttemplate;
-        s = s.replace(/%side%/g, side);
-        s = s.replace(/%user%/g, name);
-        s = s.replace(/%message%/g, message);
-        s = s.replace(/%time%/g, stime);
-
-        var m = document.createElement('div');
-        m.innerHTML = s;
-        this.chatcontent.appendChild(m);
-
-        this.chatscroller.scrollTop = this.chatscroller.scrollHeight;
-        document.getElementById('guestpost').focus();
-
-        // add multiple choice options
-        var self = this;
-        var soptions = '';
-        document.getElementById('mchoices').innerHTML = '';
-        if (mchoice) {
-                for (var i=0; i<mchoice.length; i++) {
-                        var opt = document.createElement('button');
-                        opt.id = 'opt_' + i;
-                        opt.innerHTML = mchoice[i];
-                        document.getElementById('mchoices').appendChild(opt);
-                        opt.addEventListener('click', function(e) {
-                                var s = e.target.innerHTML;
-                                self.post(self.idguest,s);
-                        }, false);
-                }
-        }
-
-  //      (new voyc.Observer).publish('chat-posted','chat',{userid:id,msg:message,choice:mchoice});
-        return m;
-}
-voyc.Chat.prototype.init = function(conversation) {
-        // draw chat window with all posts
+voyc.Chat.prototype.post = function(message, mchoice) {
+	//this.display(this.username, message, mchoice);
+	msg = 'message~' + this.username + '~' + message
+	this.ws.send(msg)
 }
 
-voyc.Chat.prototype.save = function(name, conversation) {
-        // save conversation to local storage
-}
+voyc.Chat.prototype.display = function(username, message, mchoice) {
+	var side = 'right';
+	var name = '';
+	if (username != this.username) {
+		side = 'left';
+		name = username + ':';
+	}
 
-voyc.Chat.prototype.restore = function(name) {
-        // restore conversation from local storage
-}
+	var dtime = new Date();
+	var hh = dtime.getHours();
+	var mm = dtime.getMinutes();
+	var smm = mm.toString();
+	smm = (smm.length > 1) ? smm : '0' + smm;
+	var stime = hh + ':' + smm;
 
-/** 
-        save conversation on every post? 
-*/
-voyc.conversation = {
-        users: [
-                /* {name:'Samantha', host:true, me:false}, */
-        ],
-        posts: [
-                /* {user:1, date:'24Jun2018', message:'hello' }, */
-        ]
-};
+	// add message box to chat box
+	var s = voyc.Chat.linetemplate;
+	s = s.replace(/[\n\t]/g,'');
+	s = s.replace(/%side%/g, side);
+	s = s.replace(/%user%/g, name);
+	s = s.replace(/%message%/g, message);
+	s = s.replace(/%time%/g, stime);
+
+	var m = document.createElement('div');
+	m.innerHTML = s;
+	this.chatcontent.appendChild(m);
+
+	this.chatscroller.scrollTop = this.chatscroller.scrollHeight;
+	document.getElementById('mmsg').focus();
+
+	// add multiple choice options
+	var self = this;
+	var soptions = '';
+	document.getElementById('mchoices').innerHTML = '';
+	if (mchoice) {
+		for (var i=0; i<mchoice.length; i++) {
+			var opt = document.createElement('button');
+			opt.id = 'opt_' + i;
+			opt.innerHTML = mchoice[i];
+			document.getElementById('mchoices').appendChild(opt);
+			opt.addEventListener('click', function(e) {
+				var s = e.target.innerHTML;
+				self.display(this.username,s);
+			}, false);
+		}
+	}
+
+	return m;
+}

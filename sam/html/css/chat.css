@@ -1,3 +1,10 @@
+.fright {
+	float:right;
+}
+.fleft {
+	float:left;
+}
+
 #chatcontainer {
         padding:0;
         margin:0;
