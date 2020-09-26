@@ -5,19 +5,16 @@
 
 import asyncio
 import websockets
-import datetime
-import random
 
 ip = '127.0.0.1'
 port = 5678
+hostname = 'Host'
+
 clients = {}
 
-# define the coroutine (thread target fn)
-async def time(websocket, path):
-	while True:
-		now = datetime.datetime.utcnow().isoformat() + "Z"
-		await websocket.send(now)
-		await asyncio.sleep(random.random() * 3)
+async def hostinterject(message):
+	msg = f'{hostname}~{message}'	
+	await broadcast(msg)
 
 async def broadcast(msg):
 	for usr in clients:
@@ -26,32 +23,31 @@ async def broadcast(msg):
 		except:
 			pass
 
-async def echo(websocket, path):
+async def serveloop(websocket, path):
 	print(websocket)
 	async for message in websocket:
 		print(message)
 		cmd,usr,msg = message.split('~')
 		if cmd == 'login':
 			clients[usr] = websocket
-			reply = f'Host~Welcome, {usr}'	
+			reply = f'{hostname}~Welcome, {usr}'	
 		elif cmd == 'logout':
 			del clients[usr]
-			reply = f'Host~Goodbye, {usr}'
+			reply = f'{hostname}~Goodbye, {usr}'
 		elif cmd == 'message':
 			reply = f'{usr}~{msg}'
 		await asyncio.sleep(.6)
-	#	for usr in clients:
-	#		try:
-	#			await clients[usr].send(reply)
-	#		except:
-	#			pass
 		await broadcast(reply)
 
-# create server object,  wrapping the cooroutine
-server = websockets.serve(echo, ip, port)
+async def wakeup():
+	while True:
+		await asyncio.sleep(10)
+		await hostinterject('Are you still here?')
 
-# start the thread, wrapping the server object
+server = websockets.serve(serveloop, ip, port) # create server, wrapping coroutine
 event_loop = asyncio.get_event_loop()  # get the scheduler
-event_loop.run_until_complete(server)
+event_loop.run_until_complete(server)  # make connection, wrapping server object
+asyncio.ensure_future(wakeup())
 print('serving websockets...')
 event_loop.run_forever()
+
