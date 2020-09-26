@@ -5,14 +5,19 @@
 
 import asyncio
 import websockets
+import datetime
 
 ip = '127.0.0.1'
 port = 5678
 hostname = 'Host'
+timeout = datetime.timedelta(seconds=120)
 
 clients = {}
+recent = datetime.datetime.now()
 
 async def hostinterject(message):
+	recent = datetime.datetime.now()
+	print(f'{recent} {message}')
 	msg = f'{hostname}~{message}'	
 	await broadcast(msg)
 
@@ -24,9 +29,11 @@ async def broadcast(msg):
 			pass
 
 async def serveloop(websocket, path):
+	global recent
 	print(websocket)
 	async for message in websocket:
-		print(message)
+		recent = datetime.datetime.now()
+		print(f'{recent} {message}')
 		cmd,usr,msg = message.split('~')
 		if cmd == 'login':
 			clients[usr] = websocket
@@ -40,9 +47,14 @@ async def serveloop(websocket, path):
 		await broadcast(reply)
 
 async def wakeup():
+	global recent
 	while True:
-		await asyncio.sleep(10)
-		await hostinterject('Are you still here?')
+		await asyncio.sleep(30)
+		now = datetime.datetime.now()
+		diff = now - recent
+		if diff > timeout:
+			await hostinterject('Are you still here?')
+			recent = now
 
 server = websockets.serve(serveloop, ip, port) # create server, wrapping coroutine
 event_loop = asyncio.get_event_loop()  # get the scheduler
