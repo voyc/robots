@@ -5,12 +5,11 @@ import time
 import monad
 
 # state machine
-#	asleep
-#	awake
-#		waking
-#			connected
-#			initing
-#			rtf
+#	state		wakestate     
+#	asleep		sleeping
+#	awake		waking
+#	awake		connected
+#	awake		ready
 #		flying
 #			taking off
 #			plotting map (exploring for cones
@@ -32,12 +31,12 @@ class Cortex:
 	maxAlive = 40
 	maxAwake = 20
 	interval = 1
-	connectionTimeout = 5
+	connectTimeout = 5
 	startTimeout = 20
 
 	def __init__(self):
-		self.state = 'asleep' # asleep, awake, shutdown
-		self.wakestate = '' # waking, connected, ready, flying
+		self.state = 'asleep' # awake, shutdown
+		self.wakestate = 'sleeping' # waking, connected, ready, flying
 		self.ctrAlive = 0
 		self.ctrAwake = 0
 		self.ctrLanding = 0
@@ -51,6 +50,7 @@ class Cortex:
 	def loop(self):
 		while True:
 			time.sleep(self.interval)
+			monad.log('thinking')
 			self.ctrAlive += 1
 			if self.state == 'shutdown':
 				break  # end loop, stop thread
@@ -64,10 +64,10 @@ class Cortex:
 			if self.wakestate == 'waking':
 				connected = monad.eyes.checkConnection()
 				if connected:
-					self.state = 'connected' 
+					self.wakestate = 'connected' 
 				else:
-					if self.ctrAlive < self.connectionTimeout:
-						if self.ctrConnectWarning > 0:
+					if self.ctrAlive < self.connectTimeout:
+						if self.ctrConnectWarning <= 0:
 							monad.log('not connected.  Please connect now...')
 							self.ctrConnectWarning += 1
 					else:
@@ -77,11 +77,12 @@ class Cortex:
 			if self.wakestate == 'connected':	
 				eyesopen = monad.eyes.open()
 				if eyesopen:
-					self.state = 'ready'
+					self.wakestate = 'ready'
 				else:
 					monad.log('eyes open failed')
 					self.command('kill')
 				#monad.wheels.wake()
+		monad.log('exit cortex thread')
 
 	def plot(self):
 		pass
@@ -105,6 +106,7 @@ class Cortex:
 			monad.log('low battery')
 			rc = False
 		if monad.eyes.checkTemperature() == False:
+			monad.log(f'temp: {monad.telem["temph"]}')
 			monad.log('high temperature')
 			rc = False
 		return rc

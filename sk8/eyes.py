@@ -8,9 +8,7 @@ import os
 import subprocess
 
 class Eyes:
-	tello_admin_ip = '192.168.1.1'  # ???  console of tello wifi hub, unknown
 	tello_ip = '192.168.10.1'  # tello controller is first device connected to the hub
-	# only one other device, the most recent, can be connected to the tello hub
 
 	cmd_port = 8889  # may need to open firewall to these ports
 	cmd_address = (tello_ip, cmd_port)
@@ -21,18 +19,18 @@ class Eyes:
 	tele_address = ('',tele_port)
 	tele_maxlen = 1518 #?
 	tele_timeout = 10
-	tele_thread = None
 
 	video_port = 11111
-	video_thread = None
 
 	safe_battery = 20
-	safe_temparature = 25
+	safe_temparature = 90
 
 	def __init__(self):
 		monad.log('eyes object created')
+		self.tele_thread = None
+		self.video_thread = None
 
-	def connect(self):
+	def connect(self):  # not used
 		monad.log('eyes connecting')	
 		ret = True
 		cmd = 'nmcli dev wifi list --rescan yes'
@@ -50,7 +48,7 @@ class Eyes:
 		monad.log(f'connect to Tello: {ret}')
 		return ret
 
-	def disconnect(self):
+	def disconnect(self):  # not used
 		rc = os.system('nmcli dev wifi disconnect TELLO_591FFC')
 
 	def getConnection(self):
@@ -108,18 +106,16 @@ class Eyes:
 				data, server = self.tele_sock.recvfrom(self.tele_maxlen)
 			except Exception as ex:
 				monad.log('Telemetry recvfrom failed: ' + str(ex))
-				monad.state = 'shutdown'
-				break
+				monad.cortex.command('kill')
+				continue
 			count += 1
 			self.storeTele(data)
 			if count%10 == 0:
 				monad.log(data.decode(encoding="utf-8"))
 	
-			# check battery and temperature
-			monad.log('battery:' + str(monad.telem['bat']) + ', high temperature:' + str(monad.telem['temph']))
-	
 	def storeTele(self,data):
-		# data=b'pitch:-2;roll:-2;yaw:2;vgx:0;vgy:0;vgz:0;templ:62;temph:65;tof:6553;h:0;bat:42;baro:404.45;time:0;agx:-37.00;agy:48.00;agz:-1008.00;'
+		# data=b'pitch:-2;roll:-2;yaw:2;vgx:0;vgy:0;vgz:0;templ:62;temph:65;
+		#	tof:6553;h:0;bat:42;baro:404.45;time:0;agx:-37.00;agy:48.00;agz:-1008.00;'
 		global monad
 		sdata = data.decode('utf-8')
 		adata = sdata.split(';')
@@ -131,6 +127,7 @@ class Eyes:
 				monad.telem[name] = float(value);
 			else:
 				monad.telem[name] = int(value);
+		#monad.log(f'temph {monad.telem["temph"]}')
 		
 	def startVideo(self):
 		self.video_thread = threading.Thread(target=self.videoLoop)
@@ -139,11 +136,10 @@ class Eyes:
 
 	def videoLoop(self):
 		global monad
-		cap = cv.VideoCapture('udp://'+self.tello_ip+':'+str(self.video_port))
-		if not cap.isOpened():
-			monad.log("Cannot open camera")
-			monad.state = 'shutdown'
-			return
+		#cap = cv.VideoCapture('udp://'+self.tello_ip+':'+str(self.video_port))
+		#if not cap.isOpened():
+		#	monad.log("Cannot open camera")
+		#	monad.cortex.command('kill')
 		count = 0
 		while True: 
 			count += 1
@@ -186,15 +182,19 @@ class Eyes:
 			monad.log(f'command {cmd} sent')
 		except Exception as ex:
 			monad.log(cmd + ' sendto failed:'+str(ex))
-			monad.state = 'shutdown'
+			monad.cortex.command('kill')
 		else:
 			if wait:
 				try:
 					data, server = self.cmd_sock.recvfrom(self.cmd_maxlen) # blocking
-					rmsg = data.decode(encoding="utf-8")
+					print(f'data: {data}')
+					print(f'server: {server}')
+					# why do we get this sometimes
+					# data: b'\xcc\x18\x01\xb9\x88V\x00\xe2\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00I\x00\x00\xa7\x0f\x00\x06\x00\x00\x00\x00\x00W\xbe'
+					rmsg = data.decode(encoding='utf-8')
 				except Exception as ex:
 					monad.log(cmd + ' recvfrom failed:'+str(ex))
-					monad.state = 'shutdown'
+					monad.cortex.command('kill')
 				else:
 					monad.log(cmd + ' : ' + rmsg)
 		return rmsg;
@@ -213,7 +213,7 @@ class Eyes:
 		tempok = True
 		if 'temph' in monad.telem:
 			temp = monad.telem['temph']
-		if int(temp) > self.safe_battery:
+		if int(temp) > self.safe_temperature:
 			tempok = False
 		return tempok
 
