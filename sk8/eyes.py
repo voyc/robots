@@ -23,7 +23,7 @@ class Eyes:
 	video_port = 11111
 
 	safe_battery = 20
-	safe_temparature = 90
+	safe_temperature = 90
 
 	def __init__(self):
 		monad.log('eyes object created')
