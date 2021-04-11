@@ -1,44 +1,39 @@
-#Color Detection
+'color.py - object detection by color'
 import cv2
 import numpy as np
+from datetime import datetime
 
-onetime = False 
-showWork = True
-showsettings = True 
+debugOnetime = False 
+debugOnetime = True 
+debugCones = False
+debugLzr = True
+debugLzl = False
 
 frameWidth = 640
 frameHeight = 480
+saventhframe = 10
 #cap = cv2.VideoCapture(1)
 #cap.set(3, frameWidth)
 #cap.set(4, frameHeight)
 
 imgfolder = '../../imageprocessing/images/cones/train/'
-coneimg = 'IMG_20200623_174503.jpg'
 coneimg = 'helipad_and_3_cones.jpg'
-#coneimg = '../../images/cones/train/IMG_20200623_174509.jpg'
-#coneimg = '../../images/cones/train/IMG_20200623_174519.jpg'
+coneimg = 'IMG_20200623_174503.jpg'
+coneimg = 'sk8_1_meter.jpg'
+coneimg = 'sk8_2_meter.jpg'
 
-deadZone=100
+outfolder = '../../imageprocessing/images/cones/new/train/'
 
-def empty(a):
+def empty(a): # passed to trackbar
 	pass
 
-# cone settings
-#cone_window_name = 'Settings'
-#cone_hue_min  = 0    # hsv ranges
-#cone_hue_max  = 8
-#cone_sat_min  = 107
-#cone_sat_max  = 255
-#cone_val_min  = 89
-#cone_val_max  = 255
-#cone_canny_lo = 82   # canny edge detection algorithm
-#cone_canny_hi = 127  # Canny recommended a upper:lower ratio between 2:1 and 3:1.
-#cone_area_min = 324   # min area (size) of cone contour
-#cone_area_max = 30000 # not used except in trackbar
+def oneprint(s):
+	if debugOnetime:
+		print(s)
 
 barmax = {
-	'hue_min'  : 179,
-	'hue_max'  : 179,
+	'hue_min'  : 255,
+	'hue_max'  : 255,
 	'sat_min'  : 255,
 	'sat_max'  : 255,
 	'val_min'  : 255,
@@ -49,27 +44,39 @@ barmax = {
 }
 
 cone_settings = {
-	'hue_min'  : 0,    # hsv ranges
+	'hue_min'  : 0,
 	'hue_max'  : 8,
 	'sat_min'  : 107,
 	'sat_max'  : 255,
 	'val_min'  : 89,
 	'val_max'  : 255,
-	'canny_lo' : 82,   # canny edge detection algorithm
+	'canny_lo' : 82,
 	'canny_hi' : 127,  # Canny recommended a upper:lower ratio between 2:1 and 3:1.
-	'area_min' : 324,   # min area (size) of cone contour
+	'area_min' : 324,  # min area (size) of contour
 }
 
 lzr_settings = {
-	'hue_min'  : 0,    # hsv ranges
-	'hue_max'  : 8,
+	'hue_min'  : 130, #122,
+	'hue_max'  : 170, #166,
+	'sat_min'  : 45,  #37,
+	'sat_max'  : 118, #96,
+	'val_min'  : 115, #71,
+	'val_max'  : 255, #192, #146,
+	'canny_lo' : 82,
+	'canny_hi' : 127,
+	'area_min' : 324,
+}
+
+lzl_settings = {
+	'hue_min'  : 26,
+	'hue_max'  : 53,
 	'sat_min'  : 107,
 	'sat_max'  : 255,
-	'val_min'  : 89,
-	'val_max'  : 255,
-	'canny_lo' : 82,   # canny edge detection algorithm
-	'canny_hi' : 127,  # Canny recommended a upper:lower ratio between 2:1 and 3:1.
-	'area_min' : 324,   # min area (size) of cone contour
+	'val_min'  : 104,
+	'val_max'  : 245,
+	'canny_lo' : 82,
+	'canny_hi' : 127,
+	'area_min' : 324,
 }
 
 def openSettings( settings, name):
@@ -115,14 +122,26 @@ def stackImages(scale,imgArray):
 		ver = hor
 	return ver
 
-def drawMap(contours, img):
+def navigate():
+	# draw text nav recommendation
+	deadZone=100
+	if (cx < int(frameWidth/2)-deadZone):
+		cv2.putText(img, " GO LEFT " , (20, 50), cv2.FONT_HERSHEY_COMPLEX,1,(0, 0, 255), 3)
+	elif (cx > int(frameWidth / 2) + deadZone):
+		cv2.putText(img, " GO RIGHT ", (20, 50), cv2.FONT_HERSHEY_COMPLEX,1,(0, 0, 255), 3)
+	elif (cy < int(frameHeight / 2) - deadZone):
+		cv2.putText(img, " GO UP ", (20, 50), cv2.FONT_HERSHEY_COMPLEX,1,(0, 0, 255), 3)
+	elif (cy > int(frameHeight / 2) + deadZone):
+		cv2.putText(img, " GO DOWN ", (20, 50), cv2.FONT_HERSHEY_COMPLEX, 1,(0, 0, 255), 3)
+
+def drawMap(conecontours, lzrcontours, lzlcontours, img):
 	# initialize the arena
 	arena = {'l':frameWidth, 't':frameHeight, 'r':0, 'b':0}
 
-	# draw each contour in the array
-	for contour in contours:
+	# draw cones
+	for contour in conecontours:
 		# draw the contour
-		#cv2.drawMap(img, contour, -1, (255, 0, 255), 7)
+		#cv2.drawContours(img, contour, -1, (255, 0, 255), 7)
 
 		# calculations
 		area = cv2.contourArea(contour)
@@ -143,16 +162,6 @@ def drawMap(contours, img):
 		cv2.putText(img, " " + str(int(x))+ " "+str(int(y)), (x - 20, y- 45), cv2.FONT_HERSHEY_COMPLEX, 0.7,
 					(0, 255, 0), 2)
 
-		# draw text nav recommendation
-		if (cx < int(frameWidth/2)-deadZone):
-			cv2.putText(img, " GO LEFT " , (20, 50), cv2.FONT_HERSHEY_COMPLEX,1,(0, 0, 255), 3)
-		elif (cx > int(frameWidth / 2) + deadZone):
-			cv2.putText(img, " GO RIGHT ", (20, 50), cv2.FONT_HERSHEY_COMPLEX,1,(0, 0, 255), 3)
-		elif (cy < int(frameHeight / 2) - deadZone):
-			cv2.putText(img, " GO UP ", (20, 50), cv2.FONT_HERSHEY_COMPLEX,1,(0, 0, 255), 3)
-		elif (cy > int(frameHeight / 2) + deadZone):
-			cv2.putText(img, " GO DOWN ", (20, 50), cv2.FONT_HERSHEY_COMPLEX, 1,(0, 0, 255), 3)
-
 		# draw line from center point to contour
 		cv2.line(img, (int(frameWidth/2),int(frameHeight/2)), (cx,cy),
 				 (0, 0, 255), 3)
@@ -171,6 +180,12 @@ def drawMap(contours, img):
 		cone_radius = 20
 		cv2.circle(img,(cx,cy),cone_radius,(0,0,0),1)
 
+	for contour in lzrcontours:
+		cv2.drawContours(img, contour, -1, (255, 0, 255), 7)
+
+	for contour in lzlcontours:
+		cv2.drawContours(img, contour, -1, (255, 0, 255), 7)
+
 	# draw the arena
 	arena_margin = 10
 	arena['l'] -= arena_margin;
@@ -180,6 +195,7 @@ def drawMap(contours, img):
 	cv2.rectangle(img, (arena['l'], arena['t'] ), (arena['r'], arena['b'] ), (0, 0, 0), 1)
 
 	# draw vertical meridians
+	deadZone=100
 	cv2.line(img,(int(frameWidth/2)-deadZone,0),(int(frameWidth/2)-deadZone,frameHeight),(255,255,0),3)
 	cv2.line(img,(int(frameWidth/2)+deadZone,0),(int(frameWidth/2)+deadZone,frameHeight),(255,255,0),3)
 
@@ -191,53 +207,87 @@ def drawMap(contours, img):
 	cv2.line(img, (0, int(frameHeight / 2) + deadZone), (frameWidth, int(frameHeight / 2) + deadZone), (255, 255, 0), 3)
 
 
-def getContours(img):
-	''' 
-	contours - an array of shapes. 
-		Each shape is an array of points making up the edge of the shape.
-	hierarchy - irrelevant.  There are no cones within cones.	
-	'''
-	contours, hierarchy = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-	numcontours = len(contours)
+#def getContours(img):
+#	''' 
+#	contours - an array of shapes. 
+#		Each shape is an array of points making up the edge of the shape.
+#	hierarchy - irrelevant.  There are no cones within cones.	
+#	'''
+#	contours, hierarchy = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+#	numcontours = len(contours)
+#
+#	# throw away the small ones
+#	#for contour in contours:
+#	#	area = cv2.contourArea(contour)
+#	#	areaMin = cone_settings['area_min']
+#	#	if area < areaMin:
+#	#		contours.remove(contour)
+#
+#	if debugOnetime:
+#		print(f'num contours: {len(contours)}, discarded: {numcontours - len(contours)}')
+#	return contours
 
-	# throw away the small ones
-	for contour in contours:
-		area = cv2.contourArea(contour)
-		areaMin = cone_settings['area_min']
-		if area < areaMin:
-			contours.remove(contour)
+def getObjectData(cones, lzr, lzl, frameWidth, frameHeight, pxpercm):
+	coneclass = 0
+	lzrclass  = 1
+	lzlclass  = 2
+	data = []
+	for contour in cones:
+		obj = calcDataFromContour(coneclass, contour, frameWidth, frameHeight, pxpercm)		
+		data.append(obj)
 
-	if onetime:
-		print(f'num contours: {len(contours)}, discarded: {numcontours - len(contours)}')
-	return contours
+	for contour in lzr:
+		obj = calcDataFromContour(lzrclass, contour, frameWidth, frameHeight, pxpercm)		
+		data.append(obj)
+		
+	for contour in lzl:
+		obj = calcDataFromContour(lzlclass, contour, frameWidth, frameHeight, pxpercm)		
+		data.append(obj)
+	return data
 
+def calcDataFromContour(cls, contour, frameWidth, frameHeight, pxperecm):
+	# calc area, center, radius in pixels
+	area = cv2.contourArea(contour)
+	peri = cv2.arcLength(contour, True)
+	approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
+	x, y, w, h = cv2.boundingRect(approx)
+	cx = int(x + (w / 2))
+	cy = int(y + (h / 2))
+	r = max(w,h)/2
+	#r = math.sqrt(a/np.pi())
 
-# main begins here
+	# training data: percentage of image
+	tx = round(x/frameWidth, 6)
+	ty = round(y/frameHeight, 6)
+	tw = round(w/frameWidth, 6)
+	th = round(h/frameHeight, 6)
 
-if showsettings:
-	openSettings(cone_settings, 'Cone')
-	openSettings(lzr_settings, 'LZR')
+	# map coordinates in cm
+	mx = round(cx/pxpercm, 6)
+	my = round(cy/pxpercm, 6)
+	
+	obj = {
+		'x': x ,
+		'y': y ,
+		'w': w ,
+		'h': h ,
+		'r': r ,
+		'cx':cx,
+		'cy':cy,
+		'tx':tx,
+		'ty':ty,
+		'tw':tw,
+		'th':th,
+		'mx':mx,
+		'my':my,
+		'cl':cls
+	}
+	return obj
 
-while True:
-
-	# img: the original photo or frame
-	#_, img = cap.read()
-	img = cv2.imread(imgfolder+coneimg, cv2.IMREAD_UNCHANGED)
-	if onetime:
-		print(f'image shape (height,width,depth): {img.shape}')
-		# nexus: 720 x 540 x 3
-		# pixel: 720 x 405 x 3
-		# tello: ?
-	frameHeight,frameWidth,frameDepth = img.shape
-
-	# get settings from trackbars
-	if showsettings:
-		readSettings( cone_settings, 'Cone')
-		readSettings( cone_settings, 'LZR')
-
+def detectObjects(settings):
 	# mask based on hsv ranges
-	lower = np.array([cone_settings['hue_min'],cone_settings['sat_min'],cone_settings['val_min']])
-	upper = np.array([cone_settings['hue_max'],cone_settings['sat_max'],cone_settings['val_max']])
+	lower = np.array([settings['hue_min'],settings['sat_min'],settings['val_min']])
+	upper = np.array([settings['hue_max'],settings['sat_max'],settings['val_max']])
 	imgHsv = cv2.cvtColor(img,cv2.COLOR_BGR2HSV)
 	imgMask = cv2.inRange(imgHsv,lower,upper)
 	imgMasked = cv2.bitwise_and(img,img, mask=imgMask)
@@ -245,36 +295,131 @@ while True:
 	imgBlur = cv2.GaussianBlur(imgMasked, (7, 7), 1)
 	imgGray = cv2.cvtColor(imgBlur, cv2.COLOR_BGR2GRAY)
 
-	# canny: edge detection
-	imgCanny = cv2.Canny(imgGray, cone_settings['canny_lo'], cone_settings['canny_hi'])
+	# canny: edge detection.  Canny recommends hi:lo ratio around 2:1 or 3:1.
+	imgCanny = cv2.Canny(imgGray, settings['canny_lo'], settings['canny_hi'])
 
 	# dilate: thicken the line
 	kernel = np.ones((5, 5))
 	imgDilate = cv2.dilate(imgCanny, kernel, iterations=1)
 
-	# get a data array of cone objects
-	contours = getContours(imgDilate)
+	# get a data array of polygons, one contour boundary for each object
+	contours, _ = cv2.findContours(imgDilate, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+	return contours, [imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate]
+
+def buildMap(data):
+	# all map coordinates in mm, unless otherwise noted
+
+
+	# constants in mm
+	lzradius = 70
+	coneradius = 40
+
+	# conversion factors depend on camera height
+	eyesheight = 1000
+	pxlpermm = 2
+	mmperpxl = .5
+
+	# arena (normally, center is 0,0)
+	arena = {
+		'cx':0,
+		'cy':0,
+		'w':0,
+		'h':0,
+	}
+
+
+
+	# centerpoint of each cone
+
+	# centerpoint and angle of landing zone
+
+
+
+	# all we need is the centerpoint for each cone. radius can be calculated from height.
+	# for landing zone, we need two rectangles
+	# this data can be used for training a neural net
+	# what is the name of this format?
+	pass
+
+def saveTrainingData(data,img):
+	fname = f'{outfolder}/sk8_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}'
+	imgname = f'{fname}.jpg'
+	txtname = f'{fname}.txt'
+	cv2.imwrite(imgname,img)
+	f = open(txtname, 'a')
+	for row in data:
+		f.write(f"{row['cl']} {row['tx']} {row['ty']} {row['tw']} {row['th']}\n")
+	f.close()
+
+# main begins here
+
+if debugCones:
+	openSettings(cone_settings, 'Cone')
+elif debugLzr:
+	openSettings(lzr_settings, 'LZR')
+elif debugLzl:
+	openSettings(lzl_settings, 'LZL')
+
+framenum = 0
+while True:
+	framenum += 1
+
+	# img: the original photo or frame
+	#_, img = cap.read()
+	img = cv2.imread(imgfolder+coneimg, cv2.IMREAD_UNCHANGED)
+	oneprint(f'image dimenensions h:{img.shape[0]}, w:{img.shape[1]}, d:{img.shape[2]}')
+	# nexus: 720 x 540 x 3
+	# pixel: 720 x 405 x 3
+	# tello: ?
+	frameHeight,frameWidth,frameDepth = img.shape
+
+	# get settings from trackbars
+	if debugCones:
+		readSettings( cone_settings, 'Cone')
+	elif debugLzr:
+		readSettings( lzr_settings, 'LZR')
+	elif debugLzl:
+		readSettings( lzl_settings, 'LZL')
+
+	conecontours, coneimages = detectObjects(cone_settings)
+	lzrcontours, lzrimages = detectObjects(lzr_settings)
+	lzlcontours, lzlimages = detectObjects(lzl_settings)
+
+	# reduce the contours to data
+
+	pxpercm = 10
+	data = getObjectData(conecontours, lzrcontours, lzlcontours, frameWidth, frameHeight, pxpercm)
+	buildMap(data)
+	
+	if framenum % saventhframe == 0 or debugOnetime:
+		saveTrainingData(data, img)
 
 	# map: draw lines and circles and texts
 	imgMap = np.zeros((frameHeight, frameWidth, frameDepth), np.uint8) # blank image
 	imgMap.fill(255)
-	drawMap(contours, imgMap)
+	drawMap(conecontours, lzrcontours, lzlcontours, imgMap)
 
 	# final: draw map over original photo
 	imgFinal = img.copy()
-	drawMap(contours, imgFinal)
-
+	drawMap(conecontours, lzrcontours, lzlcontours, imgFinal)
 
 	# show the images
-	stack = stackImages(0.7,([img,imgFinal]))
-	if showWork:
+	stack = stackImages(0.7,([img,imgMap,imgFinal]))
+	if debugCones:
+		imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = coneimages
 		stack = stackImages(0.7,([img,imgHsv,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap,imgFinal]))
-	cv2.imshow('img:imgMasked:dilate:contour', stack)
+	elif debugLzr:
+		imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = lzrimages
+		stack = stackImages(0.7,([img,imgHsv,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap,imgFinal]))
+	elif debugLzl:
+		imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = lzlimages
+		stack = stackImages(0.7,([img,imgHsv,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap,imgFinal]))
+	cv2.imshow('Image Processing', stack)
 
 	# break loop and quit
 	if cv2.waitKey(1) & 0xFF == ord('q'):
 		break
-	if onetime:
+	if debugOnetime:
 		break
 
 #cap.release()

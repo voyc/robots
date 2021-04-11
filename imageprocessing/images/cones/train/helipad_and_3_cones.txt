@@ -1,0 +1,2 @@
+#class x y w h, as percentage of image
+0 0.2 0.1 0.007 0.003
