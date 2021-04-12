@@ -3,14 +3,14 @@ import cv2
 import numpy as np
 from datetime import datetime
 
-debugOnetime = False 
+# global constants
 debugOnetime = True 
+debugOnetime = False 
 debugCones = False
 debugLzr = True
 debugLzl = False
 
-frameWidth = 640
-frameHeight = 480
+
 saventhframe = 10
 #cap = cv2.VideoCapture(1)
 #cap.set(3, frameWidth)
@@ -19,17 +19,15 @@ saventhframe = 10
 imgfolder = '../../imageprocessing/images/cones/train/'
 coneimg = 'helipad_and_3_cones.jpg'
 coneimg = 'IMG_20200623_174503.jpg'
-coneimg = 'sk8_1_meter.jpg'
 coneimg = 'sk8_2_meter.jpg'
+coneimg = 'sk8_1_meter.jpg'
+eyesheight = 1000
+
+coneradius = 40
+arena_padding = coneradius * 2  # turning radius. keep sk8 in the arena.
+arena_margin = coneradius
 
 outfolder = '../../imageprocessing/images/cones/new/train/'
-
-def empty(a): # passed to trackbar
-	pass
-
-def oneprint(s):
-	if debugOnetime:
-		print(s)
 
 barmax = {
 	'hue_min'  : 255,
@@ -55,7 +53,7 @@ cone_settings = {
 	'area_min' : 324,  # min area (size) of contour
 }
 
-lzr_settings = {
+padr_settings = {
 	'hue_min'  : 130, #122,
 	'hue_max'  : 170, #166,
 	'sat_min'  : 45,  #37,
@@ -67,7 +65,7 @@ lzr_settings = {
 	'area_min' : 324,
 }
 
-lzl_settings = {
+padl_settings = {
 	'hue_min'  : 26,
 	'hue_max'  : 53,
 	'sat_min'  : 107,
@@ -78,6 +76,18 @@ lzl_settings = {
 	'canny_hi' : 127,
 	'area_min' : 324,
 }
+
+# global variables
+frameWidth = 640
+frameHeight = 480
+pxlpermm = 0
+
+def empty(a): # passed to trackbar
+	pass
+
+def oneprint(s):
+	if debugOnetime:
+		print(s)
 
 def openSettings( settings, name):
 	window_name = f'{name} Settings'
@@ -134,9 +144,22 @@ def navigate():
 	elif (cy > int(frameHeight / 2) + deadZone):
 		cv2.putText(img, " GO DOWN ", (20, 50), cv2.FONT_HERSHEY_COMPLEX, 1,(0, 0, 255), 3)
 
-def drawMap(conecontours, lzrcontours, lzlcontours, img):
+def drawMap(arena, cones, pad, img):
+	pl = round(arena['pcx'] + (arena['l'] * pxlpermm))
+	pt = round(arena['pcy'] + (arena['t'] * pxlpermm))
+	pr = round(arena['pcx'] + (arena['r'] * pxlpermm))
+	pb = round(arena['pcy'] + (arena['b'] * pxlpermm))
+	cv2.rectangle(img, (pl,pt), (pr,pb), (0, 0, 0), 1)
+
+	print(arena['pcx'], arena['pcy'])
+	print(arena['l'], arena['t'])
+	print(arena['r'], arena['b'])
+	print(pl,pt)
+	print(pr,pb)
+
+def xdrawMap(conecontours, padrcontours, padlcontours, img):
 	# initialize the arena
-	arena = {'l':frameWidth, 't':frameHeight, 'r':0, 'b':0}
+	arena2 = {'l':frameWidth, 't':frameHeight, 'r':0, 'b':0}
 
 	# draw cones
 	for contour in conecontours:
@@ -166,33 +189,32 @@ def drawMap(conecontours, lzrcontours, lzlcontours, img):
 		cv2.line(img, (int(frameWidth/2),int(frameHeight/2)), (cx,cy),
 				 (0, 0, 255), 3)
 
-		# enlarge the arena to include each contour
-		if x < arena['l']:
-			arena['l'] = x
-		if y < arena['t']:
-			arena['t'] = y
-		if (x+w) > arena['r']:
-			arena['r'] = x+w
-		if (y+h) > arena['b']:
-			arena['b'] = y+h
+		# enlarge the arena2 to include each contour
+		if x < arena2['l']:
+			arena2['l'] = x
+		if y < arena2['t']:
+			arena2['t'] = y
+		if (x+w) > arena2['r']:
+			arena2['r'] = x+w
+		if (y+h) > arena2['b']:
+			arena2['b'] = y+h
 
 		# draw a black circle around the cone
 		cone_radius = 20
 		cv2.circle(img,(cx,cy),cone_radius,(0,0,0),1)
 
-	for contour in lzrcontours:
+	for contour in padrcontours:
 		cv2.drawContours(img, contour, -1, (255, 0, 255), 7)
 
-	for contour in lzlcontours:
+	for contour in padlcontours:
 		cv2.drawContours(img, contour, -1, (255, 0, 255), 7)
 
-	# draw the arena
-	arena_margin = 10
-	arena['l'] -= arena_margin;
-	arena['t'] -= arena_margin;
-	arena['r'] += arena_margin;
-	arena['b'] += arena_margin;
-	cv2.rectangle(img, (arena['l'], arena['t'] ), (arena['r'], arena['b'] ), (0, 0, 0), 1)
+	# draw the arena2
+	arena2['l'] -= arena_margin;
+	arena2['t'] -= arena_margin;
+	arena2['r'] += arena_margin;
+	arena2['b'] += arena_margin;
+	cv2.rectangle(img, (arena2['l'], arena2['t'] ), (arena2['r'], arena2['b'] ), (0, 0, 0), 1)
 
 	# draw vertical meridians
 	deadZone=100
@@ -227,25 +249,25 @@ def drawMap(conecontours, lzrcontours, lzlcontours, img):
 #		print(f'num contours: {len(contours)}, discarded: {numcontours - len(contours)}')
 #	return contours
 
-def getObjectData(cones, lzr, lzl, frameWidth, frameHeight, pxpercm):
+def getObjectData(cones, padr, padl, frameWidth, frameHeight):
 	coneclass = 0
-	lzrclass  = 1
-	lzlclass  = 2
+	padrclass  = 1
+	padlclass  = 2
 	data = []
 	for contour in cones:
-		obj = calcDataFromContour(coneclass, contour, frameWidth, frameHeight, pxpercm)		
+		obj = calcDataFromContour(coneclass, contour, frameWidth, frameHeight)		
 		data.append(obj)
 
-	for contour in lzr:
-		obj = calcDataFromContour(lzrclass, contour, frameWidth, frameHeight, pxpercm)		
+	for contour in padr:
+		obj = calcDataFromContour(padrclass, contour, frameWidth, frameHeight)		
 		data.append(obj)
 		
-	for contour in lzl:
-		obj = calcDataFromContour(lzlclass, contour, frameWidth, frameHeight, pxpercm)		
+	for contour in padl:
+		obj = calcDataFromContour(padlclass, contour, frameWidth, frameHeight)		
 		data.append(obj)
 	return data
 
-def calcDataFromContour(cls, contour, frameWidth, frameHeight, pxperecm):
+def calcDataFromContour(cls, contour, frameWidth, frameHeight):
 	# calc area, center, radius in pixels
 	area = cv2.contourArea(contour)
 	peri = cv2.arcLength(contour, True)
@@ -262,25 +284,19 @@ def calcDataFromContour(cls, contour, frameWidth, frameHeight, pxperecm):
 	tw = round(w/frameWidth, 6)
 	th = round(h/frameHeight, 6)
 
-	# map coordinates in cm
-	mx = round(cx/pxpercm, 6)
-	my = round(cy/pxpercm, 6)
-	
 	obj = {
-		'x': x ,
-		'y': y ,
-		'w': w ,
-		'h': h ,
-		'r': r ,
-		'cx':cx,
-		'cy':cy,
-		'tx':tx,
+		'px': x ,  # pixels bounding box
+		'py': y ,
+		'pw': w ,
+		'ph': h ,
+		'pr': r ,
+		'pcx':cx,
+		'pcy':cy,
+		'tx':tx,  # training data, pct of frame, bounding box
 		'ty':ty,
 		'tw':tw,
 		'th':th,
-		'mx':mx,
-		'my':my,
-		'cl':cls
+		'cl':cls  # class 0:cone, 1:padr, 2:padl
 	}
 	return obj
 
@@ -306,40 +322,88 @@ def detectObjects(settings):
 	contours, _ = cv2.findContours(imgDilate, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
 	return contours, [imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate]
 
+def matchMap(data):
+	pass
+
 def buildMap(data):
-	# all map coordinates in mm, unless otherwise noted
-
-
-	# constants in mm
-	lzradius = 70
-	coneradius = 40
+	global pxlpermm
 
 	# conversion factors depend on camera height
-	eyesheight = 1000
-	pxlpermm = 2
-	mmperpxl = .5
+	pxlpermmat1m = 0.5964285714
+	pxlpermmat2m = 0.3071428571
+	if eyesheight == 1000:
+		pxlpermm = pxlpermmat1m
+	elif eyesheight == 2000:
+		pxlpermm = pxlpermmat2m
 
-	# arena (normally, center is 0,0)
-	arena = {
-		'cx':0,
-		'cy':0,
-		'w':0,
-		'h':0,
+	# find arena boundary and center in pixels
+	pxlarena = {
+		'l':frameWidth,
+		'r':0,
+		't':frameHeight,
+		'b':0,
 	}
+	for row in data:
+		if row['cl'] == 0:
+			pcx = row['pcx']
+			pcy = row['pcy']
+			if pcx < pxlarena['l']:
+				pxlarena['l'] = pcx
+			if pcx > pxlarena['r']:
+				pxlarena['r'] = pcx
+			if pcy < pxlarena['t']:
+				pxlarena['t'] = pcy
+			if pcy > pxlarena['b']:
+				pxlarena['b'] = pcy
+	a = arena_padding * pxlpermm
+	pxlarena['l'] -= a
+	pxlarena['t'] -= a
+	pxlarena['r'] += a
+	pxlarena['b'] += a
+	pxlarena['cx'] = pxlarena['l'] + ((pxlarena['r'] - pxlarena['l']) / 2)
+	pxlarena['cy'] = pxlarena['t'] + ((pxlarena['b'] - pxlarena['t']) / 2)
+	
+	# convert arena boundary and center to mm
+	arena = {}
+	arena['cx'] = 0  # arena center is null island
+	arena['cy'] = 0
+	arena['pcx'] = pxlarena['cx']
+	arena['pcy'] = pxlarena['cy']
+	arena['w'] = (pxlarena['r'] - pxlarena['l']) / pxlpermm
+	arena['h'] = (pxlarena['b'] - pxlarena['t']) / pxlpermm
+	arena['r'] = (arena['cx'] + (arena['w'] / 2)) #/ pxlpermm
+	arena['l'] = (arena['cx'] - (arena['w'] / 2)) #/ pxlpermm
+	arena['b'] = (arena['cy'] + (arena['h'] / 2)) #/ pxlpermm
+	arena['t'] = (arena['cy'] - (arena['h'] / 2)) #/ pxlpermm
+
+	# convert centers to mm
+	cones = []
+	pad = {}
+	for row in data:
+		cx = (row['pcx'] - pxlarena['cx']) / pxlpermm
+		cy = (row['pcy'] - pxlarena['cy']) / pxlpermm
+		if row['cl'] == 0:
+			cones.append((cx,cy))
+		elif row['cl'] == 1:
+			pad['rc'] = ((cx,cy))
+		elif row['cl'] == 2:
+			pad['lc'] = ((cx,cy))
 
 
+	pad['c'], pad['a'] = calcPad( pad['lc'], pad['rc'])
+	return arena, cones, pad
 
-	# centerpoint of each cone
-
-	# centerpoint and angle of landing zone
-
-
-
-	# all we need is the centerpoint for each cone. radius can be calculated from height.
-	# for landing zone, we need two rectangles
-	# this data can be used for training a neural net
-	# what is the name of this format?
-	pass
+def calcPad(ptr, ptl):
+	xl,yl = ptl
+	xr,yr = ptr
+	xc = xr - xl
+	yc = yr - yl
+	center = (xc,yc)
+	
+	dx = xr - xl
+	dy = yr - yl
+	slope = dy/dx
+	return center, slope
 
 def saveTrainingData(data,img):
 	fname = f'{outfolder}/sk8_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}'
@@ -356,9 +420,9 @@ def saveTrainingData(data,img):
 if debugCones:
 	openSettings(cone_settings, 'Cone')
 elif debugLzr:
-	openSettings(lzr_settings, 'LZR')
+	openSettings(padr_settings, 'LZR')
 elif debugLzl:
-	openSettings(lzl_settings, 'LZL')
+	openSettings(padl_settings, 'LZL')
 
 framenum = 0
 while True:
@@ -377,19 +441,18 @@ while True:
 	if debugCones:
 		readSettings( cone_settings, 'Cone')
 	elif debugLzr:
-		readSettings( lzr_settings, 'LZR')
+		readSettings( padr_settings, 'LZR')
 	elif debugLzl:
-		readSettings( lzl_settings, 'LZL')
+		readSettings( padl_settings, 'LZL')
 
 	conecontours, coneimages = detectObjects(cone_settings)
-	lzrcontours, lzrimages = detectObjects(lzr_settings)
-	lzlcontours, lzlimages = detectObjects(lzl_settings)
+	padrcontours, padrimages = detectObjects(padr_settings)
+	padlcontours, padlimages = detectObjects(padl_settings)
 
 	# reduce the contours to data
 
-	pxpercm = 10
-	data = getObjectData(conecontours, lzrcontours, lzlcontours, frameWidth, frameHeight, pxpercm)
-	buildMap(data)
+	data = getObjectData(conecontours, padrcontours, padlcontours, frameWidth, frameHeight)
+	arena, cones, pad = buildMap(data)
 	
 	if framenum % saventhframe == 0 or debugOnetime:
 		saveTrainingData(data, img)
@@ -397,11 +460,12 @@ while True:
 	# map: draw lines and circles and texts
 	imgMap = np.zeros((frameHeight, frameWidth, frameDepth), np.uint8) # blank image
 	imgMap.fill(255)
-	drawMap(conecontours, lzrcontours, lzlcontours, imgMap)
+	xdrawMap(conecontours, padrcontours, padlcontours, imgMap)
+	drawMap(arena, cones, pad, imgMap)
 
 	# final: draw map over original photo
 	imgFinal = img.copy()
-	drawMap(conecontours, lzrcontours, lzlcontours, imgFinal)
+	xdrawMap(conecontours, padrcontours, padlcontours, imgFinal)
 
 	# show the images
 	stack = stackImages(0.7,([img,imgMap,imgFinal]))
@@ -409,10 +473,10 @@ while True:
 		imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = coneimages
 		stack = stackImages(0.7,([img,imgHsv,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap,imgFinal]))
 	elif debugLzr:
-		imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = lzrimages
+		imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = padrimages
 		stack = stackImages(0.7,([img,imgHsv,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap,imgFinal]))
 	elif debugLzl:
-		imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = lzlimages
+		imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = padlimages
 		stack = stackImages(0.7,([img,imgHsv,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap,imgFinal]))
 	cv2.imshow('Image Processing', stack)
 
