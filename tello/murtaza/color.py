@@ -1,4 +1,15 @@
 'color.py - object detection by color'
+'''
+todo
+add home as inverted copy of initial pad
+fit arena to rotated rect
+superimpose map onto frame
+underimpose frame under map
+get working with tello camera
+get working with tello missions
+match frame to map
+
+'''
 import cv2
 import numpy as np
 from datetime import datetime
@@ -19,9 +30,9 @@ saventhframe = 10
 imgfolder = '../../imageprocessing/images/cones/train/'
 coneimg = 'helipad_and_3_cones.jpg'
 coneimg = 'IMG_20200623_174503.jpg'
-coneimg = 'sk8_2_meter.jpg'
 coneimg = 'sk8_1_meter.jpg'
-eyesheight = 1000
+coneimg = 'sk8_2_meter.jpg'
+eyesheight = 2000
 
 cone_radius = 40 # cone diameter is 8 cm
 pad_radius = 70  # pad is 14 cm square
@@ -83,8 +94,18 @@ frameWidth = 640
 frameHeight = 480
 pxlpermm = 0
 
+datalineheight = 22
+datalinemargin = 5
+datalinenum = 1
+
 def empty(a): # passed to trackbar
 	pass
+
+def showData(s):
+	global datalinenum
+	pt = (datalinemargin, datalineheight * datalinenum)
+	cv2.putText(imgData, s, pt, cv2.FONT_HERSHEY_SIMPLEX,.7,(0,0,0), 1)
+	datalinenum += 1
 
 def oneprint(s):
 	if debugOnetime:
@@ -170,59 +191,9 @@ def drawMap(arena, cones, pad, img):
 
 	cv2.circle(img,(px,py),r,(255,0,255),1)
 
-#	r = 200
-#	a = 45
-#	pt1, pt2, s = calcLine((px,py), r, a)
-#	cv2.circle(img,pt1,3,(255,0,255),1)
-#	cv2.putText(img, s, pt1, cv2.FONT_HERSHEY_COMPLEX, .7, (0,0,0), 1)
-#
-#	a = 0
-#	pt1, pt2, s = calcLine((px,py), r, a)
-#	cv2.circle(img,pt1,3,(255,0,255),1)
-#	cv2.putText(img, s, pt1, cv2.FONT_HERSHEY_COMPLEX, .7, (0,0,0), 1)
-#
-#	a = 270
-#	pt1, pt2, s = calcLine((px,py), r, a)
-#	cv2.circle(img,pt1,3,(255,0,255),1)
-#	cv2.putText(img, s, pt1, cv2.FONT_HERSHEY_COMPLEX, .7, (0,0,0), 1)
-#
-#	a = 180
-#	pt1, pt2, s = calcLine((px,py), r, a)
-#	cv2.circle(img,pt1,3,(255,0,255),1)
-#	cv2.putText(img, s, pt1, cv2.FONT_HERSHEY_COMPLEX, .7, (0,0,0), 1)
-#
-#	a = 90
-#	pt1, pt2, s = calcLine((px,py), r, a)
-#	cv2.circle(img,pt1,3,(255,0,255),1)
-#	cv2.putText(img, s, pt1, cv2.FONT_HERSHEY_COMPLEX, .7, (0,0,0), 1)
-#
-#	cv2.circle(img,(px,py),3,(255,0,255),1)
-
 	pt1, pt2,s = calcLine((px,py), r, a)
 	cv2.line(img,pt1,pt2,(255,0,255),1)
 	cv2.circle(img,pt1,3,(255,0,255),1)
-	cv2.putText(img, s, pt1, cv2.FONT_HERSHEY_COMPLEX, .7, (0,0,0), 1)
-#
-#	a = 180
-#	pt1, pt2 = calcLine((px,py), r, a)
-#	cv2.line(img,pt1,pt2,(255,0,255),1)
-#
-#	a = 270
-#	pt1, pt2 = calcLine((px,py), r, a)
-#	cv2.line(img,pt1,pt2,(255,0,255),1)
-#
-
-	#cv2.circle(img,pt2,5,(255,0,255),1)
-
-	#cv2.putText(img, str(a), (px,py), cv2.FONT_HERSHEY_COMPLEX, .7, (0,0,0), 1)
-
-#	box = cv2.boxPoints(pad['rrr'])
-#	box = np.int0(box)
-#	cv2.drawContours(img,[box],0,(255,0,255),1)
-#
-#	box = cv2.boxPoints(pad['lrr'])
-#	box = np.int0(box)
-#	cv2.drawContours(img,[box],0,(0,255,255),1)
 
 def calcLine(c,r,a):
 	h = np.radians(a)
@@ -239,147 +210,6 @@ def calcLine(c,r,a):
 	a = round(a)
 	s = f'{a} {lena} {lenb}'
 	return (x1,y1), (x2,y2), s 
-
-#def calcLine(c,r,a):
-#	a = np.tan(a)  # angle in degrees to slope as y/x ratio
-#
-#	# start with center point
-#	x = c[0]
-#	y = c[1]
-#
-#	# y = (a*x) + b   # linear equation: y = ax + b
-#	b = y - (a*x)     # solve for b, the y-intercept
-#
-#	# now we know a and b, we can find y for any value of x
-#
-#	#length^2 = (x2 - x)^2 + (y2 - y)^2    # pythagorean theorem
-#	length = r
-#
-#	# substitute linear equation for y2
-#	length^2 = (x2 - x)^2 + (((a * x2) + b) - y)^2
-#
-#	# solve for x2, two answers
-#	length^2 = a^2 + 2*a*x2 + x2^2 + b^2 - y^2 # apply binomial squares formula
-#	2*a*x2 + x2^2 = a^2 + b^2 - y^2 - length^2 # switch sides to isolate x2 on the left
-#
-#
-#	# squared binomial
-#	(x2 - x)^2 
-#	(x2 - x) * (x2 - x)
-#	x2*x2 - x2*x - x*x2 + x*x
-#	x2^2 + -2*x2*x + x^2
-#
-#	# squared trinomial incl binomial
-#	((a * x2) + b - y)^2
-#	(a * x2)^2 + b^2 - y^2
-#
-#	(a * x2)^2
-#	a^2 + 2*a*x2 + x2^2
-#
-#
-#	length^2 = a^2 + 2*a*x2 + x2^2 + b^2 - y^2
-#
-#
-#
-#	x = c[0] +100
-#	y = round((s * x) + r)
-#	pt2 = (x,y)
-#
-#
-#	pt1 = c
-#	return pt1, pt2
-
-def xdrawMap(conecontours, padrcontours, padlcontours, img):
-	# initialize the arena
-#	arena2 = {'l':frameWidth, 't':frameHeight, 'r':0, 'b':0}
-
-	# draw cones
-	for contour in conecontours:
-		# draw the contour
-		#cv2.drawContours(img, contour, -1, (255, 0, 255), 7)
-
-		# calculations
-		area = cv2.contourArea(contour)
-		peri = cv2.arcLength(contour, True)
-		approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
-		x, y, w, h = cv2.boundingRect(approx)
-		cx = int(x + (w / 2))
-		cy = int(y + (h / 2))
-
-		# draw bounding box 	
-#		cv2.rectangle(img, (x , y ), (x + w , y + h ), (0, 255, 0), 5)
-
-		# draw info texts: num points, area, x:y point
-#		cv2.putText(img, "Points: " + str(len(approx)), (x + w + 20, y + 20), cv2.FONT_HERSHEY_COMPLEX, .7,
-#					(0, 255, 0), 2)
-#		cv2.putText(img, "Area: " + str(int(area)), (x + w + 20, y + 45), cv2.FONT_HERSHEY_COMPLEX, 0.7,
-#					(0, 255, 0), 2)
-#		cv2.putText(img, " " + str(int(x))+ " "+str(int(y)), (x - 20, y- 45), cv2.FONT_HERSHEY_COMPLEX, 0.7,
-#					(0, 255, 0), 2)
-
-		# draw line from center point to contour
-#		cv2.line(img, (int(frameWidth/2),int(frameHeight/2)), (cx,cy),
-#				 (0, 0, 255), 3)
-
-		# enlarge the arena2 to include each contour
-#		if x < arena2['l']:
-#			arena2['l'] = x
-#		if y < arena2['t']:
-#			arena2['t'] = y
-#		if (x+w) > arena2['r']:
-#			arena2['r'] = x+w
-#		if (y+h) > arena2['b']:
-#			arena2['b'] = y+h
-
-		# draw a black circle around the cone
-#		cone_radius = 20
-#		cv2.circle(img,(cx,cy),cone_radius,(0,0,0),1)
-
-#	for contour in padrcontours:
-#		cv2.drawContours(img, contour, -1, (255, 0, 255), 7)
-#
-#	for contour in padlcontours:
-#		cv2.drawContours(img, contour, -1, (255, 0, 255), 7)
-
-	# draw the arena2
-#	arena2['l'] -= arena_margin;
-#	arena2['t'] -= arena_margin;
-#	arena2['r'] += arena_margin;
-#	arena2['b'] += arena_margin;
-#	cv2.rectangle(img, (arena2['l'], arena2['t'] ), (arena2['r'], arena2['b'] ), (0, 0, 0), 1)
-
-	# draw vertical meridians
-	deadZone=100
-	cv2.line(img,(int(frameWidth/2)-deadZone,0),(int(frameWidth/2)-deadZone,frameHeight),(255,255,0),3)
-	cv2.line(img,(int(frameWidth/2)+deadZone,0),(int(frameWidth/2)+deadZone,frameHeight),(255,255,0),3)
-
-	# draw center circle
-	cv2.circle(img,(int(frameWidth/2),int(frameHeight/2)),5,(0,0,255),5)
-
-	# draw horizontal parallels
-	cv2.line(img, (0,int(frameHeight / 2) - deadZone), (frameWidth,int(frameHeight / 2) - deadZone), (255, 255, 0), 3)
-	cv2.line(img, (0, int(frameHeight / 2) + deadZone), (frameWidth, int(frameHeight / 2) + deadZone), (255, 255, 0), 3)
-
-
-#def getContours(img):
-#	''' 
-#	contours - an array of shapes. 
-#		Each shape is an array of points making up the edge of the shape.
-#	hierarchy - irrelevant.  There are no cones within cones.	
-#	'''
-#	contours, hierarchy = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-#	numcontours = len(contours)
-#
-#	# throw away the small ones
-#	#for contour in contours:
-#	#	area = cv2.contourArea(contour)
-#	#	areaMin = cone_settings['area_min']
-#	#	if area < areaMin:
-#	#		contours.remove(contour)
-#
-#	if debugOnetime:
-#		print(f'num contours: {len(contours)}, discarded: {numcontours - len(contours)}')
-#	return contours
 
 def getObjectData(cones, padr, padl, frameWidth, frameHeight):
 	coneclass = 0
@@ -544,7 +374,7 @@ def buildMap(data):
 	angle = np.arctan(oh)
 	degrs = np.degrees(angle)
 	pad['a'] = degrs - 90 # we want angle to the y-axis instead of to the x-axis
-	oneprint(f"pad angle {pad['a']} vs {pad['a2']}")
+	showData(f"pad angle: {round(pad['a'])} vs {round(pad['a2'])}")
 	return arena, cones, pad
 
 def averageTwoPoints(ptr, ptl):
@@ -577,15 +407,21 @@ elif debugLzl:
 framenum = 0
 while True:
 	framenum += 1
+	datalinenum = 1
 
 	# img: the original photo or frame
 	#_, img = cap.read()
 	img = cv2.imread(imgfolder+coneimg, cv2.IMREAD_UNCHANGED)
-	oneprint(f'image dimenensions h:{img.shape[0]}, w:{img.shape[1]}, d:{img.shape[2]}')
+	frameHeight,frameWidth,frameDepth = img.shape
+
+	# data window
+	imgData = np.zeros((frameHeight, frameWidth, frameDepth), np.uint8) # blank image
+	imgData.fill(255)
+	s = f'image dim h:{frameHeight}, w:{frameWidth}, d:{frameDepth}'
+	showData(s)
 	# nexus: 720 x 540 x 3
 	# pixel: 720 x 405 x 3
 	# tello: ?
-	frameHeight,frameWidth,frameDepth = img.shape
 
 	# get settings from trackbars
 	if debugCones:
@@ -610,15 +446,16 @@ while True:
 	# map: draw lines and circles and texts
 	imgMap = np.zeros((frameHeight, frameWidth, frameDepth), np.uint8) # blank image
 	imgMap.fill(255)
-	xdrawMap(conecontours, padrcontours, padlcontours, imgMap)
+	#xdrawMap(conecontours, padrcontours, padlcontours, imgMap)
 	drawMap(arena, cones, pad, imgMap)
 
 	# final: draw map over original photo
 	imgFinal = img.copy()
-	xdrawMap(conecontours, padrcontours, padlcontours, imgFinal)
+	#xdrawMap(conecontours, padrcontours, padlcontours, imgFinal)
+	drawMap(arena, cones, pad, imgFinal)
 
 	# show the images
-	stack = stackImages(0.7,([img,imgMap,imgFinal]))
+	stack = stackImages(0.7,([imgMap,imgData,imgFinal]))
 	if debugCones:
 		imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = coneimages
 		stack = stackImages(0.7,([img,imgHsv,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap,imgFinal]))
