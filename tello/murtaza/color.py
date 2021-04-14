@@ -7,7 +7,7 @@ from datetime import datetime
 debugOnetime = True 
 debugOnetime = False 
 debugCones = False
-debugLzr = True
+debugLzr = False
 debugLzl = False
 
 
@@ -23,9 +23,10 @@ coneimg = 'sk8_2_meter.jpg'
 coneimg = 'sk8_1_meter.jpg'
 eyesheight = 1000
 
-coneradius = 40
-arena_padding = coneradius * 2  # turning radius. keep sk8 in the arena.
-arena_margin = coneradius
+cone_radius = 40 # cone diameter is 8 cm
+pad_radius = 70  # pad is 14 cm square
+arena_padding = cone_radius * 2  # turning radius. keep sk8 in the arena.
+arena_margin = cone_radius
 
 outfolder = '../../imageprocessing/images/cones/new/train/'
 
@@ -145,21 +146,152 @@ def navigate():
 		cv2.putText(img, " GO DOWN ", (20, 50), cv2.FONT_HERSHEY_COMPLEX, 1,(0, 0, 255), 3)
 
 def drawMap(arena, cones, pad, img):
+	# draw arena
 	pl = round(arena['pcx'] + (arena['l'] * pxlpermm))
 	pt = round(arena['pcy'] + (arena['t'] * pxlpermm))
 	pr = round(arena['pcx'] + (arena['r'] * pxlpermm))
 	pb = round(arena['pcy'] + (arena['b'] * pxlpermm))
-	cv2.rectangle(img, (pl,pt), (pr,pb), (0, 0, 0), 1)
+	cv2.rectangle(img, (pl,pt), (pr,pb), (127,0,0), 1)
 
-	print(arena['pcx'], arena['pcy'])
-	print(arena['l'], arena['t'])
-	print(arena['r'], arena['b'])
-	print(pl,pt)
-	print(pr,pb)
+	# draw cones
+	r = round(cone_radius * pxlpermm)
+	for cone in cones:
+		px = round(arena['pcx'] + (cone[0] * pxlpermm))
+		py = round(arena['pcy'] + (cone[1] * pxlpermm))
+		cv2.circle(img,(px,py),r,(0,0,255),1)
+
+	# draw pad
+	r = round(pad_radius * pxlpermm)
+	px = round(arena['pcx'] + (pad['c'][0] * pxlpermm))
+	py = round(arena['pcy'] + (pad['c'][1] * pxlpermm))
+	cv2.circle(img,(px,py),r,(255,0,255),1)
+
+	a = pad['a']
+
+	cv2.circle(img,(px,py),r,(255,0,255),1)
+
+#	r = 200
+#	a = 45
+#	pt1, pt2, s = calcLine((px,py), r, a)
+#	cv2.circle(img,pt1,3,(255,0,255),1)
+#	cv2.putText(img, s, pt1, cv2.FONT_HERSHEY_COMPLEX, .7, (0,0,0), 1)
+#
+#	a = 0
+#	pt1, pt2, s = calcLine((px,py), r, a)
+#	cv2.circle(img,pt1,3,(255,0,255),1)
+#	cv2.putText(img, s, pt1, cv2.FONT_HERSHEY_COMPLEX, .7, (0,0,0), 1)
+#
+#	a = 270
+#	pt1, pt2, s = calcLine((px,py), r, a)
+#	cv2.circle(img,pt1,3,(255,0,255),1)
+#	cv2.putText(img, s, pt1, cv2.FONT_HERSHEY_COMPLEX, .7, (0,0,0), 1)
+#
+#	a = 180
+#	pt1, pt2, s = calcLine((px,py), r, a)
+#	cv2.circle(img,pt1,3,(255,0,255),1)
+#	cv2.putText(img, s, pt1, cv2.FONT_HERSHEY_COMPLEX, .7, (0,0,0), 1)
+#
+#	a = 90
+#	pt1, pt2, s = calcLine((px,py), r, a)
+#	cv2.circle(img,pt1,3,(255,0,255),1)
+#	cv2.putText(img, s, pt1, cv2.FONT_HERSHEY_COMPLEX, .7, (0,0,0), 1)
+#
+#	cv2.circle(img,(px,py),3,(255,0,255),1)
+
+	pt1, pt2,s = calcLine((px,py), r, a)
+	cv2.line(img,pt1,pt2,(255,0,255),1)
+	cv2.circle(img,pt1,3,(255,0,255),1)
+	cv2.putText(img, s, pt1, cv2.FONT_HERSHEY_COMPLEX, .7, (0,0,0), 1)
+#
+#	a = 180
+#	pt1, pt2 = calcLine((px,py), r, a)
+#	cv2.line(img,pt1,pt2,(255,0,255),1)
+#
+#	a = 270
+#	pt1, pt2 = calcLine((px,py), r, a)
+#	cv2.line(img,pt1,pt2,(255,0,255),1)
+#
+
+	#cv2.circle(img,pt2,5,(255,0,255),1)
+
+	#cv2.putText(img, str(a), (px,py), cv2.FONT_HERSHEY_COMPLEX, .7, (0,0,0), 1)
+
+#	box = cv2.boxPoints(pad['rrr'])
+#	box = np.int0(box)
+#	cv2.drawContours(img,[box],0,(255,0,255),1)
+#
+#	box = cv2.boxPoints(pad['lrr'])
+#	box = np.int0(box)
+#	cv2.drawContours(img,[box],0,(0,255,255),1)
+
+def calcLine(c,r,a):
+	h = np.radians(a)
+	#a = np.tan(a)  # angle in degrees to slope as y/x ratio
+	lenc = r
+	lenb = round(np.sin(h) * lenc) # opposite
+	lena = round(np.cos(h) * lenc) # adjacent
+	x = c[0]
+	y = c[1]
+	x1 = x + lena
+	y1 = y + lenb
+	x2 = x - lena
+	y2 = y - lenb
+	a = round(a)
+	s = f'{a} {lena} {lenb}'
+	return (x1,y1), (x2,y2), s 
+
+#def calcLine(c,r,a):
+#	a = np.tan(a)  # angle in degrees to slope as y/x ratio
+#
+#	# start with center point
+#	x = c[0]
+#	y = c[1]
+#
+#	# y = (a*x) + b   # linear equation: y = ax + b
+#	b = y - (a*x)     # solve for b, the y-intercept
+#
+#	# now we know a and b, we can find y for any value of x
+#
+#	#length^2 = (x2 - x)^2 + (y2 - y)^2    # pythagorean theorem
+#	length = r
+#
+#	# substitute linear equation for y2
+#	length^2 = (x2 - x)^2 + (((a * x2) + b) - y)^2
+#
+#	# solve for x2, two answers
+#	length^2 = a^2 + 2*a*x2 + x2^2 + b^2 - y^2 # apply binomial squares formula
+#	2*a*x2 + x2^2 = a^2 + b^2 - y^2 - length^2 # switch sides to isolate x2 on the left
+#
+#
+#	# squared binomial
+#	(x2 - x)^2 
+#	(x2 - x) * (x2 - x)
+#	x2*x2 - x2*x - x*x2 + x*x
+#	x2^2 + -2*x2*x + x^2
+#
+#	# squared trinomial incl binomial
+#	((a * x2) + b - y)^2
+#	(a * x2)^2 + b^2 - y^2
+#
+#	(a * x2)^2
+#	a^2 + 2*a*x2 + x2^2
+#
+#
+#	length^2 = a^2 + 2*a*x2 + x2^2 + b^2 - y^2
+#
+#
+#
+#	x = c[0] +100
+#	y = round((s * x) + r)
+#	pt2 = (x,y)
+#
+#
+#	pt1 = c
+#	return pt1, pt2
 
 def xdrawMap(conecontours, padrcontours, padlcontours, img):
 	# initialize the arena
-	arena2 = {'l':frameWidth, 't':frameHeight, 'r':0, 'b':0}
+#	arena2 = {'l':frameWidth, 't':frameHeight, 'r':0, 'b':0}
 
 	# draw cones
 	for contour in conecontours:
@@ -175,46 +307,46 @@ def xdrawMap(conecontours, padrcontours, padlcontours, img):
 		cy = int(y + (h / 2))
 
 		# draw bounding box 	
-		cv2.rectangle(img, (x , y ), (x + w , y + h ), (0, 255, 0), 5)
+#		cv2.rectangle(img, (x , y ), (x + w , y + h ), (0, 255, 0), 5)
 
 		# draw info texts: num points, area, x:y point
-		cv2.putText(img, "Points: " + str(len(approx)), (x + w + 20, y + 20), cv2.FONT_HERSHEY_COMPLEX, .7,
-					(0, 255, 0), 2)
-		cv2.putText(img, "Area: " + str(int(area)), (x + w + 20, y + 45), cv2.FONT_HERSHEY_COMPLEX, 0.7,
-					(0, 255, 0), 2)
-		cv2.putText(img, " " + str(int(x))+ " "+str(int(y)), (x - 20, y- 45), cv2.FONT_HERSHEY_COMPLEX, 0.7,
-					(0, 255, 0), 2)
+#		cv2.putText(img, "Points: " + str(len(approx)), (x + w + 20, y + 20), cv2.FONT_HERSHEY_COMPLEX, .7,
+#					(0, 255, 0), 2)
+#		cv2.putText(img, "Area: " + str(int(area)), (x + w + 20, y + 45), cv2.FONT_HERSHEY_COMPLEX, 0.7,
+#					(0, 255, 0), 2)
+#		cv2.putText(img, " " + str(int(x))+ " "+str(int(y)), (x - 20, y- 45), cv2.FONT_HERSHEY_COMPLEX, 0.7,
+#					(0, 255, 0), 2)
 
 		# draw line from center point to contour
-		cv2.line(img, (int(frameWidth/2),int(frameHeight/2)), (cx,cy),
-				 (0, 0, 255), 3)
+#		cv2.line(img, (int(frameWidth/2),int(frameHeight/2)), (cx,cy),
+#				 (0, 0, 255), 3)
 
 		# enlarge the arena2 to include each contour
-		if x < arena2['l']:
-			arena2['l'] = x
-		if y < arena2['t']:
-			arena2['t'] = y
-		if (x+w) > arena2['r']:
-			arena2['r'] = x+w
-		if (y+h) > arena2['b']:
-			arena2['b'] = y+h
+#		if x < arena2['l']:
+#			arena2['l'] = x
+#		if y < arena2['t']:
+#			arena2['t'] = y
+#		if (x+w) > arena2['r']:
+#			arena2['r'] = x+w
+#		if (y+h) > arena2['b']:
+#			arena2['b'] = y+h
 
 		# draw a black circle around the cone
-		cone_radius = 20
-		cv2.circle(img,(cx,cy),cone_radius,(0,0,0),1)
+#		cone_radius = 20
+#		cv2.circle(img,(cx,cy),cone_radius,(0,0,0),1)
 
-	for contour in padrcontours:
-		cv2.drawContours(img, contour, -1, (255, 0, 255), 7)
-
-	for contour in padlcontours:
-		cv2.drawContours(img, contour, -1, (255, 0, 255), 7)
+#	for contour in padrcontours:
+#		cv2.drawContours(img, contour, -1, (255, 0, 255), 7)
+#
+#	for contour in padlcontours:
+#		cv2.drawContours(img, contour, -1, (255, 0, 255), 7)
 
 	# draw the arena2
-	arena2['l'] -= arena_margin;
-	arena2['t'] -= arena_margin;
-	arena2['r'] += arena_margin;
-	arena2['b'] += arena_margin;
-	cv2.rectangle(img, (arena2['l'], arena2['t'] ), (arena2['r'], arena2['b'] ), (0, 0, 0), 1)
+#	arena2['l'] -= arena_margin;
+#	arena2['t'] -= arena_margin;
+#	arena2['r'] += arena_margin;
+#	arena2['b'] += arena_margin;
+#	cv2.rectangle(img, (arena2['l'], arena2['t'] ), (arena2['r'], arena2['b'] ), (0, 0, 0), 1)
 
 	# draw vertical meridians
 	deadZone=100
@@ -278,6 +410,9 @@ def calcDataFromContour(cls, contour, frameWidth, frameHeight):
 	r = max(w,h)/2
 	#r = math.sqrt(a/np.pi())
 
+	# rotated rectangle, for pad
+	rr = cv2.minAreaRect(contour) # (cx,cy), (w,h), angle
+
 	# training data: percentage of image
 	tx = round(x/frameWidth, 6)
 	ty = round(y/frameHeight, 6)
@@ -296,6 +431,7 @@ def calcDataFromContour(cls, contour, frameWidth, frameHeight):
 		'ty':ty,
 		'tw':tw,
 		'th':th,
+		'rr':rr,
 		'cl':cls  # class 0:cone, 1:padr, 2:padl
 	}
 	return obj
@@ -386,25 +522,39 @@ def buildMap(data):
 			cones.append((cx,cy))
 		elif row['cl'] == 1:
 			pad['rc'] = ((cx,cy))
+			pad['ra'] = row['rr'][2]
+			pad['rrr'] = row['rr']
 		elif row['cl'] == 2:
 			pad['lc'] = ((cx,cy))
+			pad['la'] = row['rr'][2]
+			pad['lrr'] = row['rr']
 
+	# combine pad r and l center
+	pad['c'] = averageTwoPoints(pad['lc'], pad['rc'])
 
-	pad['c'], pad['a'] = calcPad( pad['lc'], pad['rc'])
+	# pad angle per contour rotated rect
+	pad['a2'] = (pad['la'] + pad['ra']) / 2
+
+	# pad angle per trig between the r and l centers
+	x1,y1 = pad['lc']
+	x2,y2 = pad['rc']
+	lenx = x2 - x1
+	leny = y2 - y1
+	oh = leny/lenx
+	angle = np.arctan(oh)
+	degrs = np.degrees(angle)
+	pad['a'] = degrs - 90 # we want angle to the y-axis instead of to the x-axis
+	oneprint(f"pad angle {pad['a']} vs {pad['a2']}")
 	return arena, cones, pad
 
-def calcPad(ptr, ptl):
-	xl,yl = ptl
-	xr,yr = ptr
-	xc = xr - xl
-	yc = yr - yl
-	center = (xc,yc)
+def averageTwoPoints(ptr, ptl):
+	cxl,cyl = ptl
+	cxr,cyr = ptr
+	cxc = cxl + ((cxr - cxl) / 2)
+	cyc = cyl + ((cyr - cyl) / 2)
+	center = (cxc,cyc)
+	return center
 	
-	dx = xr - xl
-	dy = yr - yl
-	slope = dy/dx
-	return center, slope
-
 def saveTrainingData(data,img):
 	fname = f'{outfolder}/sk8_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}'
 	imgname = f'{fname}.jpg'
