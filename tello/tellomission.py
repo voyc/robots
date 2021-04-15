@@ -1,5 +1,8 @@
 '''
 tellomisson.py
+connect to all three sockets
+fly one or more missions
+quit,  no loop
 '''
 
 import socket
@@ -199,6 +202,10 @@ def videoLoop():
 		#gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
 		gray = frame
 
+		# detect objects, build  map, draw map
+		data = color.processImage(frame)
+		color.buildMap(data)
+
 		# Display the resulting frame
 		cv.imshow('frame', gray)
 		if cv.waitKey(1) == ord('q'):
@@ -236,6 +243,12 @@ def stop():
 		video_stream.release()
 	log ('eyes shutdown')
 	quit()
+
+def processImage(frame):
+	return {}
+
+def buildMap(data):
+	pass
 
 # start
 mode = 'prod'
@@ -286,62 +299,3 @@ if cmd == 'ok':
 # stop 
 stop()
 quit()
-
-
-# # send user commands from keyboard
-# while True: 
-#     try:
-#         msg = input("");
-#         if not msg or 'quit' in msg:
-#             break
-#         msg = msg.encode(encoding="utf-8") 
-#         sent = sock.sendto(msg, cmd_address)
-#         log( sent);
-#     except KeyboardInterrupt:
-#         break
-
-# function to receive string of video data
-#https://github.com/dji-sdk/Tello-Python/blob/master/Tello_Video/tello.py
-#import libh264decoder
-#video_decoder = libh264decoder.H264Decoder()
-#videosock = False
-#videosock_timeout = 10 
-#video_address = ('',11111)
-#if videosock:
-#	videosock.close()
-#def videoLoopH264():
-#	global video, video_thread_status, video_thread
-#	count = 0
-#	dat = b''
-#	dumpVideoBuffer(videosock)
-#	while True: 
-#		if video_thread_status == 'stopping':
-#			break;
-#
-#		try:
-#	        	seg, addr = videosock.recvfrom(video_maxlen)
-#		except Exception as ex:
-#			log ('Video recvfrom failed: ' + str(ex))
-#			break
-#
-#		count += 1
-#		#if count%10 == 0:
-#		#	storeVideo(data)
-#
-#		if struct.unpack("B", seg[0:1])[0] > 1:
-#			dat += seg[1:]
-#		else:
-#			dat += seg[1:]
-#			log('count ' + str(count))
-#			log('len seg ' + str(len(seg)))
-#			log('addr ' + str(addr))
-#			#img = cv.imdecode(np.fromstring(dat, dtype=np.uint8), 1)
-#			img = cv.imdecode(np.frombuffer(dat, dtype=np.uint8), 1)
-#			cv.imshow('frame', img)
-#			if cv.waitKey(1) & 0xFF == ord('q'):
-#				#break
-#				video_thread_state == 'stopping'
-#			dat = b''
-#
-#	# When everything done, release the capture
-#	cv.destroyAllWindows()
