@@ -1,130 +1,126 @@
-'color.py - object detection by color'
 '''
+hippocamapus.py - object detection by color
 todo
-fix pad angle, 2 meter is upside down
+get working with tello camera
+get working with tello missions
 add home as inverted copy of initial pad
 fit arena to rotated rect
 superimpose map onto frame
 underimpose frame under map
-get working with tello camera
-get working with tello missions
 match frame to map
-
 '''
 import cv2
 import numpy as np
 from datetime import datetime
 
 class Hippocampus:
-	# global constants
-	debugUI = True
-	debugSaveTrain = False
-	debugOnetime = False 
-	debugCones = False
-	debugLzr = False
-	debugLzl = False
+	def __init__(self, ui, saveTrain):
+		self.ui = ui
+		self.saveTrain = saveTrain
 
-	datalineheight = 22
-	datalinemargin = 5
+		# settings
+		self.debugCones = False 
+		self.debugLzr = False
+		self.debugLzl =  False
+		self.datalineheight = 22
+		self.datalinemargin = 5
+		self.saventhframe = 10
+		self.outfolder = '../imageprocessing/images/cones/new/train/'
+		self.cone_radius = 40    # cone diameter is 8 cm
+		self.pad_radius = 70     # pad is 14 cm square
+		self.arena_padding = 80  # turning radius. keep sk8 in the arena.
+		self.arena_margin = 40
+		self.barmax = {
+			'hue_min'  : 255,
+			'hue_max'  : 255,
+			'sat_min'  : 255,
+			'sat_max'  : 255,
+			'val_min'  : 255,
+			'val_max'  : 255,
+			'canny_lo' : 255,
+			'canny_hi' : 255,
+			'area_min' : 3000
+		}
+		self.cone_settings = {
+			'hue_min'  : 0,
+			'hue_max'  : 8,
+			'sat_min'  : 107,
+			'sat_max'  : 255,
+			'val_min'  : 89,
+			'val_max'  : 255,
+			'canny_lo' : 82,
+			'canny_hi' : 127,  # Canny recommended a upper:lower ratio between 2:1 and 3:1.
+			'area_min' : 324,  # min area (size) of contour
+		}
+		self.padr_settings = {
+			'hue_min'  : 130, #122,
+			'hue_max'  : 170, #166,
+			'sat_min'  : 45,  #37,
+			'sat_max'  : 118, #96,
+			'val_min'  : 115, #71,
+			'val_max'  : 255, #192, #146,
+			'canny_lo' : 82,
+			'canny_hi' : 127,
+			'area_min' : 324,
+		}
+		self.padl_settings = {
+			'hue_min'  : 26,
+			'hue_max'  : 53,
+			'sat_min'  : 107,
+			'sat_max'  : 255,
+			'val_min'  : 104,
+			'val_max'  : 245,
+			'canny_lo' : 82,
+			'canny_hi' : 127,
+			'area_min' : 324,
+		}
 
-	saventhframe = 10
-	outfolder = '../imageprocessing/images/cones/new/train/'
+		# variables
+		self.framenum = 0        # tello    nexus    pixel     
+		self.frameWidth  = 0     #     ?      720      720
+		self.frameHeight = 0     #     ?      540      405
+		self.frameDepth  = 0     #     ?        3        3
+		self.camera_height = 0
+		self.pxlpermm = 0
+		self.imgLog = False
+		self.log_texts = []
+		self.debugImages = []
+	
+	def openUI(self):
+		if self.ui:
+			if self.debugCones:
+				self.openSettings(self.cone_settings, 'Cone')
+			elif self.debugLzr:
+				self.openSettings(self.padr_settings, 'LZR')
+			elif self.debugLzl:
+				self.openSettings(self.padl_settings, 'LZL')
 
-	#cap = cv2.VideoCapture(1)
-	#cap.set(3, frameWidth)
-	#cap.set(4, frameHeight)
-	
-	imgfolder = '../imageprocessing/images/cones/train/'
-	coneimg = 'helipad_and_3_cones.jpg'
-	coneimg = 'IMG_20200623_174503.jpg'
-	coneimg = 'sk8_2_meter.jpg'
-	coneimg = 'sk8_1_meter.jpg'
-	eyesheight = 1000
-	
-	cone_radius = 40 # cone diameter is 8 cm
-	pad_radius = 70  # pad is 14 cm square
-	arena_padding = cone_radius * 2  # turning radius. keep sk8 in the arena.
-	arena_margin = cone_radius
-	
-	
-	barmax = {
-		'hue_min'  : 255,
-		'hue_max'  : 255,
-		'sat_min'  : 255,
-		'sat_max'  : 255,
-		'val_min'  : 255,
-		'val_max'  : 255,
-		'canny_lo' : 255,
-		'canny_hi' : 255,
-		'area_min' : 3000
-	}
-	
-	cone_settings = {
-		'hue_min'  : 0,
-		'hue_max'  : 8,
-		'sat_min'  : 107,
-		'sat_max'  : 255,
-		'val_min'  : 89,
-		'val_max'  : 255,
-		'canny_lo' : 82,
-		'canny_hi' : 127,  # Canny recommended a upper:lower ratio between 2:1 and 3:1.
-		'area_min' : 324,  # min area (size) of contour
-	}
-	
-	padr_settings = {
-		'hue_min'  : 130, #122,
-		'hue_max'  : 170, #166,
-		'sat_min'  : 45,  #37,
-		'sat_max'  : 118, #96,
-		'val_min'  : 115, #71,
-		'val_max'  : 255, #192, #146,
-		'canny_lo' : 82,
-		'canny_hi' : 127,
-		'area_min' : 324,
-	}
-	
-	padl_settings = {
-		'hue_min'  : 26,
-		'hue_max'  : 53,
-		'sat_min'  : 107,
-		'sat_max'  : 255,
-		'val_min'  : 104,
-		'val_max'  : 245,
-		'canny_lo' : 82,
-		'canny_hi' : 127,
-		'area_min' : 324,
-	}
-	
-	# working variables
+	def closeUI(self):
+		if self.ui:
+			cv2.destroyAllWindows()
 
-	# map orienteering and UI drawing
-	frameWidth = 640
-	frameHeight = 480
-	pxlpermm = 0  # conversion factor, depending on eyesheight
+	def log(self,s):
+		self.log_texts.append(s)
 	
-	imgData = False
-	datalinenum = 1
-	
-	def empty(a): # passed to trackbar
-		pass
-	
-	def showData(self,s):
-		pt = (self.datalinemargin, self.datalineheight * self.datalinenum)
-		cv2.putText(self.imgData, s, pt, cv2.FONT_HERSHEY_SIMPLEX,.7,(0,0,0), 1)
-		self.datalinenum += 1
-	
-	def oneprint(s):
-		if self.debugOnetime:
-			print(s)
+	def drawLog(self):
+		linenum = 1
+		for s in self.log_texts:
+			pt = (self.datalinemargin, self.datalineheight * linenum)
+			cv2.putText(self.imgLog, s, pt, cv2.FONT_HERSHEY_SIMPLEX,.7,(0,0,0), 1)
+			linenum += 1
+		self.log_texts = []
 	
 	def openSettings(self, settings, name):
+		def empty(a): # passed to trackbar
+			pass
+	
 		window_name = f'{name} Settings'
 		cv2.namedWindow( window_name)
 		cv2.resizeWindow( window_name,640,240)
 		for setting in settings:
-			cv2.createTrackbar(setting, window_name, settings[setting], barmax[setting],empty)
+			cv2.createTrackbar(setting, window_name, settings[setting], self.barmax[setting],empty)
 	
-	def readSettings( settings, name):
+	def readSettings(self, settings, name):
 		window_name = f'{name} Settings'
 		for setting in settings:
 			settings[setting] = cv2.getTrackbarPos(setting, window_name)
@@ -160,18 +156,6 @@ class Hippocampus:
 			ver = hor
 		return ver
 	
-	def navigate():
-		# draw text nav recommendation
-		deadZone=100
-		if (cx < int(self.frameWidth/2)-deadZone):
-			cv2.putText(img, " GO LEFT " , (20, 50), cv2.FONT_HERSHEY_COMPLEX,1,(0, 0, 255), 3)
-		elif (cx > int(self.frameWidth / 2) + deadZone):
-			cv2.putText(img, " GO RIGHT ", (20, 50), cv2.FONT_HERSHEY_COMPLEX,1,(0, 0, 255), 3)
-		elif (cy < int(self.frameHeight / 2) - deadZone):
-			cv2.putText(img, " GO UP ", (20, 50), cv2.FONT_HERSHEY_COMPLEX,1,(0, 0, 255), 3)
-		elif (cy > int(self.frameHeight / 2) + deadZone):
-			cv2.putText(img, " GO DOWN ", (20, 50), cv2.FONT_HERSHEY_COMPLEX, 1,(0, 0, 255), 3)
-	
 	def drawMap(self, arena, cones, pad, img):
 		# draw arena
 		pl = round(arena['pcx'] + (arena['l'] * self.pxlpermm))
@@ -194,7 +178,7 @@ class Hippocampus:
 		cv2.circle(img,(px,py),r,(255,0,255),1)  # outer perimeter
 		pt1, pt2 = self.calcLine((px,py), r, pad['a'])
 		cv2.line(img,pt1,pt2,(255,0,255),1)  # center axis
-		pt = pt1 if pt1[0] > pt2[0] else pt2 # which end is up?
+		pt = pt1 if pt1[0] < pt2[0] else pt2 # which end is up?
 		cv2.circle(img,pt,3,(255,0,255),1)   # arrow pointing forward
 	
 	def calcLine(self,c,r,a):
@@ -209,9 +193,33 @@ class Hippocampus:
 		y1 = y + lenb
 		x2 = x - lena
 		y2 = y - lenb
-		#self.showData(f'{round(a)} {lena} {lenb}')
+		#self.log(f'{round(a)} {lena} {lenb}')
 		return (x1,y1), (x2,y2) 
 	
+	def drawUI(self, img):
+		if self.ui:
+			# map
+			imgMap = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
+			imgMap.fill(255)
+			self.drawMap(self.arena, self.cones, self.pad, imgMap)
+		
+			# frame overlaid with oriented map
+			imgFinal = img.copy()
+			self.drawMap(self.arena, self.cones, self.pad, imgFinal)
+
+			# log
+			self.imgLog = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
+			self.imgLog.fill(255)
+			self.drawLog()
+	
+			stack = self.stackImages(0.7,([imgMap,self.imgLog,imgFinal]))
+			if self.debugCones or self.debugLzr or self.debugLzl:
+				imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = self.debugImages
+				stack = self.stackImages(0.7,([self.imgLog,imgHsv,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap,imgFinal]))
+			cv2.imshow('Image Processing', stack)
+
+	# end UI section, begin image processing section
+
 	def getObjectData(self, cones, padr, padl):
 		coneclass = 0
 		padrclass  = 1
@@ -238,8 +246,7 @@ class Hippocampus:
 		x, y, w, h = cv2.boundingRect(approx)
 		cx = int(x + (w / 2))
 		cy = int(y + (h / 2))
-		r = max(w,h)/2
-		#r = math.sqrt(a/np.pi())
+		r = max(w,h)/2  # or r = math.sqrt(a/np.pi())
 	
 		# rotated rectangle, for pad
 		rr = cv2.minAreaRect(contour) # (cx,cy), (w,h), angle
@@ -287,23 +294,28 @@ class Hippocampus:
 	
 		# get a data array of polygons, one contour boundary for each object
 		contours, _ = cv2.findContours(imgDilate, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-		return contours, [imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate]
+		self.debugImages = [imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate]
+		return contours
 	
 	def matchMap(data):
 		pass
 	
-	def calcConversionFactor(self, eyesheight):
-		pxlpermmat1m = 0.5964285714
-		pxlpermmat2m = 0.3071428571
-		if self.eyesheight == 1000:
-			pxlpermm = pxlpermmat1m
-		elif self.eyesheight == 2000:
-			pxlpermm = pxlpermmat2m
-		return pxlpermm
-
 	def buildMap(self, data):
-
-		self.pxlpermm = self.calcConversionFactor(self.eyesheight)
+		# get average cone diameter in pixels
+		diam = []
+		for row in data:
+			if row['cl'] == 0:
+				diam.append(row['ph'])
+				diam.append(row['pw'])
+		pxlConeWidth = sum(diam) / len(diam)
+	
+		# calc conversion factor
+		mmConeWidth = self.cone_radius * 2
+		self.pxlpermm = pxlConeWidth / mmConeWidth
+		self.log(f'pxl per mm: {self.pxlpermm}')
+		self.log(f'camera height: {self.camera_height}')
+		# pxlpermmat1m = 0.5964285714
+		# pxlpermmat2m = 0.3071428571
 
 		# find arena boundary and center in pixels
 		pxlarena = {
@@ -377,7 +389,7 @@ class Hippocampus:
 		angle = np.arctan(oh)
 		degrs = np.degrees(angle)
 		pad['a'] = degrs - 90 # we want angle to the y-axis instead of to the x-axis
-		self.showData(f"pad angle: {round(pad['a'])} vs {round(pad['a2'])}")
+		self.log(f"pad angle: {round(pad['a'])} vs {round(pad['a2'])}")
 
 
 		return arena, cones, pad
@@ -391,43 +403,40 @@ class Hippocampus:
 		return center
 		
 	def saveTrainingData(self,data,img):
-		fname = f'{self.outfolder}/sk8_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}'
-		imgname = f'{fname}.jpg'
-		txtname = f'{fname}.txt'
-		cv2.imwrite(imgname,img)
-		f = open(txtname, 'a')
-		for row in data:
-			f.write(f"{row['cl']} {row['tx']} {row['ty']} {row['tw']} {row['th']}\n")
-		f.close()
-
-	def openUI(self):
-		if self.debugUI:
-			if self.debugCones:
-				self.openSettings(cone_settings, 'Cone')
-			elif self.debugLzr:
-				self.openSettings(padr_settings, 'LZR')
-			elif self.debugLzl:
-				self.openSettings(padl_settings, 'LZL')
-
-	def closeUI(self):
-		if self.debugUI:
-			pass
+		if self.saveTrain and self.framenum % self.saventhframe == 0:
+			fname = f'{self.outfolder}/sk8_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}'
+			imgname = f'{fname}.jpg'
+			txtname = f'{fname}.txt'
+			cv2.imwrite(imgname,img)
+			f = open(txtname, 'a')
+			for row in data:
+				f.write(f"{row['cl']} {row['tx']} {row['ty']} {row['tw']} {row['th']}\n")
+			f.close()
 
 	def start(self):
-		pass
+		self.openUI()
 
 	def stop(self):
-		#cap.release()
-		if self.debugUI:
-			cv2.destroyAllWindows()
+		self.closeUI()
 
-	def processFrame(self,img, framenum):
-		# build and/or orient map
+	def processFrame(self,img):
+		self.framenum += 1
+		self.frameHeight,self.frameWidth,self.frameDepth = img.shape
+		self.log(f'image dim h:{self.frameHeight}, w:{self.frameWidth}, d:{self.frameDepth}')
+
+		# get settings from trackbars
+		if self.ui:
+			if self.debugCones:
+				self.readSettings( self.cone_settings, 'Cone')
+			elif self.debugLzr:
+				self.readSettings( self.padr_settings, 'LZR')
+			elif self.debugLzl:
+				self.readSettings( self.padl_settings, 'LZL')
 
 		# find contors
-		conecontours, coneimages = self.detectObjects(img, self.cone_settings)
-		padrcontours, padrimages = self.detectObjects(img, self.padr_settings)
-		padlcontours, padlimages = self.detectObjects(img, self.padl_settings)
+		conecontours = self.detectObjects(img, self.cone_settings)
+		padrcontours = self.detectObjects(img, self.padr_settings)
+		padlcontours = self.detectObjects(img, self.padl_settings)
 	
 		# reduce the contours to pixel data
 		data = self.getObjectData(conecontours, padrcontours, padlcontours)
@@ -435,74 +444,35 @@ class Hippocampus:
 		# convert pixel data to map coordinates
 		self.arena, self.cones, self.pad = self.buildMap(data)
 		
-		# save data for mission debriefing and analysis
+		# orient frame to map
 
-		# save training img and data, for possible future use in training nn
-		if self.debugSaveTrain:
-			if framenum % self.saventhframe == 0:
-				self.saveTrainingData(data, img)
+		# save data for mission debriefing and neural net training
+		self.saveTrainingData(data, img)
 
-	def run(self):
-		self.openUI()
-	
-		framenum = 0
-		while True:
-			framenum += 1
-			self.datalinenum = 1
-		
-			# img: the original photo or frame
-			#_, img = cap.read()
-			img = cv2.imread(self.imgfolder+self.coneimg, cv2.IMREAD_UNCHANGED)
-			self.frameHeight,self.frameWidth,self.frameDepth = img.shape
-		
-			# data window
-			self.imgData = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
-			self.imgData.fill(255)
-			s = f'image dim h:{self.frameHeight}, w:{self.frameWidth}, d:{self.frameDepth}'
-			self.showData(s)
-			# nexus: 720 x 540 x 3
-			# pixel: 720 x 405 x 3
-			# tello: ?
-		
-			# get settings from trackbars
-			if self.debugUI:
-				if self.debugCones:
-					readSettings( self.cone_settings, 'Cone')
-				elif self.debugLzr:
-					readSettings( self.padr_settings, 'LZR')
-				elif self.debugLzl:
-					readSettings( self.padl_settings, 'LZL')
-
-			self.processFrame(img, framenum)
-		
-			# map: draw lines and circles and texts
-			imgMap = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
-			imgMap.fill(255)
-			self.drawMap(self.arena, self.cones, self.pad, imgMap)
-		
-			# final: draw map over original photo
-			imgFinal = img.copy()
-			self.drawMap(self.arena, self.cones, self.pad, imgFinal)
-		
-			# show the images
-			if self.debugUI:
-				stack = self.stackImages(0.7,([imgMap,self.imgData,imgFinal]))
-				if self.debugCones:
-					imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = coneimages
-					stack = self.stackImages(0.7,([img,imgHsv,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap,imgFinal]))
-				elif self.debugLzr:
-					imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = padrimages
-					stack = self.stackImages(0.7,([img,imgHsv,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap,imgFinal]))
-				elif self.debugLzl:
-					imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = padlimages
-					stack = self.stackImages(0.7,([img,imgHsv,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap,imgFinal]))
-				cv2.imshow('Image Processing', stack)
-				if cv2.waitKey(1) & 0xFF == ord('q'):
-					break
-			if self.debugOnetime:
-				break
-		self.stop()
+	def parseFilenameForHeight(self, fname):
+		height = int(fname.split('_ht_')[1].split('.')[0])
+		return height
 
 if __name__ == '__main__':
-	hippo = Hippocampus()
-	hippo.run()
+	imgfolder = '../imageprocessing/images/cones/train/'
+	imgfile = 'helipad_and_3_cones.jpg'
+	imgfile = 'IMG_20200623_174503.jpg'
+	imgfile = 'sk8_2_meter_ht_2000.jpg'
+	imgfile = 'sk8_1_meter_ht_1000.jpg'
+
+	hippocampus = Hippocampus(True, False)
+	hippocampus.start()
+
+	while True:
+		img = cv2.imread(imgfolder+imgfile, cv2.IMREAD_UNCHANGED)
+		hippocampus.camera_height = hippocampus.parseFilenameForHeight(imgfolder+imgfile)
+
+		hippocampus.processFrame(img)
+		
+		hippocampus.drawUI(img)
+
+		if cv2.waitKey(1) & 0xFF == ord('q'):
+			break
+
+	hippocampus.stop()
+
