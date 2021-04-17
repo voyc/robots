@@ -8,6 +8,12 @@ fit arena to rotated rect
 superimpose map onto frame
 underimpose frame under map
 match frame to map
+
+take pictures down close to ground, with no cones
+test and fix pxlpermm calc with no cones
+connect loop
+recover from cc errors in sendCommand
+test consistencey of height reported in telemetry
 '''
 import cv2
 import numpy as np
@@ -30,6 +36,7 @@ class Hippocampus:
 		self.pad_radius = 70     # pad is 14 cm square
 		self.arena_padding = 80  # turning radius. keep sk8 in the arena.
 		self.arena_margin = 40
+		self.tello_ssid = 'TELLO-591FFC'
 		self.barmax = {
 			'hue_min'  : 255,
 			'hue_max'  : 255,
@@ -172,14 +179,15 @@ class Hippocampus:
 			cv2.circle(img,(px,py),r,(0,0,255),1)
 	
 		# draw pad
-		r = round(self.pad_radius * self.pxlpermm)
-		px = round(arena['pcx'] + (pad['c'][0] * self.pxlpermm))
-		py = round(arena['pcy'] + (pad['c'][1] * self.pxlpermm))
-		cv2.circle(img,(px,py),r,(255,0,255),1)  # outer perimeter
-		pt1, pt2 = self.calcLine((px,py), r, pad['a'])
-		cv2.line(img,pt1,pt2,(255,0,255),1)  # center axis
-		pt = pt1 if pt1[0] < pt2[0] else pt2 # which end is up?
-		cv2.circle(img,pt,3,(255,0,255),1)   # arrow pointing forward
+		if 'c' in pad:
+			r = round(self.pad_radius * self.pxlpermm)
+			px = round(arena['pcx'] + (pad['c'][0] * self.pxlpermm))
+			py = round(arena['pcy'] + (pad['c'][1] * self.pxlpermm))
+			cv2.circle(img,(px,py),r,(255,0,255),1)  # outer perimeter
+			pt1, pt2 = self.calcLine((px,py), r, pad['a'])
+			cv2.line(img,pt1,pt2,(255,0,255),1)  # center axis
+			pt = pt1 if pt1[0] < pt2[0] else pt2 # which end is up?
+			cv2.circle(img,pt,3,(255,0,255),1)   # arrow pointing forward
 	
 	def calcLine(self,c,r,a):
 		h = np.radians(a)
@@ -307,11 +315,15 @@ class Hippocampus:
 			if row['cl'] == 0:
 				diam.append(row['ph'])
 				diam.append(row['pw'])
-		pxlConeWidth = sum(diam) / len(diam)
+		pxlConeWidth = 0
+		if len(diam) > 0:
+			pxlConeWidth = sum(diam) / len(diam)
 	
 		# calc conversion factor
 		mmConeWidth = self.cone_radius * 2
 		self.pxlpermm = pxlConeWidth / mmConeWidth
+		if self.pxlpermm <= 0:
+			self.pxlpermm = 0.1
 		self.log(f'pxl per mm: {self.pxlpermm}')
 		self.log(f'camera height: {self.camera_height}')
 		# pxlpermmat1m = 0.5964285714
@@ -374,23 +386,22 @@ class Hippocampus:
 				pad['la'] = row['rr'][2]
 				pad['lrr'] = row['rr']
 	
-		# combine pad r and l center
-		pad['c'] = self.averageTwoPoints(pad['lc'], pad['rc'])
-	
-		# pad angle per contour rotated rect
-		pad['a2'] = (pad['la'] + pad['ra']) / 2
-	
-		# pad angle per trig between the r and l centers
-		x1,y1 = pad['lc']
-		x2,y2 = pad['rc']
-		lenx = x2 - x1
-		leny = y2 - y1
-		oh = leny/lenx
-		angle = np.arctan(oh)
-		degrs = np.degrees(angle)
-		pad['a'] = degrs - 90 # we want angle to the y-axis instead of to the x-axis
-		self.log(f"pad angle: {round(pad['a'])} vs {round(pad['a2'])}")
-
+		# pad center and angle
+		if 'lc' in pad.keys() and 'rc' in pad.keys():
+			pad['c'] = self.averageTwoPoints(pad['lc'], pad['rc'])
+			pad['a2'] = (pad['la'] + pad['ra']) / 2
+			x1,y1 = pad['lc']
+			x2,y2 = pad['rc']
+			lenx = x2 - x1
+			leny = y2 - y1
+			oh = leny/lenx
+			angle = np.arctan(oh)
+			degrs = np.degrees(angle)
+			pad['a'] = degrs - 90 # we want angle to the y-axis instead of to the x-axis
+			self.log(f"pad angle: {round(pad['a'])} vs {round(pad['a2'])}")
+		else:
+			self.log("cannot see pad")
+			print("cannot see pad")
 
 		return arena, cones, pad
 	
@@ -404,7 +415,7 @@ class Hippocampus:
 		
 	def saveTrainingData(self,data,img):
 		if self.saveTrain and self.framenum % self.saventhframe == 0:
-			fname = f'{self.outfolder}/sk8_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}'
+			fname = f'{self.outfolder}/sk8_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}_ht_{self.camera_height}'
 			imgname = f'{fname}.jpg'
 			txtname = f'{fname}.txt'
 			cv2.imwrite(imgname,img)
@@ -460,7 +471,7 @@ if __name__ == '__main__':
 	imgfile = 'sk8_2_meter_ht_2000.jpg'
 	imgfile = 'sk8_1_meter_ht_1000.jpg'
 
-	hippocampus = Hippocampus(True, False)
+	hippocampus = Hippocampus(True, True)
 	hippocampus.start()
 
 	while True:

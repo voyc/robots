@@ -14,6 +14,8 @@ import sys
 import numpy as np
 import cv2 as cv
 import struct
+from hippocampus import Hippocampus
+from wifi import Wifi
 
 # This program executes missions.  For example.
 #      flyMission(demo)
@@ -41,6 +43,7 @@ testvideo = (
 )
 
 # addresses
+tello_ssid = 'TELLO-591FFC'
 tello_ip = '192.168.10.1'
 cmd_port = 8889  # may need to open firewall to these ports
 tele_port = 8890
@@ -48,9 +51,13 @@ video_port = 11111
 
 # UDP client socket to send and receive commands
 cmdsock = False
-cmdsock_timeout = 10 
+cmdsock_timeout = 7 # seconds
+cmd_retry = 3
+cmd_takeoff_timeout = 20  # seconds
+cmd_time_btw_commands = 0.1  # seconds
 cmd_address = (tello_ip, cmd_port)
 cmd_maxlen = 1518
+cmd_timestamp = 0
 
 # UDP server socket to receive telemetry data
 telemetrysock = False
@@ -102,28 +109,46 @@ def flyMission(s):
 		else:
 			sendCommand(cmd)
 
-# function to send command and get return message
-# The demo programs create a thread with a loop doing the recvfrom.  Why? Can the recvfrom block?
-def sendCommand(cmd):
-	global cmdsock,cmd_address
+# send command and get return message. nb, this command blocks.
+def sendCommand(cmd, retry=cmd_retry):   # , timeout=0.1, wait=True, callback=None):
+	global cmdsock,cmd_address,cmd_timestamp
 	rmsg = 'error'
+	diff = time.time() - cmd_timestamp
+	if diff < cmd_time_btw_commands:
+		log(f'waiting {diff} between commands')
+		time.sleep(diff)
+	timestart = time.time()
 	try:
 		msg = cmd.encode(encoding="utf-8")
 		len = cmdsock.sendto(msg, cmd_address)
 	except Exception as ex:
 		log ('sendCommand ' + cmd + ' sendto failed:'+str(ex))
 	else:
-		log('sendCommand ' + cmd)
-		try:
-			data, server = cmdsock.recvfrom(cmd_maxlen)
-			rmsg = data.decode(encoding="utf-8")
-		except Exception as ex:
-			log ('sendCommand ' + cmd + ' recvfrom failed:'+str(ex))
-			if cmd == 'command' and '0xcc' in str(ex):
-				rmsg = 'ok' # ignore error ?
-		else:
-			log('sendCommand ' + cmd + ' : ' + rmsg)
+		for n in range(1,retry+1):
+			log(f'sendCommand {cmd} {n}')
+			try:
+				data, server = cmdsock.recvfrom(cmd_maxlen)
+			except Exception as ex:
+				log (f'sendCommand {cmd} {n} recvfrom failed: {str(ex)}')
+			else:
+				# bogus data: b'\xcc\x18\x01\xb9\x88V\x00\xe2\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00I\x00\x00\xa7\x0f\x00\x06\x00\x00\x00\x00\x00W\xbe'
+				if b'\xcc' in data:
+					log (f'sendCommand {cmd} {n} recvfrom returned bogus data')
+				else:
+					try:
+						rmsg = data.decode(encoding="utf-8")
+					except Exception as ex:
+						log (f'sendCommand {cmd} {n} decode failed: {str(ex)}')
+					else:
+						timeend = time.time()
+						timeprocess = timeend - timestart
+						log (f'sendCommand {cmd} {n}: {rmsg} {timeprocess}')
+						break; # while true loop, success
+	cmd_timestamp = time.time()
 	return rmsg;
+
+        # Commands very consecutive makes the drone not respond to them.
+        # So wait at least self.TIME_BTW_COMMANDS seconds
 
 # function to receive string of telemetry data
 def telemetryLoop():
@@ -184,6 +209,9 @@ def videoLoop():
 		print("Cannot open camera")
 		stop()
 
+	hippocampus = Hippocampus(True, True)
+	hippocampus.start()
+
 	while True: 
 		if video_thread_status == 'stopping':
 			break;
@@ -198,31 +226,38 @@ def videoLoop():
 			print("Can't receive frame (stream end?). Exiting ...")
 			video_thread_state == 'stopping'
 
-		# Our operations on the frame come here
-		#gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
-		gray = frame
+		# get camera height
+		s = f"height: {telemetry['tof']} {telemetry['h']} {telemetry['baro']}"
+		hippocampus.log(s)
+		log(s)
+		height = telemetry['h']    # 0 cm
+		height = telemetry['baro'] # 322.41 - 323.34 cm, 321.53 - 322.11
+		height = telemetry['tof']  # 10 - 56 cm
+		height = height * 10 # cm to mm
+		hippocampus.camera_height = height
 
-		# detect objects, build  map, draw map
-		data = color.processImage(frame)
-		color.buildMap(data)
+		# detect objects, build map, draw map
+		hippocampus.processFrame(frame)
+		hippocampus.drawUI(frame)
 
 		# Display the resulting frame
-		cv.imshow('frame', gray)
+		#cv.imshow('frame', frame) - let this be done by hippocampus
 		if cv.waitKey(1) == ord('q'):
 			video_thread_state == 'stopping'
 
 	# When everything done, release the capture
 	video_stream.release()
 	cv.destroyAllWindows()
+	hippocampus.stop()
 
-def dumpVideoBuffer(sock):
-	log('dumping video buffer')
-	while True:
-		seg, addr = sock.recvfrom(video_maxlen)
-		log('seg 0 ' + str(seg[0]))
-		if struct.unpack("B", seg[0:1])[0] == 1:
-			log("finish emptying buffer")
-			break
+#def dumpVideoBuffer(sock):
+#	log('dumping video buffer')
+#	while True:
+#		seg, addr = sock.recvfrom(video_maxlen)
+#		log('seg 0 ' + str(seg[0]))
+#		if struct.unpack("B", seg[0:1])[0] == 1:
+#			log("finish emptying buffer")
+#			break
 
 def startVideo():
 	global video_thread_status, video_thread
@@ -256,6 +291,12 @@ for i, arg in enumerate(sys.argv):
 	if arg == 'test':
 		mode = 'test'
 log ('eyes starting ' + mode)
+
+# connect to tello
+wifi = Wifi(tello_ssid)
+connected = wifi.connect()
+if not connected:
+	quit()
 
 # Create cmd socket as UDP client
 cmdsock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
