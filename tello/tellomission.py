@@ -75,30 +75,34 @@ telemetry = {
 	"vgz":0,
 	"templ":62,
 	"temph":65,
-	"tof":6553,
-	"h":0,
+	"tof":6553,       # height in cm, time of flight, typical range 10 to 56
+	"h":0,            # height in cm, always 0
 	"bat":42,
-	"baro":404.45,
+	"baro":404.45,    # height in cm, range 322.41 to 323.34 or 321.53 to 322.11
 	"time":0,
 	"agx":-37.00,
 	"agy":48.00,
 	"agz":-1008.00
 }
+telemetry_log_nth = 60
+start_baro = 0
+height = 0
+quiet = False
 
 # UDP server socket to receive video stream
 video_stream = False
-video_ip = 'udp://'+str(tello_ip)+':'+str(video_port)
 video_ip = f'udp://{tello_ip}:{video_port}'
 video_maxlen = 2**16
 video_thread = False
 video_thread_status = 'init' # init, stopping, running
 
-# function to print string with timestamp
+# print timestamp and string to console
 def log(s):
-	tm = datetime.now().strftime("%H:%M:%S.%f")
-	print(tm + ' ' + s)
+	if not quiet:
+		tm = datetime.now().strftime("%H:%M:%S.%f")
+		print(tm + ' ' + s)
 
-# function to run a mission
+# run a mission
 def flyMission(s):
 	a = s.split('\n')
 	for cmd in a:
@@ -152,7 +156,7 @@ def sendCommand(cmd, retry=cmd_retry):   # , timeout=0.1, wait=True, callback=No
 
 # function to receive string of telemetry data
 def telemetryLoop():
-	global telemetry, telemetry_thread_status, telemetry_thread
+	global telemetry, telemetry_thread_status, telemetry_thread, start_baro
 	count = 0
 	while True: 
 		if telemetry_thread_status == 'stopping':
@@ -162,14 +166,22 @@ def telemetryLoop():
 		except Exception as ex:
 			log ('Telemetry recvfrom failed: ' + str(ex))
 			break
-		count += 1
+		data = data.strip()
 		storeTelemetry(data)
-		if count%10 == 0:
+
+		# log
+		count += 1
+		if count >= telemetry_log_nth:
+			count = 0
 			log(data.decode(encoding="utf-8"))
 
-		# check battery and temperature
-		#log('telemetry loop battery:' + str(telemetry['bat']) + ', high temperature:' + str(telemetry['temph']))
-		print('.', end='')
+		# get camera height using barometer reading
+		baro = telemetry['baro']
+		if not start_baro:
+			start_baro = baro
+		baro = baro - start_baro
+		baro = max(baro,0)
+		height = round(baro * 10, 1) # cm to mm
 
 def startTelemetry():
 	global telemetry_thread_status, telemetry_thread
@@ -203,10 +215,12 @@ def videoLoop():
 	global video_stream, video_thread_status, video_thread
 	count = 0
 
-	video_stream = cv.VideoCapture(video_ip)
+	log('start video capture')
+	video_stream = cv.VideoCapture(video_ip)  # takes about 5 seconds
+	log('video capture started')
 
 	if not video_stream.isOpened():
-		print("Cannot open camera")
+		log("Cannot open camera")
 		stop()
 
 	hippocampus = Hippocampus(True, True)
@@ -223,20 +237,11 @@ def videoLoop():
 		# Capture frame-by-frame
 		ret, frame = video_stream.read()
 		if not ret:
-			print("Can't receive frame (stream end?). Exiting ...")
+			log("Can't receive frame (stream end?). Exiting ...")
 			video_thread_state == 'stopping'
 
-		# get camera height
-		s = f"height: {telemetry['tof']} {telemetry['h']} {telemetry['baro']}"
-		hippocampus.log(s)
-		log(s)
-		height = telemetry['h']    # 0 cm
-		height = telemetry['baro'] # 322.41 - 323.34 cm, 321.53 - 322.11
-		height = telemetry['tof']  # 10 - 56 cm
-		height = height * 10 # cm to mm
-		hippocampus.camera_height = height
-
 		# detect objects, build map, draw map
+		hippocampus.camera_height = height
 		hippocampus.processFrame(frame)
 		hippocampus.drawUI(frame)
 
@@ -249,15 +254,6 @@ def videoLoop():
 	video_stream.release()
 	cv.destroyAllWindows()
 	hippocampus.stop()
-
-#def dumpVideoBuffer(sock):
-#	log('dumping video buffer')
-#	while True:
-#		seg, addr = sock.recvfrom(video_maxlen)
-#		log('seg 0 ' + str(seg[0]))
-#		if struct.unpack("B", seg[0:1])[0] == 1:
-#			log("finish emptying buffer")
-#			break
 
 def startVideo():
 	global video_thread_status, video_thread
@@ -336,7 +332,4 @@ if cmd == 'ok':
 		log('mission complete')
 		stopTelemetry()
 		stopVideo()
-
-# stop 
 stop()
-quit()

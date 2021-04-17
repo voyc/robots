@@ -1,8 +1,10 @@
 '''
 hippocamapus.py - object detection by color
+
 todo
-get working with tello camera
-get working with tello missions
+x get working with tello camera
+x get working with tello missions
+
 add home as inverted copy of initial pad
 fit arena to rotated rect
 superimpose map onto frame
@@ -11,9 +13,14 @@ match frame to map
 
 take pictures down close to ground, with no cones
 test and fix pxlpermm calc with no cones
-connect loop
-recover from cc errors in sendCommand
-test consistencey of height reported in telemetry
+calc pxlpermm from pad, or direct from height
+
+When does video start?
+
+x connect loop
+x recover from cc errors in sendCommand
+x test consistencey of height reported in telemetry
+x calc height from baro, save initial value
 '''
 import cv2
 import numpy as np
@@ -394,14 +401,14 @@ class Hippocampus:
 			x2,y2 = pad['rc']
 			lenx = x2 - x1
 			leny = y2 - y1
-			oh = leny/lenx
+			oh = leny/lenx if lenx else 0
 			angle = np.arctan(oh)
 			degrs = np.degrees(angle)
 			pad['a'] = degrs - 90 # we want angle to the y-axis instead of to the x-axis
 			self.log(f"pad angle: {round(pad['a'])} vs {round(pad['a2'])}")
 		else:
 			self.log("cannot see pad")
-			print("cannot see pad")
+			#print("cannot see pad")
 
 		return arena, cones, pad
 	
