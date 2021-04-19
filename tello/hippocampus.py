@@ -2,8 +2,6 @@
 hippocamapus.py - object detection by color
 
 todo
-x get working with tello camera
-x get working with tello missions
 
 add home as inverted copy of initial pad
 fit arena to rotated rect
@@ -11,23 +9,16 @@ superimpose map onto frame
 underimpose frame under map
 match frame to map
 
-take pictures down close to ground, with no cones
-test and fix pxlpermm calc with no cones
-calc pxlpermm from pad, or direct from height
+calc pxlpermm from pad, cones, or camera height
 
-When does video start?
-
-x connect loop
-x recover from cc errors in sendCommand
-x test consistencey of height reported in telemetry
-x calc height from baro, save initial value
 '''
 import cv2
 import numpy as np
 from datetime import datetime
+import logging
 
 class Hippocampus:
-	def __init__(self, ui, saveTrain):
+	def __init__(self, ui=True, saveTrain=True):
 		self.ui = ui
 		self.saveTrain = saveTrain
 
@@ -37,13 +28,16 @@ class Hippocampus:
 		self.debugLzl =  False
 		self.datalineheight = 22
 		self.datalinemargin = 5
-		self.saventhframe = 10
+
+		self.save_train_nth = 10
+		self.save_post_nth = 60
+
 		self.outfolder = '../imageprocessing/images/cones/new/train/'
 		self.cone_radius = 40    # cone diameter is 8 cm
 		self.pad_radius = 70     # pad is 14 cm square
 		self.arena_padding = 80  # turning radius. keep sk8 in the arena.
+
 		self.arena_margin = 40
-		self.tello_ssid = 'TELLO-591FFC'
 		self.barmax = {
 			'hue_min'  : 255,
 			'hue_max'  : 255,
@@ -96,8 +90,8 @@ class Hippocampus:
 		self.frameDepth  = 0     #     ?        3        3
 		self.camera_height = 0
 		self.pxlpermm = 0
-		self.imgLog = False
-		self.log_texts = []
+		self.imgInt = False
+		self.internals = {}
 		self.debugImages = []
 	
 	def openUI(self):
@@ -113,16 +107,21 @@ class Hippocampus:
 		if self.ui:
 			cv2.destroyAllWindows()
 
-	def log(self,s):
-		self.log_texts.append(s)
+	def post(self,key,value):
+		self.internals[key] = value
 	
-	def drawLog(self):
+	def drawInternals(self):
 		linenum = 1
-		for s in self.log_texts:
+		ssave = ''
+		for k in self.internals.keys():
+			v = self.internals[k]
+			s = f'{k}={v}'
 			pt = (self.datalinemargin, self.datalineheight * linenum)
-			cv2.putText(self.imgLog, s, pt, cv2.FONT_HERSHEY_SIMPLEX,.7,(0,0,0), 1)
+			cv2.putText(self.imgInt, s, pt, cv2.FONT_HERSHEY_SIMPLEX,.7,(0,0,0), 1)
 			linenum += 1
-		self.log_texts = []
+			ssave += s + ';'
+		if self.framenum % self.save_post_nth == 0:
+			logging.debug(ssave)
 	
 	def openSettings(self, settings, name):
 		def empty(a): # passed to trackbar
@@ -208,7 +207,6 @@ class Hippocampus:
 		y1 = y + lenb
 		x2 = x - lena
 		y2 = y - lenb
-		#self.log(f'{round(a)} {lena} {lenb}')
 		return (x1,y1), (x2,y2) 
 	
 	def drawUI(self, img):
@@ -222,15 +220,16 @@ class Hippocampus:
 			imgFinal = img.copy()
 			self.drawMap(self.arena, self.cones, self.pad, imgFinal)
 
-			# log
-			self.imgLog = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
-			self.imgLog.fill(255)
-			self.drawLog()
+			# internals, values, coefficients, scalars, multipliers, calculations, factors
+			# hippocampus internal data calculations
+			self.imgInt = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
+			self.imgInt.fill(255)
+			self.drawInternals()
 	
-			stack = self.stackImages(0.7,([imgMap,self.imgLog,imgFinal]))
+			stack = self.stackImages(0.7,([imgMap,self.imgInt,imgFinal]))
 			if self.debugCones or self.debugLzr or self.debugLzl:
 				imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = self.debugImages
-				stack = self.stackImages(0.7,([self.imgLog,imgHsv,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap,imgFinal]))
+				stack = self.stackImages(0.7,([self.imgInt,imgHsv,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap,imgFinal]))
 			cv2.imshow('Image Processing', stack)
 
 	# end UI section, begin image processing section
@@ -325,14 +324,15 @@ class Hippocampus:
 		pxlConeWidth = 0
 		if len(diam) > 0:
 			pxlConeWidth = sum(diam) / len(diam)
+		self.post('pxlConeWidth', round(pxlConeWidth))
 	
 		# calc conversion factor
 		mmConeWidth = self.cone_radius * 2
 		self.pxlpermm = pxlConeWidth / mmConeWidth
 		if self.pxlpermm <= 0:
 			self.pxlpermm = 0.1
-		self.log(f'pxl per mm: {self.pxlpermm}')
-		self.log(f'camera height: {self.camera_height}')
+		self.post('pxlpermm', round(self.pxlpermm,2))
+		self.post('camera_height', self.camera_height)
 		# pxlpermmat1m = 0.5964285714
 		# pxlpermmat2m = 0.3071428571
 
@@ -405,11 +405,12 @@ class Hippocampus:
 			angle = np.arctan(oh)
 			degrs = np.degrees(angle)
 			pad['a'] = degrs - 90 # we want angle to the y-axis instead of to the x-axis
-			self.log(f"pad angle: {round(pad['a'])} vs {round(pad['a2'])}")
+			self.post('pad_angle', round(pad['a']))
+			self.post('pad_angle_alt', round(pad['a2']))
 		else:
-			self.log("cannot see pad")
-			#print("cannot see pad")
+			self.post('cannot see pad', 0)
 
+		self.post('numCones', len(cones))
 		return arena, cones, pad
 	
 	def averageTwoPoints(self, ptr, ptl):
@@ -421,7 +422,7 @@ class Hippocampus:
 		return center
 		
 	def saveTrainingData(self,data,img):
-		if self.saveTrain and self.framenum % self.saventhframe == 0:
+		if self.saveTrain and self.framenum % self.save_train_nth == 0:
 			fname = f'{self.outfolder}/sk8_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}_ht_{self.camera_height}'
 			imgname = f'{fname}.jpg'
 			txtname = f'{fname}.txt'
@@ -432,15 +433,17 @@ class Hippocampus:
 			f.close()
 
 	def start(self):
+		logging.info('hippocampus starting')
 		self.openUI()
 
 	def stop(self):
+		logging.info('hippocampus stopping')
 		self.closeUI()
 
 	def processFrame(self,img):
 		self.framenum += 1
 		self.frameHeight,self.frameWidth,self.frameDepth = img.shape
-		self.log(f'image dim h:{self.frameHeight}, w:{self.frameWidth}, d:{self.frameDepth}')
+		self.post('image_dim', f'h:{self.frameHeight},w:{self.frameWidth},d:{self.frameDepth}')
 
 		# get settings from trackbars
 		if self.ui:
@@ -472,6 +475,18 @@ class Hippocampus:
 		return height
 
 if __name__ == '__main__':
+	def startLogging(filename='drone.log'):
+		logging.basicConfig(
+			format='%(asctime)s %(levelname)s %(message)s', 
+			filename=filename, 
+			level=logging.DEBUG) # 10 debug, 20 info, 30 warning, 40 error, 50 critical
+		console = logging.StreamHandler()
+		console.setLevel(logging.INFO)
+		logging.getLogger('').addHandler(console)
+		logging.info('starting')
+
+	startLogging()
+
 	imgfolder = '../imageprocessing/images/cones/train/'
 	imgfile = 'helipad_and_3_cones.jpg'
 	imgfile = 'IMG_20200623_174503.jpg'

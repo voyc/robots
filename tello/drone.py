@@ -1,9 +1,6 @@
-'''
-drone.py - class Drone, drive the tello drone
-
-connect to all three sockets
-fly one or more missions
-quit,  no loop
+''' drone.py - class Drone, drive the tello drone. 
+embeds Wifi and Hippocampus
+main flies missions
 '''
 
 import socket
@@ -15,6 +12,7 @@ import sys
 import numpy as np
 import cv2 as cv
 import struct
+import logging
 from hippocampus import Hippocampus
 from wifi import Wifi
 
@@ -31,8 +29,7 @@ class Drone:
 		# UDP client socket to send and receive commands
 		self.cmd_sock = False
 		self.cmd_sock_timeout = 7 # seconds
-		self.cmd_retry = 3
-		self.cmd_takeoff_timeout = 20  # seconds
+		self.cmd_takeoff_timeout = 20  # seconds. takeoff slow to return
 		self.cmd_time_btw_commands = 0.1  # seconds.  Commands too quick => Tello not respond.
 		self.cmd_address = (self.tello_ip, self.cmd_port)
 		self.cmd_maxlen = 1518
@@ -74,39 +71,55 @@ class Drone:
 		self.video_thread_status = 'init' # init, stopping, running
 
 	# send command and get return message. nb, this command blocks.
-	def sendCommand(self, cmd, retry=False):   # , timeout=0.1, wait=True, callback=None):
-		retry = retry or self.cmd_retry
-		rmsg = 'error'
+	def sendCommand(self, cmd):
+		# the takeoff command is way slow to return, with the tello hanging in the air, 
+		# perhaps checking and calibrating itself before returning to the client
+		timeout = self.cmd_sock_timeout
+		if cmd == 'takeoff':
+			timeout = self.cmd_takeoff_timeout
+		self.cmd_sock.settimeout(timeout)
+
+		# the command command sometimes returns a premature packet of bogus data.
+		# it can be ignored
+		retry = 1
+		if cmd == 'command':
+			retry = 3
+
+		# sending commands too quick evidently overwhelms the Tello
 		diff = time.time() - self.cmd_timestamp
 		if diff < self.cmd_time_btw_commands:
-			log(f'waiting {diff} between commands')
+			logging.info(f'waiting {diff} between commands')
 			time.sleep(diff)
+
+		# send command and wait for response
+		rmsg = 'error'
+		logging.info(f'sendCommand {cmd} sendto')
 		timestart = time.time()
 		try:
 			msg = cmd.encode(encoding="utf-8")
 			len = self.cmd_sock.sendto(msg, self.cmd_address)
 		except Exception as ex:
-			log ('sendCommand ' + cmd + ' sendto failed:'+str(ex))
+			logging.error(f'sendCommand {cmd} sendto failed:{str(ex)}, elapsed={time.time()-timestart}')
 		else:
+			logging.info(f'sendCommand {cmd} sendto complete, elapsed={time.time()-timestart}')
 			for n in range(1,retry+1):
-				log(f'sendCommand {cmd} {n}')
+				logging.info(f'sendCommand {cmd} recfrom {n}')
 				try:
 					data, server = self.cmd_sock.recvfrom(self.cmd_maxlen)
 				except Exception as ex:
-					log (f'sendCommand {cmd} {n} recvfrom failed: {str(ex)}')
+					logging.error(f'sendCommand {cmd} {n} recvfrom failed: {str(ex)}, elapsed={time.time()-timestart}')
 				else:
 					# bogus data: b'\xcc\x18\x01\xb9\x88V\x00\xe2\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00I\x00\x00\xa7\x0f\x00\x06\x00\x00\x00\x00\x00W\xbe'
 					if b'\xcc' in data:
-						log (f'sendCommand {cmd} {n} recvfrom returned bogus data')
+						logging.info(f'sendCommand {cmd} {n} recvfrom returned bogus data, elapsed={time.time()-timestart}')
 					else:
 						try:
 							rmsg = data.decode(encoding="utf-8")
 						except Exception as ex:
-							log (f'sendCommand {cmd} {n} decode failed: {str(ex)}')
+							logging.error(f'sendCommand {cmd} {n} decode failed: {str(ex)}, elapsed={time.time()-timestart}')
 						else:
-							timeend = time.time()
-							timeprocess = timeend - timestart
-							log (f'sendCommand {cmd} {n}: {rmsg} {timeprocess}')
+							rmsg = rmsg.rstrip() # battery? returns string plus newline
+							logging.info(f'sendCommand {cmd} {n} complete: {rmsg}, elapsed={time.time()-timestart}')
 							break; # while true loop, success
 		self.cmd_timestamp = time.time()
 		return rmsg;
@@ -120,7 +133,7 @@ class Drone:
 			try:
 				data, server = self.telemetry_sock.recvfrom(self.telemetry_maxlen)
 			except Exception as ex:
-				log ('Telemetry recvfrom failed: ' + str(ex))
+				logging.error('Telemetry recvfrom failed: ' + str(ex))
 				break
 			data = data.strip()
 			self.storeTelemetry(data)
@@ -129,7 +142,7 @@ class Drone:
 			count += 1
 			if count >= self.telemetry_log_nth:
 				count = 0
-				log(data.decode(encoding="utf-8"))
+				logging.debug(data.decode(encoding="utf-8"))
 	
 			# get camera height using barometer reading
 			baro = self.telemetry_data['baro']
@@ -164,14 +177,13 @@ class Drone:
 	
 	# thread target function to receive string of video data
 	def videoLoop(self):
-		count = 0
-	
-		log('start video capture')
+		timestart = time.time()
+		logging.info('start video capture')
 		self.video_stream = cv.VideoCapture(self.video_url)  # takes about 5 seconds
-		log('video capture started')
+		logging.info(f'video capture started, elapsed={time.time()-timestart}')
 	
 		if not self.video_stream.isOpened():
-			log("Cannot open camera")
+			logging.error("Cannot open camera")
 			self.stop()
 	
 		hippocampus = Hippocampus(True, True)
@@ -181,14 +193,10 @@ class Drone:
 			if self.video_thread_status == 'stopping':
 				break;
 	
-			count += 1
-			#if count%10 == 0:
-			#	storeVideo(data)
-	
 			# Capture frame-by-frame
 			ret, frame = self.video_stream.read()
 			if not ret:
-				log("Can't receive frame (stream end?). Exiting ...")
+				logging.error('Cannot receive frame.  Stream end?. Exiting.')
 				self.video_thread_state == 'stopping'
 	
 			# detect objects, build map, draw map
@@ -197,7 +205,6 @@ class Drone:
 			hippocampus.drawUI(frame)
 	
 			# Display the resulting frame
-			#cv.imshow('frame', frame) - let this be done by hippocampus
 			if cv.waitKey(1) == ord('q'):
 				self.video_thread_state == 'stopping'
 	
@@ -223,7 +230,7 @@ class Drone:
 		self.telemetry_sock.close()
 		if self.video_stream and self.video_stream.isOpened():
 			self.video_stream.release()
-		log ('eyes shutdown')
+		logging.info('eyes shutdown')
 		quit()
 
 	def start(self):
@@ -231,7 +238,7 @@ class Drone:
 		for i, arg in enumerate(sys.argv):
 			if arg == 'test':
 				mode = 'test'
-		log ('eyes starting ' + mode)
+		logging.info('eyes starting ' + mode)
 		
 		# connect to tello
 		wifi = Wifi(self.tello_ssid)
@@ -239,42 +246,35 @@ class Drone:
 		if not connected:
 			quit()
 		
-		# Create cmd socket as UDP client
+		# Create cmd socket as UDP client (no bind)
 		self.cmd_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		self.cmd_sock.settimeout(self.cmd_sock_timeout)
-		#sock.bind(locaddr) # bind is for server ???
-		log('cmd_sock open')
+		logging.info('cmd_sock open')
 		
 		# Create telemetry socket as UDP server
 		self.telemetry_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		self.telemetry_sock.settimeout(self.telemetry_sock_timeout)
 		self.telemetry_sock.bind(self.telemetry_address) # bind is for server, not client
-		log('telemetry_sock open')
+		logging.info('telemetry_sock open')
 		
 		# send the "command" command to start receiving the data stream
 		cmd = self.sendCommand("command")
 		if cmd == 'ok':
 			batt = self.sendCommand("battery?")
 			if int(batt) < 20:
-				log('battery low.  aborting.')
+				logging.error('battery low.  aborting.')
 			else:
 				self.startTelemetry() 
 				so = self.sendCommand("streamon")
-				time.sleep(int(5))
+				#time.sleep(int(5)) # why this?
 				self.startVideo()
-				time.sleep(int(5)) # wait until video started
-
-
-# print timestamp and string to console
-def log(s):
-	tm = datetime.now().strftime("%H:%M:%S.%f")
-	print(tm + ' ' + s)
+				#time.sleep(int(5)) # wait until video started before further commands
+				# check states:  video running, takeoff complete
 
 if __name__ == '__main__':
 	# missions
 	takeoffland = (
 			'takeoff\n'
-			'sleep 3\n'
 			'land'
 	)
 	testheight = (
@@ -294,22 +294,29 @@ if __name__ == '__main__':
 	)
 	
 	# run a mission
-	def flyMission(s):
+	def flyMission(s, drone):
 		a = s.split('\n')
 		for cmd in a:
 			if cmd[0:5] == 'sleep':
-				log(cmd)
+				logging.info(cmd)
 				n = cmd.split(' ')[1]
 				time.sleep(int(n))
 			else:
-				self.sendCommand(cmd)
+				drone.sendCommand(cmd)
 
+	def startLogging(filename='drone.log'):
+		logging.basicConfig(
+			format='%(asctime)s %(module)s %(levelname)s %(message)s', 
+			filename=filename, 
+			level=logging.DEBUG) # 10 debug, 20 info, 30 warning, 40 error, 50 critical
+		console = logging.StreamHandler()
+		console.setLevel(logging.INFO)
+		logging.getLogger('').addHandler(console)
+		logging.info('logging configured')
+
+	startLogging()
 	drone = Drone()
 	drone.start()
-	log('start mission')
-	#flyMission(takeoffland)
-	#flyMission(testheight)
-	#flyMission(demo)
-	flyMission(testvideo)
-	log('mission complete')
-	drone.stop()
+	logging.info('start mission')
+	flyMission(takeoffland, drone)
+

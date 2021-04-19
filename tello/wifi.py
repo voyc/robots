@@ -1,8 +1,9 @@
-' connectwifi.py - connect to a wifi hub'
+'wifi.py - connect to a wifi hub'
 
 import subprocess
 import os
 import time
+import logging
 
 class Wifi:
 	def __init__(self, name, quiet=False):
@@ -12,39 +13,31 @@ class Wifi:
 		self.delay = 3
 		self.original = ''
 
-	def log(self, s):
-		end = False if '...' in s else True
-		if not self.quiet:
-			if end:
-				print(s)
-			else:
-				print(s,end='',flush=True)
-
 	def connect(self, name=False):
 		name = name or self.name
 		self.original = self.get()
 		if self.original == name:
-			self.log(f'{name} already connected')
-			return False 
+			logging.info(f'{name} already connected')
+			return True 
 		
+		timestart = time.time()
 		rc = False
-		for n in range(self.retry):
-			s = f"looking for {name}..." if n == 0 else '...'
-			self.log(s)
+		for n in range(1,self.retry+1):
+			logging.info(f'looking for {name} {n}')
 			rc = self.find(name)
 			if rc:
 				break;
 			time.sleep(self.delay)
 		if rc:
-			self.log('found')
+			logging.info(f'{name} found, elapsed={time.time()-timestart}')
 		else:
-			self.log(f'not found')
+			logging.info(f'{name} not found')
 			return rc
 
+		timestart = time.time()
 		ret = False 
-		for n in range(self.retry):
-			s = f"connecting to {name}..." if n == 0 else '...'
-			self.log(s)
+		for n in range(1,self.retry+1):
+			logging.info(f'connecting to {name} {n}')
 			cmd = f'nmcli dev wifi connect {name}'
 			try:
 				s = subprocess.check_output(cmd, shell=True)
@@ -54,9 +47,9 @@ class Wifi:
 				pass
 			time.sleep(self.delay)
 		if ret:
-			self.log(f'connected')
+			logging.info(f'{name} connected, elapsed={time.time()-timestart}')
 		else:
-			self.log(f'failed')
+			logging.info(f'{name} connection failed')
 		return ret
 
 	def restore(self):
