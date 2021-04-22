@@ -468,11 +468,20 @@ class Hippocampus:
 		#_,pxlPadRadius,_ = padl.bbox.center.triangulateTwoPoints(padr.bbox.center)
 		pxlpadcenter = padl.bbox.center.averageTwoPoints(padr.bbox.center)
 		pxlpt2 = Pt(padr.bbox.l, padl.bbox.t)
-		_,pxlPadRadius,_ = pxlpadcenter.triangulateTwoPoints(pxlpt2)
+		a1,pxlPadRadius,_ = pxlpadcenter.triangulateTwoPoints(pxlpt2)
+		a2,pxlPadRadius2,_ = padl.bbox.center.triangulateTwoPoints(padr.bbox.center)
+
+		self.post('pxl pad radius 2', pxlPadRadius2)
+		self.post('pxl pad angle 2', a2)
 
 		# conversion factor pxl per mm
 		# nb: conversion factor implies an agl
 		self.pxlpermm = pxlPadRadius / self.pad_radius
+		self.post('pxl pad radius', self.pxlpermm)
+		self.post('pxl per mm', self.pxlpermm)
+		self.post('mm frame width', self.frameWidth / self.pxlpermm)
+		self.post('mm frame height', self.frameHeight/ self.pxlpermm)
+		# 170cm w : 1700 mm w
 
 		# from pxl to mm
 		padr.bbox.l /= self.pxlpermm
@@ -596,8 +605,8 @@ class Hippocampus:
 		self.baro_agl = baro_agl
 		self.framenum += 1
 		self.frameHeight,self.frameWidth,self.frameDepth = img.shape
-
-		self.post('image_dim', f'h:{self.frameHeight},w:{self.frameWidth},d:{self.frameDepth}')
+		self.post('pxl frame width', self.frameWidth)
+		self.post('pxl frame height', self.frameHeight)
 
 		# get settings from trackbars
 		if self.ui:
@@ -626,9 +635,9 @@ class Hippocampus:
 		# save image and objects for mission debriefing and neural net training
 		self.saveTrainingData(img, self.objects)
 
-	def parseFilenameForHeight(self, fname):
-		height = int(fname.split('_ht_')[1].split('.')[0])
-		return height
+	def parseFilenameForAgl(self, fname):
+		agl = int(fname.split('_agl_')[1].split('.')[0])
+		return agl
 
 if __name__ == '__main__':
 	def startLogging(filename):
@@ -648,14 +657,18 @@ if __name__ == '__main__':
 	imgfolder = '../imageprocessing/images/cones/train/'
 	imgfile = 'helipad_and_3_cones.jpg'
 	imgfile = 'IMG_20200623_174503.jpg'
-	imgfile = 'sk8_2_meter_ht_2000.jpg'
-	imgfile = 'sk8_1_meter_ht_1000.jpg'
+	imgfile = 'sk8_angle_45_agl_1000.jpg'
+	imgfile = 'sk8_angle_135_agl_1000.jpg'
+	imgfile = 'sk8_angle_210_agl_1000.jpg'
+	imgfile = 'sk8_angle_290_agl_1000.jpg'
+	imgfile = 'sk8_1_meter_agl_1000.jpg'
+	imgfile = 'sk8_2_meter_agl_2000.jpg'
 
 	hippocampus = Hippocampus(True, True)
 	hippocampus.start()
 
 	while True:
-		ht = hippocampus.parseFilenameForHeight(imgfile)
+		ht = hippocampus.parseFilenameForAgl(imgfile)
 		img = cv.imread(imgfolder+imgfile, cv.IMREAD_UNCHANGED)
 		hippocampus.processFrame(img, ht)
 		hippocampus.drawUI(img)
