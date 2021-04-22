@@ -1,6 +1,17 @@
 ''' drone.py - class Drone, drive the tello drone. 
-embeds Wifi and Hippocampus
+embeds Wifi
+embeds Hippocampus - should probably be separate, along with Cortex
 main flies missions
+
+for stability:
+	- lights on
+	- AC off
+	- blanket on floor
+
+sendCommand
+	only command requires retry
+	only takeoff requires timeout change
+	simplify messaging for all other commands
 '''
 
 import socket
@@ -18,6 +29,8 @@ from wifi import Wifi
 
 class Drone:
 	def __init__(self):
+		self.state = 'start', # start, ready, airborne, down
+
 		# addresses
 		self.tello_ssid = 'TELLO-591FFC'
 		self.tello_ip = '192.168.10.1'
@@ -61,8 +74,9 @@ class Drone:
 			"agz":-1008.00
 		}
 		self.telemetry_log_nth = 60
-		self.telemetry_baro_start = 0
-		self.telemetry_height = 0
+		self.baro_start = 0
+		self.baro_temp_array = [] # used onetime to average start value 
+		self.baro_height = 0
 
 		# UDP server socket to receive video stream
 		self.video_stream = False
@@ -77,7 +91,7 @@ class Drone:
 		timeout = self.cmd_sock_timeout
 		if cmd == 'takeoff':
 			timeout = self.cmd_takeoff_timeout
-		self.cmd_sock.settimeout(timeout)
+			self.cmd_sock.settimeout(timeout)
 
 		# the command command sometimes returns a premature packet of bogus data.
 		# it can be ignored
@@ -118,8 +132,15 @@ class Drone:
 						except Exception as ex:
 							logging.error(f'sendCommand {cmd} {n} decode failed: {str(ex)}, elapsed={time.time()-timestart}')
 						else:
+							# success
 							rmsg = rmsg.rstrip() # battery? returns string plus newline
 							logging.info(f'sendCommand {cmd} {n} complete: {rmsg}, elapsed={time.time()-timestart}')
+							if cmd == 'takeoff':
+								self.state = 'takeoff'
+								timeout = self.cmd_sock_timeout
+								self.cmd_sock.settimeout(timeout)
+							if cmd == 'land':
+								self.state = 'down'
 							break; # while true loop, success
 		self.cmd_timestamp = time.time()
 		return rmsg;
@@ -144,13 +165,19 @@ class Drone:
 				count = 0
 				logging.debug(data.decode(encoding="utf-8"))
 	
-			# get camera height using barometer reading
-			baro = self.telemetry_data['baro']
-			if not self.telemetry_baro_start:
-				self.telemetry_baro_start = baro
-			baro = baro - self.telemetry_baro_start
-			baro = max(baro,0)
-			self.telemetry_height = round(baro * 10, 1) # cm to mm
+			# calc height per the barometer reading
+			#    tello baro is assumed to be MSL in meters to two decimal places
+			#    the elevation of Chiang Mai is 310 meters
+			baro = int(round(self.telemetry_data['baro'] * 100)) # m to mm, float to int
+			if not self.baro_start:
+				if not self.state == 'ready':
+					self.baro_temp_array.append(baro)
+				else:
+					self.baro_start = int(round(sum(baro_temp_array) / len(baro_temp_array)))
+			else:
+				baro = baro - self.baro_start
+				baro = max(baro,20) # minimum height is 20mm, camera above the ground
+				self.baro_height = baro
 
 	def startTelemetry(self):
 		self.telemetry_thread = threading.Thread(target=self.telemetryLoop)
@@ -177,18 +204,6 @@ class Drone:
 	
 	# thread target function to receive string of video data
 	def videoLoop(self):
-		timestart = time.time()
-		logging.info('start video capture')
-		self.video_stream = cv.VideoCapture(self.video_url)  # takes about 5 seconds
-		logging.info(f'video capture started, elapsed={time.time()-timestart}')
-	
-		if not self.video_stream.isOpened():
-			logging.error("Cannot open camera")
-			self.stop()
-	
-		hippocampus = Hippocampus(True, True)
-		hippocampus.start()
-	
 		while True: 
 			if self.video_thread_status == 'stopping':
 				break;
@@ -197,54 +212,74 @@ class Drone:
 			ret, frame = self.video_stream.read()
 			if not ret:
 				logging.error('Cannot receive frame.  Stream end?. Exiting.')
-				self.video_thread_state == 'stopping'
+				self.video_thread_status == 'stopping'
 	
 			# detect objects, build map, draw map
-			hippocampus.camera_height = self.telemetry_height
-			hippocampus.processFrame(frame)
+			hippocampus.camera_height = self.baro_height
+			hippocampus.processFrame(frame, self.baro_height)
 			hippocampus.drawUI(frame)
 	
 			# Display the resulting frame
 			if cv.waitKey(1) == ord('q'):
-				self.video_thread_state == 'stopping'
+				self.video_thread_status == 'stopping'
 	
-		# When everything done, release the capture
-		self.video_stream.release()
-		cv.destroyAllWindows()
-		hippocampus.stop()
+		self.stopVideo()
 	
 	def startVideo(self):
+		# openvideo
+		timestart = time.time()
+		logging.info('start video capture')
+		self.video_stream = cv.VideoCapture(self.video_url)  # takes about 5 seconds
+		logging.info(f'video capture started, elapsed={time.time()-timestart}')
+		if not self.video_stream.isOpened():
+			logging.error("Cannot open camera")
+			self.stop()
+	
+		# start hippocampus
+		hippocampus = Hippocampus(True, True)
+		hippocampus.start()
+	
+		# start the thread
 		self.video_thread = threading.Thread(target=self.videoLoop)
 		self.video_thread.start()
 		self.video_thread_status = 'running'
 	
 	def stopVideo(self):
+		# stop thread
 		if self.video_thread_status == 'running':
 			self.video_thread_status = 'stopping'
 			self.video_thread.join()
-			
+
+			# stop hippocampus
+			hippocampus.stop()
+
+			# closeVideo
+			if self.video_stream and self.video_stream.isOpened():
+				self.video_stream.release()
+			cv.destroyAllWindows()
+
 	def stop(self):
 		self.stopTelemetry()
 		self.stopVideo()
 		self.cmd_sock.close()
 		self.telemetry_sock.close()
-		if self.video_stream and self.video_stream.isOpened():
-			self.video_stream.release()
 		logging.info('eyes shutdown')
-		quit()
 
 	def start(self):
+		# look for startup options
 		mode = 'prod'
 		for i, arg in enumerate(sys.argv):
 			if arg == 'test':
 				mode = 'test'
+
 		logging.info('eyes starting ' + mode)
+		timestart = time.time()
 		
 		# connect to tello
 		wifi = Wifi(self.tello_ssid)
 		connected = wifi.connect()
 		if not connected:
-			quit()
+			return False
 		
 		# Create cmd socket as UDP client (no bind)
 		self.cmd_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -263,13 +298,14 @@ class Drone:
 			batt = self.sendCommand("battery?")
 			if int(batt) < 20:
 				logging.error('battery low.  aborting.')
+				return False
 			else:
 				self.startTelemetry() 
 				so = self.sendCommand("streamon")
-				#time.sleep(int(5)) # why this?
-				self.startVideo()
-				#time.sleep(int(5)) # wait until video started before further commands
-				# check states:  video running, takeoff complete
+				self.startVideo() # blocks until started, about 5 seconds
+		logging.info(f'ready for takeoff, elapsed {timestart-time.time()}')
+		self.state = 'ready'
+		return True # command on, good battery, video running, telemetry running, ui open
 
 if __name__ == '__main__':
 	# missions
@@ -304,19 +340,20 @@ if __name__ == '__main__':
 			else:
 				drone.sendCommand(cmd)
 
-	def startLogging(filename='drone.log'):
+	def startLogging(filename):
 		logging.basicConfig(
 			format='%(asctime)s %(module)s %(levelname)s %(message)s', 
 			filename=filename, 
-			level=logging.DEBUG) # 10 debug, 20 info, 30 warning, 40 error, 50 critical
+			level=logging.DEBUG) # 10 DEBUG, 20 INFO, 30 WARNING, 40 ERROR, 50 CRITICAL
 		console = logging.StreamHandler()
-		console.setLevel(logging.INFO)
+		console.setLevel(logging.INFO)  # console does not get DEBUG level
 		logging.getLogger('').addHandler(console)
 		logging.info('logging configured')
 
-	startLogging()
+	logfolder = '/home/john/sk8/logs/'
+	fname = f'{logfolder}/sk8_{datetime.now().strftime("%Y%m%d")}.log' # daily logfile
+	startLogging(fname)
 	drone = Drone()
-	drone.start()
-	logging.info('start mission')
-	flyMission(takeoffland, drone)
-
+	started = drone.start()
+	if started:
+		logging.info('start mission')

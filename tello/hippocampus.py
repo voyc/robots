@@ -12,10 +12,102 @@ match frame to map
 calc pxlpermm from pad, cones, or camera height
 
 '''
-import cv2
+import cv2 as cv
 import numpy as np
 from datetime import datetime
 import logging
+import os
+import copy
+
+class Pt:
+	def __init__(self, x, y):
+		self.x = x
+		self.y = y
+	
+	def averageTwoPoints(self, pt2):
+		x2= pt2.x
+		y2= pt2.y
+		xc = self.x + ((x2 - self.x) / 2)
+		yc = self.y + ((y2 - self.y) / 2)
+		return Pt(xc,yc)
+	
+	def triangulateTwoPoints(self, pt2):
+		# length of hypotenuse
+		lenx = abs(self.x - pt2.x)
+		leny = abs(self.y - pt2.y)
+		hypotenuse = np.sqrt(lenx**2 + leny**2)
+
+		# point r, the right angle
+		ptr = Pt(self.x+lenx, self.y+leny)
+
+		# angle of the hypotenuse to the vertical axis
+		# see https://www.geogebra.org/classic/h6pgbftp
+		oa = lenx/leny if (leny != 0) else 0 # tangent of angle = opposite over adjacent 
+		radians = np.arctan(oa)
+		degrs = np.degrees(radians)
+		return degrs, hypotenuse, ptr
+		
+	def __str__(self):
+		return f'({self.x},{self.y})'
+
+class Bbox:
+	def __init__(self, l,t,w,h):
+		self.l = l
+		self.t = t
+		self.w = w
+		self.h = h
+		self.calc()
+
+	def calc(self):
+		self.r = self.l + self.w
+		self.b = self.t + self.h
+		self.center = Pt(self.l+round(self.w/2,6), self.t+round(self.h/2,6))
+		self.diameter = (self.w+self.h)/2
+		self.radius = self.diameter/2
+
+	def intersects(self, r2):
+		if self.l > r2.l and self.l < r2.r \
+		or self.r > r2.l and self.r < r2.r \
+		or self.t > r2.t and self.t < r2.b \
+		or self.b > r2.t and self.b < r2.b: 
+			return True
+		else:
+			return False
+
+	def expand(self, padding):
+		self.l -= padding
+		self.t -= padding
+		self.w += (padding*2)
+		self.h += (padding*2)
+		self.calc()
+
+	def __str__(self):
+		return f'({self.l},{self.t},{self.w},{self.h})'
+
+class DetectedObject:
+	def __init__(self, cls, bbox, inputunits=False):
+		self.cls = cls
+		self.bbox = bbox
+		
+class Pad:
+	def __init__(self,padl,padr):
+		self.padl = padl
+		self.padr = padr
+		self.calc()
+
+	def calc(self):
+		self.center = self.padl.bbox.center.averageTwoPoints(self.padr.bbox.center)
+		self.angle,self.radius,_ = self.padl.bbox.center.triangulateTwoPoints(self.padr.bbox.center)
+
+class Arena:
+	def __init__(self,bbox):
+		self.bbox = bbox
+
+class Map:
+	def __init__(self):
+		self.cones = False
+		self.pad = False
+		self.arena = False
 
 class Hippocampus:
 	def __init__(self, ui=True, saveTrain=True):
@@ -29,12 +121,16 @@ class Hippocampus:
 		self.datalineheight = 22
 		self.datalinemargin = 5
 
+		self.useNeuralNet = False
+
 		self.save_train_nth = 10
 		self.save_post_nth = 60
 
-		self.outfolder = '../imageprocessing/images/cones/new/train/'
-		self.cone_radius = 40    # cone diameter is 8 cm
+		self.outfolderbase = '/home/john/sk8/images/'
+
 		self.pad_radius = 70     # pad is 14 cm square
+		self.cone_radius = 40    # cone diameter is 8 cm
+		self.cone_radius_range = 0.20
 		self.arena_padding = 80  # turning radius. keep sk8 in the arena.
 
 		self.arena_margin = 40
@@ -46,9 +142,13 @@ class Hippocampus:
 			'val_min'  : 255,
 			'val_max'  : 255,
 			'canny_lo' : 255,
-			'canny_hi' : 255,
-			'area_min' : 3000
+			'canny_hi' : 255
 		}
+
+		self.clsCone = 0 # object classification codes
+		self.clsPadl = 1
+		self.clsPadr = 2
+
 		self.cone_settings = {
 			'hue_min'  : 0,
 			'hue_max'  : 8,
@@ -58,18 +158,7 @@ class Hippocampus:
 			'val_max'  : 255,
 			'canny_lo' : 82,
 			'canny_hi' : 127,  # Canny recommended a upper:lower ratio between 2:1 and 3:1.
-			'area_min' : 324,  # min area (size) of contour
-		}
-		self.padr_settings = {
-			'hue_min'  : 130, #122,
-			'hue_max'  : 170, #166,
-			'sat_min'  : 45,  #37,
-			'sat_max'  : 118, #96,
-			'val_min'  : 115, #71,
-			'val_max'  : 255, #192, #146,
-			'canny_lo' : 82,
-			'canny_hi' : 127,
-			'area_min' : 324,
+			'cls'      : self.clsCone,
 		}
 		self.padl_settings = {
 			'hue_min'  : 26,
@@ -80,7 +169,18 @@ class Hippocampus:
 			'val_max'  : 245,
 			'canny_lo' : 82,
 			'canny_hi' : 127,
-			'area_min' : 324,
+			'cls'      : self.clsPadl
+		}
+		self.padr_settings = {
+			'hue_min'  : 130, #122,
+			'hue_max'  : 170, #166,
+			'sat_min'  : 45,  #37,
+			'sat_max'  : 118, #96,
+			'val_min'  : 115, #71,
+			'val_max'  : 255, #192, #146,
+			'canny_lo' : 82,
+			'canny_hi' : 127,
+			'cls'      : self.clsPadr
 		}
 
 		# variables
@@ -88,12 +188,36 @@ class Hippocampus:
 		self.frameWidth  = 0     #     ?      720      720
 		self.frameHeight = 0     #     ?      540      405
 		self.frameDepth  = 0     #     ?        3        3
-		self.camera_height = 0
-		self.pxlpermm = 0
 		self.imgInt = False
 		self.internals = {}
 		self.debugImages = []
+		self.outfolder = ''
 	
+		# aircraft altitude is measured in multiple ways
+		#    agl - above ground level
+		#    msl - mean sea level, based on 19-year averages
+		#    barometric pressure, varies depending on the weather
+
+		# baro reported by the tello is assumed to be MSL in meters to two decimal places
+		#    a typical value before flying is 322.32
+		#    the elevation of Chiang Mai is 310 meters
+
+		# before takeoff, the camera is 20mm above the pad
+		# all of our internal calculations are in mm
+
+		# check to see that telemetry data and height commands are equivalent
+		# design a mission to test
+		# write debug msgs to log showing comparison and differences
+
+		# we use a technique of 
+		# we compare apparent size to known size of 
+		# we are taking downward-facing photos of pad and cones
+		# objects with known size
+
+		self.baro_agl = 0    # reported by tello barometer
+		self.camera_agl = 0  # computed by apparent size of pad in image
+		self.pxlpermm = 0    # computed as function of agl
+
 	def openUI(self):
 		if self.ui:
 			if self.debugCones:
@@ -105,7 +229,7 @@ class Hippocampus:
 
 	def closeUI(self):
 		if self.ui:
-			cv2.destroyAllWindows()
+			cv.destroyAllWindows()
 
 	def post(self,key,value):
 		self.internals[key] = value
@@ -117,7 +241,7 @@ class Hippocampus:
 			v = self.internals[k]
 			s = f'{k}={v}'
 			pt = (self.datalinemargin, self.datalineheight * linenum)
-			cv2.putText(self.imgInt, s, pt, cv2.FONT_HERSHEY_SIMPLEX,.7,(0,0,0), 1)
+			cv.putText(self.imgInt, s, pt, cv.FONT_HERSHEY_SIMPLEX,.7,(0,0,0), 1)
 			linenum += 1
 			ssave += s + ';'
 		if self.framenum % self.save_post_nth == 0:
@@ -128,15 +252,15 @@ class Hippocampus:
 			pass
 	
 		window_name = f'{name} Settings'
-		cv2.namedWindow( window_name)
-		cv2.resizeWindow( window_name,640,240)
+		cv.namedWindow( window_name)
+		cv.resizeWindow( window_name,640,240)
 		for setting in settings:
-			cv2.createTrackbar(setting, window_name, settings[setting], self.barmax[setting],empty)
+			cv.createTrackbar(setting, window_name, settings[setting], self.barmax[setting],empty)
 	
 	def readSettings(self, settings, name):
 		window_name = f'{name} Settings'
 		for setting in settings:
-			settings[setting] = cv2.getTrackbarPos(setting, window_name)
+			settings[setting] = cv.getTrackbarPos(setting, window_name)
 	
 	def stackImages(self,scale,imgArray):
 		rows = len(imgArray)
@@ -148,10 +272,10 @@ class Hippocampus:
 			for x in range ( 0, rows):
 				for y in range(0, cols):
 					if imgArray[x][y].shape[:2] == imgArray[0][0].shape [:2]:
-						imgArray[x][y] = cv2.resize(imgArray[x][y], (0, 0), None, scale, scale)
+						imgArray[x][y] = cv.resize(imgArray[x][y], (0, 0), None, scale, scale)
 					else:
-						imgArray[x][y] = cv2.resize(imgArray[x][y], (imgArray[0][0].shape[1], imgArray[0][0].shape[0]), None, scale, scale)
-					if len(imgArray[x][y].shape) == 2: imgArray[x][y]= cv2.cvtColor( imgArray[x][y], cv2.COLOR_GRAY2BGR)
+						imgArray[x][y] = cv.resize(imgArray[x][y], (imgArray[0][0].shape[1], imgArray[0][0].shape[0]), None, scale, scale)
+					if len(imgArray[x][y].shape) == 2: imgArray[x][y]= cv.cvtColor( imgArray[x][y], cv.COLOR_GRAY2BGR)
 			imageBlank = np.zeros((height, width, 3), np.uint8)
 			hor = [imageBlank]*rows
 			hor_con = [imageBlank]*rows
@@ -161,39 +285,45 @@ class Hippocampus:
 		else:
 			for x in range(0, rows):
 				if imgArray[x].shape[:2] == imgArray[0].shape[:2]:
-					imgArray[x] = cv2.resize(imgArray[x], (0, 0), None, scale, scale)
+					imgArray[x] = cv.resize(imgArray[x], (0, 0), None, scale, scale)
 				else:
-					imgArray[x] = cv2.resize(imgArray[x], (imgArray[0].shape[1], imgArray[0].shape[0]), None,scale, scale)
-				if len(imgArray[x].shape) == 2: imgArray[x] = cv2.cvtColor(imgArray[x], cv2.COLOR_GRAY2BGR)
+					imgArray[x] = cv.resize(imgArray[x], (imgArray[0].shape[1], imgArray[0].shape[0]), None,scale, scale)
+				if len(imgArray[x].shape) == 2: imgArray[x] = cv.cvtColor(imgArray[x], cv.COLOR_GRAY2BGR)
 			hor= np.hstack(imgArray)
 			ver = hor
 		return ver
 	
 	def drawMap(self, arena, cones, pad, img):
 		# draw arena
-		pl = round(arena['pcx'] + (arena['l'] * self.pxlpermm))
-		pt = round(arena['pcy'] + (arena['t'] * self.pxlpermm))
-		pr = round(arena['pcx'] + (arena['r'] * self.pxlpermm))
-		pb = round(arena['pcy'] + (arena['b'] * self.pxlpermm))
-		cv2.rectangle(img, (pl,pt), (pr,pb), (127,0,0), 1)
+		l = int(round(arena.bbox.l * self.pxlpermm))
+		t = int(round(arena.bbox.t * self.pxlpermm))
+		r = int(round(arena.bbox.r * self.pxlpermm))
+		b = int(round(arena.bbox.b * self.pxlpermm))
+		cv.rectangle(img, (l,t), (r,b), (127,0,0), 1)
 	
 		# draw cones
-		r = round(self.cone_radius * self.pxlpermm)
+		r = int(round(self.cone_radius * self.pxlpermm))
 		for cone in cones:
-			px = round(arena['pcx'] + (cone[0] * self.pxlpermm))
-			py = round(arena['pcy'] + (cone[1] * self.pxlpermm))
-			cv2.circle(img,(px,py),r,(0,0,255),1)
+			#x = int(round(arena.bbox.center.x + (obj.bbox.center.x * self.frameWidth)))
+			#y = int(round(arena.bbox.center.y + (obj.bbox.center.y * self.frameHeight)))
+			x = int(round(cone.bbox.center.x * self.pxlpermm))
+			y = int(round(cone.bbox.center.y * self.pxlpermm))
+			cv.circle(img,(x,y),r,(0,0,255),1)
 	
 		# draw pad
-		if 'c' in pad:
+		if pad:
 			r = round(self.pad_radius * self.pxlpermm)
-			px = round(arena['pcx'] + (pad['c'][0] * self.pxlpermm))
-			py = round(arena['pcy'] + (pad['c'][1] * self.pxlpermm))
-			cv2.circle(img,(px,py),r,(255,0,255),1)  # outer perimeter
-			pt1, pt2 = self.calcLine((px,py), r, pad['a'])
-			cv2.line(img,pt1,pt2,(255,0,255),1)  # center axis
+			#x = round((arena.bbox.l + pad.center.x) * self.pxlpermm)
+			#y = round((arena.bbox.t + pad.center.y) * self.pxlpermm)
+			x = round(pad.center.x * self.pxlpermm)
+			y = round(pad.center.y * self.pxlpermm)
+			cv.circle(img,(x,y),r,(255,0,255),1)  # outer perimeter
+
+			pt1, pt2 = self.calcLine((x,y), r, pad.angle)
+			cv.line(img,pt1,pt2,(255,0,255),1)  # center axis
+
 			pt = pt1 if pt1[0] < pt2[0] else pt2 # which end is up?
-			cv2.circle(img,pt,3,(255,0,255),1)   # arrow pointing forward
+			cv.circle(img,pt,3,(255,0,255),1)   # arrow pointing forward
 	
 	def calcLine(self,c,r,a):
 		h = np.radians(a)
@@ -230,219 +360,243 @@ class Hippocampus:
 			if self.debugCones or self.debugLzr or self.debugLzl:
 				imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = self.debugImages
 				stack = self.stackImages(0.7,([self.imgInt,imgHsv,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap,imgFinal]))
-			cv2.imshow('Image Processing', stack)
+			cv.imshow('Image Processing', stack)
 
+	#
 	# end UI section, begin image processing section
+	#
 
-	def getObjectData(self, cones, padr, padl):
-		coneclass = 0
-		padrclass  = 1
-		padlclass  = 2
-		data = []
-		for contour in cones:
-			obj = self.calcDataFromContour(coneclass, contour)		
-			data.append(obj)
-	
-		for contour in padr:
-			obj = self.calcDataFromContour(padrclass, contour)		
-			data.append(obj)
-			
-		for contour in padl:
-			obj = self.calcDataFromContour(padlclass, contour)		
-			data.append(obj)
-		return data
-	
-	def calcDataFromContour(self, cls, contour):
-		# calc area, center, radius in pixels
-		area = cv2.contourArea(contour)
-		peri = cv2.arcLength(contour, True)
-		approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
-		x, y, w, h = cv2.boundingRect(approx)
-		cx = int(x + (w / 2))
-		cy = int(y + (h / 2))
-		r = max(w,h)/2  # or r = math.sqrt(a/np.pi())
-	
-		# rotated rectangle, for pad
-		rr = cv2.minAreaRect(contour) # (cx,cy), (w,h), angle
-	
-		# training data: percentage of image
-		tx = round(x/self.frameWidth, 6)
-		ty = round(y/self.frameHeight, 6)
-		tw = round(w/self.frameWidth, 6)
-		th = round(h/self.frameHeight, 6)
-	
-		obj = {
-			'px': x ,  # pixels bounding box
-			'py': y ,
-			'pw': w ,
-			'ph': h ,
-			'pr': r ,
-			'pcx':cx,
-			'pcy':cy,
-			'tx':tx,  # training data, pct of frame, bounding box
-			'ty':ty,
-			'tw':tw,
-			'th':th,
-			'rr':rr,
-			'cl':cls  # class 0:cone, 1:padr, 2:padl
-		}
-		return obj
-	
-	def detectObjects(self,img,settings):
+	def detectObjectsNN(self,img):
+		pass
+
+	def detectObjectsCV(self,img):
+		objects = []
+		self.detectContours(img, self.cone_settings, objects)
+		self.detectContours(img, self.padl_settings, objects)
+		self.detectContours(img, self.padr_settings, objects)
+		return objects
+
+	def detectContours(self,img,settings,objects):
 		# mask based on hsv ranges
 		lower = np.array([settings['hue_min'],settings['sat_min'],settings['val_min']])
 		upper = np.array([settings['hue_max'],settings['sat_max'],settings['val_max']])
-		imgHsv = cv2.cvtColor(img,cv2.COLOR_BGR2HSV)
-		imgMask = cv2.inRange(imgHsv,lower,upper)
-		imgMasked = cv2.bitwise_and(img,img, mask=imgMask)
+		imgHsv = cv.cvtColor(img,cv.COLOR_BGR2HSV)
+		imgMask = cv.inRange(imgHsv,lower,upper)
+		imgMasked = cv.bitwise_and(img,img, mask=imgMask)
 	
-		imgBlur = cv2.GaussianBlur(imgMasked, (7, 7), 1)
-		imgGray = cv2.cvtColor(imgBlur, cv2.COLOR_BGR2GRAY)
+		imgBlur = cv.GaussianBlur(imgMasked, (7, 7), 1)
+		imgGray = cv.cvtColor(imgBlur, cv.COLOR_BGR2GRAY)
 	
 		# canny: edge detection.  Canny recommends hi:lo ratio around 2:1 or 3:1.
-		imgCanny = cv2.Canny(imgGray, settings['canny_lo'], settings['canny_hi'])
+		imgCanny = cv.Canny(imgGray, settings['canny_lo'], settings['canny_hi'])
 	
 		# dilate: thicken the line
 		kernel = np.ones((5, 5))
-		imgDilate = cv2.dilate(imgCanny, kernel, iterations=1)
-	
+		imgDilate = cv.dilate(imgCanny, kernel, iterations=1)
+
 		# get a data array of polygons, one contour boundary for each object
-		contours, _ = cv2.findContours(imgDilate, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+		contours, _ = cv.findContours(imgDilate, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
 		self.debugImages = [imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate]
-		return contours
-	
+
+		# get bounding box for each contour
+		for contour in contours:
+			area = cv.contourArea(contour)
+			perimeter = cv.arcLength(contour, True)
+			polygon = cv.approxPolyDP(contour, 0.02 * perimeter, True)
+			l,t,w,h = cv.boundingRect(polygon)
+
+			tl = round(l/self.frameWidth, 6)
+			tt = round(t/self.frameHeight, 6)
+			tw = round(w/self.frameWidth, 6)
+			th = round(h/self.frameHeight, 6)
+
+			bbox = Bbox(tl,tt,tw,th)
+			obj = DetectedObject(settings['cls'], bbox)
+			objects.append(obj)
+		return
+
+	def findPad(self, objects):
+		padla = []
+		for obj in objects:
+			if obj.cls == self.clsPadl:
+				padla.append(obj)
+		padra = []
+		for obj in objects:
+			if obj.cls == self.clsPadr:
+				padra.append(obj)
+
+		# if multiples, choose the one with the largest radius 
+		objpadl = False
+		radius = 0
+		for obj in padla:
+			if obj.bbox.radius > radius:
+				objpadl = obj
+		objpadr = False
+		radius = 0
+		for obj in padra:
+			if obj.bbox.radius > radius:
+				objpadr = obj
+
+		# go back and scrub objects list
+		for obj in objects:
+			if obj.cls == self.clsPadl and obj is not objpadl:
+				objects.remove(obj)
+			if obj.cls == self.clsPadr and obj is not objpadr:
+				objects.remove(obj)
+
+		# padr and padl are expected to intersect
+		# if angle is straight up, they could be adjacent, but this is unlikely
+		if not objpadl.bbox.intersects( objpadr.bbox):
+			logging.warning('pad halves do not intersect')
+
+		# from pct to pxl
+		padr = copy.deepcopy(objpadr)
+		padr.bbox.l *= self.frameWidth
+		padr.bbox.t *= self.frameHeight
+		padr.bbox.w *= self.frameWidth 
+		padr.bbox.h *= self.frameHeight 
+		padr.bbox.calc()
+
+		padl = copy.deepcopy(objpadl)
+		padl.bbox.l *= self.frameWidth
+		padl.bbox.t *= self.frameHeight
+		padl.bbox.w *= self.frameWidth 
+		padl.bbox.h *= self.frameHeight 
+		padl.bbox.calc()
+
+		# calc pad radius in pixels
+		#_,pxlPadRadius,_ = padl.bbox.center.triangulateTwoPoints(padr.bbox.center)
+		pxlpadcenter = padl.bbox.center.averageTwoPoints(padr.bbox.center)
+		pxlpt2 = Pt(padr.bbox.l, padl.bbox.t)
+		_,pxlPadRadius,_ = pxlpadcenter.triangulateTwoPoints(pxlpt2)
+
+		# conversion factor pxl per mm
+		# nb: conversion factor implies an agl
+		self.pxlpermm = pxlPadRadius / self.pad_radius
+
+		# from pxl to mm
+		padr.bbox.l /= self.pxlpermm
+		padr.bbox.t /= self.pxlpermm
+		padr.bbox.w /= self.pxlpermm
+		padr.bbox.h /= self.pxlpermm
+		padr.bbox.calc()
+
+		padl.bbox.l /= self.pxlpermm
+		padl.bbox.t /= self.pxlpermm
+		padl.bbox.w /= self.pxlpermm
+		padl.bbox.h /= self.pxlpermm
+		padl.bbox.calc()
+
+		# create pad object in mm
+		pad = Pad(padl,padr)
+		return pad
+		
+	def findCones(self, objects):
+		# choose only correctly sized objects, scrub object list
+		cones = []
+
+		radmin = self.cone_radius - (self.cone_radius_range*self.cone_radius)
+		radmax = self.cone_radius + (self.cone_radius_range*self.cone_radius)
+
+		numconeobjs = 0
+		for obj in objects:
+			if obj.cls == self.clsCone:
+				numconeobjs += 1
+
+				# from pct to pxl
+				cone = copy.deepcopy(obj)
+				cone.bbox.l *= self.frameWidth
+				cone.bbox.t *= self.frameHeight
+				cone.bbox.w *= self.frameWidth 
+				cone.bbox.h *= self.frameHeight 
+
+				# from pxl to mm
+				cone.bbox.l /= self.pxlpermm
+				cone.bbox.t /= self.pxlpermm
+				cone.bbox.w /= self.pxlpermm
+				cone.bbox.h /= self.pxlpermm
+				cone.bbox.calc()
+
+				if cone.bbox.radius > radmin and cone.bbox.radius < radmax:
+					cones.append(cone)
+				else:
+					objects.remove(obj)
+
+		self.post('cones found', numconeobjs)
+		self.post('cones accepted', len(cones))
+		return cones
+		
+	def findArena(self, cones):
+		# make an array of points and pass it to cv.RotatedRect()
+		#pta = np.empty((0,0))
+		#for cone in cones:	
+		#	pt = cv.Point2f(cone.center.x,cone.center.y)
+		#	pta.append(pt)
+		#rect = cv.minAreaRect(pta)
+
+		# non-rotated arena, bbox from cones
+		l = self.frameWidth
+		r = 0
+		t = self.frameHeight
+		b = 0
+		bbox = Bbox(l,t,r-l,b-t)
+		for cone in cones:
+			x = cone.bbox.center.x
+			y = cone.bbox.center.y
+			if x < l:
+				l = x
+			if x > r:
+				r = x
+			if y < t:
+				t = y
+			if y > b:
+				b = y
+
+		bbox = Bbox(l,t,r-l,b-t)
+		bbox.expand(self.arena_padding)
+		arena  = Arena(bbox)
+		return arena
+
 	def matchMap(data):
 		pass
 	
-	def buildMap(self, data):
-		# get average cone diameter in pixels
-		diam = []
-		for row in data:
-			if row['cl'] == 0:
-				diam.append(row['ph'])
-				diam.append(row['pw'])
-		pxlConeWidth = 0
-		if len(diam) > 0:
-			pxlConeWidth = sum(diam) / len(diam)
-		self.post('pxlConeWidth', round(pxlConeWidth))
-	
-		# calc conversion factor
-		mmConeWidth = self.cone_radius * 2
-		self.pxlpermm = pxlConeWidth / mmConeWidth
-		if self.pxlpermm <= 0:
-			self.pxlpermm = 0.1
-		self.post('pxlpermm', round(self.pxlpermm,2))
-		self.post('camera_height', self.camera_height)
-		# pxlpermmat1m = 0.5964285714
-		# pxlpermmat2m = 0.3071428571
-
-		# find arena boundary and center in pixels
-		pxlarena = {
-			'l':self.frameWidth,
-			'r':0,
-			't':self.frameHeight,
-			'b':0,
-		}
-		for row in data:
-			if row['cl'] == 0:
-				pcx = row['pcx']
-				pcy = row['pcy']
-				if pcx < pxlarena['l']:
-					pxlarena['l'] = pcx
-				if pcx > pxlarena['r']:
-					pxlarena['r'] = pcx
-				if pcy < pxlarena['t']:
-					pxlarena['t'] = pcy
-				if pcy > pxlarena['b']:
-					pxlarena['b'] = pcy
-		a = self.arena_padding * self.pxlpermm
-		pxlarena['l'] -= a
-		pxlarena['t'] -= a
-		pxlarena['r'] += a
-		pxlarena['b'] += a
-		pxlarena['cx'] = pxlarena['l'] + ((pxlarena['r'] - pxlarena['l']) / 2)
-		pxlarena['cy'] = pxlarena['t'] + ((pxlarena['b'] - pxlarena['t']) / 2)
-		
-		# convert arena boundary and center to mm
-		arena = {}
-		arena['cx'] = 0  # arena center is null island
-		arena['cy'] = 0
-		arena['pcx'] = pxlarena['cx']
-		arena['pcy'] = pxlarena['cy']
-		arena['w'] = (pxlarena['r'] - pxlarena['l']) / self.pxlpermm
-		arena['h'] = (pxlarena['b'] - pxlarena['t']) / self.pxlpermm
-		arena['r'] = (arena['cx'] + (arena['w'] / 2))
-		arena['l'] = (arena['cx'] - (arena['w'] / 2))
-		arena['b'] = (arena['cy'] + (arena['h'] / 2))
-		arena['t'] = (arena['cy'] - (arena['h'] / 2))
-	
-		# convert centers to mm
-		cones = []
-		pad = {}
-		for row in data:
-			cx = (row['pcx'] - pxlarena['cx']) / self.pxlpermm
-			cy = (row['pcy'] - pxlarena['cy']) / self.pxlpermm
-			if row['cl'] == 0:
-				cones.append((cx,cy))
-			elif row['cl'] == 1:
-				pad['rc'] = ((cx,cy))
-				pad['ra'] = row['rr'][2]
-				pad['rrr'] = row['rr']
-			elif row['cl'] == 2:
-				pad['lc'] = ((cx,cy))
-				pad['la'] = row['rr'][2]
-				pad['lrr'] = row['rr']
-	
-		# pad center and angle
-		if 'lc' in pad.keys() and 'rc' in pad.keys():
-			pad['c'] = self.averageTwoPoints(pad['lc'], pad['rc'])
-			pad['a2'] = (pad['la'] + pad['ra']) / 2
-			x1,y1 = pad['lc']
-			x2,y2 = pad['rc']
-			lenx = x2 - x1
-			leny = y2 - y1
-			oh = leny/lenx if lenx else 0
-			angle = np.arctan(oh)
-			degrs = np.degrees(angle)
-			pad['a'] = degrs - 90 # we want angle to the y-axis instead of to the x-axis
-			self.post('pad_angle', round(pad['a']))
-			self.post('pad_angle_alt', round(pad['a2']))
-		else:
-			self.post('cannot see pad', 0)
-
-		self.post('numCones', len(cones))
-		return arena, cones, pad
-	
-	def averageTwoPoints(self, ptr, ptl):
-		cxl,cyl = ptl
-		cxr,cyr = ptr
-		cxc = cxl + ((cxr - cxl) / 2)
-		cyc = cyl + ((cyr - cyl) / 2)
-		center = (cxc,cyc)
-		return center
-		
-	def saveTrainingData(self,data,img):
+	def saveTrainingData(self,img,objects):
 		if self.saveTrain and self.framenum % self.save_train_nth == 0:
-			fname = f'{self.outfolder}/sk8_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}_ht_{self.camera_height}'
+			ht = str(self.camera_agl*10) # remove decimal point
+			fname = f'{self.outfolder}/sk8_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}_ht_{ht}'
 			imgname = f'{fname}.jpg'
 			txtname = f'{fname}.txt'
-			cv2.imwrite(imgname,img)
+			cv.imwrite(imgname,img)
 			f = open(txtname, 'a')
-			for row in data:
-				f.write(f"{row['cl']} {row['tx']} {row['ty']} {row['tw']} {row['th']}\n")
+
+			for obj in objects:
+				f.write(f"{obj.cls} {obj.bbox.t} {obj.bbox.l} {obj.bbox.w} {obj.bbox.h}\n")
 			f.close()
 
 	def start(self):
 		logging.info('hippocampus starting')
 		self.openUI()
 
+		# create daily log folder
+		self.outfolder = f'{self.outfolderbase}{datetime.now().strftime("%Y%m%d")}/'
+		if not os.path.exists(self.outfolder):
+			os.makedirs(self.outfolder)
+
 	def stop(self):
 		logging.info('hippocampus stopping')
 		self.closeUI()
 
-	def processFrame(self,img):
+	def detectObjects(self,img):
+		if self.useNeuralNet:
+			return self.detectObjectsNN(img)
+		else:
+			return self.detectObjectsCV(img)
+
+	def processFrame(self,img,baro_agl):
+		self.baro_agl = baro_agl
 		self.framenum += 1
 		self.frameHeight,self.frameWidth,self.frameDepth = img.shape
+
 		self.post('image_dim', f'h:{self.frameHeight},w:{self.frameWidth},d:{self.frameDepth}')
 
 		# get settings from trackbars
@@ -454,38 +608,42 @@ class Hippocampus:
 			elif self.debugLzl:
 				self.readSettings( self.padl_settings, 'LZL')
 
-		# find contors
-		conecontours = self.detectObjects(img, self.cone_settings)
-		padrcontours = self.detectObjects(img, self.padr_settings)
-		padlcontours = self.detectObjects(img, self.padl_settings)
-	
-		# reduce the contours to pixel data
-		data = self.getObjectData(conecontours, padrcontours, padlcontours)
+		# detect objects - unit: percent of frame
+		self.objects = self.detectObjects(img)
+		self.post('objects found',len(self.objects))
 
-		# convert pixel data to map coordinates
-		self.arena, self.cones, self.pad = self.buildMap(data)
-		
+		# build map
+		self.pad = self.findPad(self.objects)
+		self.post('pad center', self.pad.center)
+		self.post('pad angle' , self.pad.angle)
+		self.post('pad radius', self.pad.radius)
+
+		self.cones = self.findCones(self.objects)
+		self.arena = self.findArena(self.cones)
+
 		# orient frame to map
 
-		# save data for mission debriefing and neural net training
-		self.saveTrainingData(data, img)
+		# save image and objects for mission debriefing and neural net training
+		self.saveTrainingData(img, self.objects)
 
 	def parseFilenameForHeight(self, fname):
 		height = int(fname.split('_ht_')[1].split('.')[0])
 		return height
 
 if __name__ == '__main__':
-	def startLogging(filename='drone.log'):
+	def startLogging(filename):
 		logging.basicConfig(
-			format='%(asctime)s %(levelname)s %(message)s', 
+			format='%(asctime)s %(module)s %(levelname)s %(message)s', 
 			filename=filename, 
-			level=logging.DEBUG) # 10 debug, 20 info, 30 warning, 40 error, 50 critical
+			level=logging.DEBUG) # 10 DEBUG, 20 INFO, 30 WARNING, 40 ERROR, 50 CRITICAL
 		console = logging.StreamHandler()
-		console.setLevel(logging.INFO)
+		console.setLevel(logging.INFO)  # console does not get DEBUG level
 		logging.getLogger('').addHandler(console)
-		logging.info('starting')
+		logging.info('logging configured')
 
-	startLogging()
+	logfolder = '/home/john/sk8/logs/'
+	fname = f'{logfolder}/sk8_{datetime.now().strftime("%Y%m%d")}.log' # daily logfile
+	startLogging(fname)
 
 	imgfolder = '../imageprocessing/images/cones/train/'
 	imgfile = 'helipad_and_3_cones.jpg'
@@ -497,14 +655,11 @@ if __name__ == '__main__':
 	hippocampus.start()
 
 	while True:
-		img = cv2.imread(imgfolder+imgfile, cv2.IMREAD_UNCHANGED)
-		hippocampus.camera_height = hippocampus.parseFilenameForHeight(imgfolder+imgfile)
-
-		hippocampus.processFrame(img)
-		
+		ht = hippocampus.parseFilenameForHeight(imgfile)
+		img = cv.imread(imgfolder+imgfile, cv.IMREAD_UNCHANGED)
+		hippocampus.processFrame(img, ht)
 		hippocampus.drawUI(img)
-
-		if cv2.waitKey(1) & 0xFF == ord('q'):
+		if cv.waitKey(1) & 0xFF == ord('q'):
 			break
 
 	hippocampus.stop()
