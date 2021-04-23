@@ -18,38 +18,103 @@ from datetime import datetime
 import logging
 import os
 import copy
+import colorsys
 
 class Pt:
 	def __init__(self, x, y):
 		self.x = x
 		self.y = y
-	
-	def averageTwoPoints(self, pt2):
-		x2= pt2.x
-		y2= pt2.y
-		xc = self.x + ((x2 - self.x) / 2)
-		yc = self.y + ((y2 - self.y) / 2)
-		return Pt(xc,yc)
-	
-	def triangulateTwoPoints(self, pt2):
-		# length of hypotenuse
-		lenx = abs(self.x - pt2.x)
-		leny = abs(self.y - pt2.y)
-		hypotenuse = np.sqrt(lenx**2 + leny**2)
 
-		# point r, the right angle
-		ptr = Pt(self.x+lenx, self.y+leny)
-
-		# angle of the hypotenuse to the vertical axis
-		# see https://www.geogebra.org/classic/h6pgbftp
-		oa = lenx/leny if (leny != 0) else 0 # tangent of angle = opposite over adjacent 
-		radians = np.arctan(oa)
-		degrs = np.degrees(radians)
-		return degrs, hypotenuse, ptr
-		
+	def tuple(self):
+		return (int(self.x),int(self.y))
+	
 	def __str__(self):
 		return f'({self.x},{self.y})'
 
+def averageTwoPoints(pt1, pt2):
+	x2= pt2.x
+	y2= pt2.y
+	xc = pt1.x + ((x2 - pt1.x) / 2)
+	yc = pt1.y + ((y2 - pt1.y) / 2)
+	return Pt(xc,yc)
+
+def triangulateTwoPoints(ptleft, ptright):
+	# length of hypotenuse
+	lenx = abs(ptright.x - ptleft.x)
+	leny = abs(ptright.y - ptleft.y)
+	hypotenuse = np.sqrt(lenx**2 + leny**2)
+
+	# point of right angle
+	ptr = Pt(ptleft.x, ptright.y)
+
+	quadrant = quadrantPoints(ptleft,ptright)
+
+	# angle of the hypotenuse to the vertical axis
+	# see https://www.geogebra.org/classic/h6pgbftp  # sketch of quadrant upper left
+	if quadrant == 'upper right' or quadrant == 'lower left':
+		oa = leny/lenx if (lenx != 0) else 0 # tangent of angle = opposite over adjacent 
+	else:
+		oa = lenx/leny if (leny != 0) else 0 # tangent of angle = opposite over adjacent 
+	radians = np.arctan(oa)
+	degrs = np.degrees(radians)
+
+	if quadrant == 'lower right':
+		degrs += 90
+	elif quadrant == 'lower left':
+		degrs += 180
+	elif quadrant == 'upper left':
+		degrs += 270
+	return degrs, hypotenuse, ptr
+	
+def quadrantAngle(angle):
+	quadrant = ''
+	if angle >= 0 and angle < 90:
+		quadrant = 'upper right'
+	elif angle >= 90 and angle < 180:
+		quadrant = 'lower right'
+	elif angle >= 180 and angle < 270:
+		quadrant = 'lower left'
+	elif angle >= 270 and angle <= 360:
+		quadrant = 'upper left'
+	return quadrant
+
+def quadrantPoints(ptleft, ptright):
+	quadrant = ''
+	if ptleft.x < ptright.x and ptleft.y < ptright.y:
+		quadrant = 'upper right'
+	elif ptleft.x < ptright.x and ptleft.y > ptright.y:
+		quadrant = 'upper left'
+	elif ptleft.x > ptright.x and ptleft.y < ptright.y:
+		quadrant = 'lower right'
+	elif ptleft.x > ptright.x and ptleft.y > ptright.y:
+		quadrant = 'lower left'
+	return quadrant
+
+
+def calcLine(c,r,a):
+	angle = np.radians(a)
+	lenh = r # length of hypotenuse
+	#                                soh cah toa
+	leno = round(np.sin(angle) * lenh) # opposite sine(angle = opposite/hypotenuse)
+	lena = round(np.cos(angle) * lenh) # adjacent
+	x = c[0]
+	y = c[1]
+
+	quadrant = quadrantAngle(a)
+
+	if False: #quadrant == 'upper left' or quadrant == 'lower right':
+		x1 = x + lena
+		y1 = y + leno
+		x2 = x - lena
+		y2 = y - leno
+	else:
+		x1 = x + leno
+		y1 = y - lena
+		x2 = x - leno
+		y2 = y + lena
+
+	return (x1,y1), (x2,y2) 
+	
 class Bbox:
 	def __init__(self, l,t,w,h):
 		self.l = l
@@ -96,8 +161,8 @@ class Pad:
 		self.calc()
 
 	def calc(self):
-		self.center = self.padl.bbox.center.averageTwoPoints(self.padr.bbox.center)
-		self.angle,self.radius,_ = self.padl.bbox.center.triangulateTwoPoints(self.padr.bbox.center)
+		self.center = averageTwoPoints(self.padl.bbox.center, self.padr.bbox.center)
+		self.angle,self.radius,self.pt3 = triangulateTwoPoints(self.padl.bbox.center, self.padr.bbox.center)
 
 class Arena:
 	def __init__(self,bbox):
@@ -114,10 +179,14 @@ class Hippocampus:
 		self.ui = ui
 		self.saveTrain = saveTrain
 
+		# object classification codes
+		self.clsCone = 0
+		self.clsPadl = 1
+		self.clsPadr = 2
+
 		# settings
-		self.debugCones = False 
-		self.debugLzr = False
-		self.debugLzl =  False
+		self.clsdebug = -1 # self.clsCone  # -1
+
 		self.datalineheight = 22
 		self.datalinemargin = 5
 
@@ -130,7 +199,7 @@ class Hippocampus:
 
 		self.pad_radius = 70     # pad is 14 cm square
 		self.cone_radius = 40    # cone diameter is 8 cm
-		self.cone_radius_range = 0.20
+		self.cone_radius_range = 0.40
 		self.arena_padding = 80  # turning radius. keep sk8 in the arena.
 
 		self.arena_margin = 40
@@ -144,10 +213,6 @@ class Hippocampus:
 			'canny_lo' : 255,
 			'canny_hi' : 255
 		}
-
-		self.clsCone = 0 # object classification codes
-		self.clsPadl = 1
-		self.clsPadr = 2
 
 		self.cone_settings = {
 			'hue_min'  : 0,
@@ -188,8 +253,9 @@ class Hippocampus:
 		self.frameWidth  = 0     #     ?      720      720
 		self.frameHeight = 0     #     ?      540      405
 		self.frameDepth  = 0     #     ?        3        3
-		self.imgInt = False
-		self.internals = {}
+		self.imgColor = False
+		self.imgPost = False
+		self.posts = {}
 		self.debugImages = []
 		self.outfolder = ''
 	
@@ -220,28 +286,28 @@ class Hippocampus:
 
 	def openUI(self):
 		if self.ui:
-			if self.debugCones:
-				self.openSettings(self.cone_settings, 'Cone')
-			elif self.debugLzr:
-				self.openSettings(self.padr_settings, 'LZR')
-			elif self.debugLzl:
-				self.openSettings(self.padl_settings, 'LZL')
+			if self.clsdebug == self.clsCone:
+				self.openSettings(self.cone_settings, 'cone')
+			elif self.clsdebug == self.clsPadl:
+				self.openSettings(self.padl_settings, 'padl')
+			elif self.clsdebug == self.clsPadr:
+				self.openSettings(self.padr_settings, 'padr')
 
 	def closeUI(self):
 		if self.ui:
 			cv.destroyAllWindows()
 
 	def post(self,key,value):
-		self.internals[key] = value
+		self.posts[key] = value
 	
-	def drawInternals(self):
+	def drawPosts(self):
 		linenum = 1
 		ssave = ''
-		for k in self.internals.keys():
-			v = self.internals[k]
+		for k in self.posts.keys():
+			v = self.posts[k]
 			s = f'{k}={v}'
 			pt = (self.datalinemargin, self.datalineheight * linenum)
-			cv.putText(self.imgInt, s, pt, cv.FONT_HERSHEY_SIMPLEX,.7,(0,0,0), 1)
+			cv.putText(self.imgPost, s, pt, cv.FONT_HERSHEY_SIMPLEX,.7,(0,0,0), 1)
 			linenum += 1
 			ssave += s + ';'
 		if self.framenum % self.save_post_nth == 0:
@@ -255,14 +321,53 @@ class Hippocampus:
 		cv.namedWindow( window_name)
 		cv.resizeWindow( window_name,640,240)
 		for setting in settings:
-			cv.createTrackbar(setting, window_name, settings[setting], self.barmax[setting],empty)
+			if setting != 'cls':
+				cv.createTrackbar(setting, window_name, settings[setting], self.barmax[setting],empty)
 	
 	def readSettings(self, settings, name):
 		window_name = f'{name} Settings'
 		for setting in settings:
-			settings[setting] = cv.getTrackbarPos(setting, window_name)
+			if setting != 'cls':
+				settings[setting] = cv.getTrackbarPos(setting, window_name)
+
+		# create the debugging color image
+		# debug hsv range
+		self.imgColor = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
+
+		hl,hu,sl,su,vl,vu,_,_,_ = settings.values()
+		print(hl)	
+		hl /= 179
+		hu /= 179
+		sl /= 255
+		su /= 255
+		vl /= 255
+		vu /= 255
+
+		rl,gl,bl = colorsys.hsv_to_rgb(hl,sl,vl)
+		ru,gu,bu = colorsys.hsv_to_rgb(hu,su,vu)
+
+		rl *= 255
+		ru *= 255
+		gl *= 255
+		gu *= 255
+		bl *= 255
+		vu *= 255
+		
+
+		colormin = bl,gl,rl
+		colormax = bu,gu,ru
+		#colormin = [settings['hue_min'],settings['sat_min'],settings['val_min']]
+		#colormax = [settings['hue_max'],settings['sat_max'],settings['val_max']]
+
+		#imgColor.fill(255)
+		for y in range(0, int(self.frameHeight/2)):
+			for x in range(self.frameWidth):
+				self.imgColor[y,x] = colormin   # [255,255,255]
+		for y in range(int(self.frameHeight/2), self.frameHeight):
+			for x in range(self.frameWidth):
+				self.imgColor[y,x] = colormax   # [128,128,128]
 	
-	def stackImages(self,scale,imgArray):
+	def xstackImages(self,scale,imgArray):
 		rows = len(imgArray)
 		cols = len(imgArray[0])
 		rowsAvailable = isinstance(imgArray[0], list)
@@ -293,6 +398,30 @@ class Hippocampus:
 			ver = hor
 		return ver
 	
+	def stackImages(self,scale,imgArray):
+		# imgArray is a tuple of lists
+		rows = len(imgArray)     # number of lists in the tuple
+		cols = len(imgArray[0])  # number of images in the first list
+
+		height,width,depth = imgArray[0][0].shape
+
+		for x in range ( 0, rows):
+			for y in range(0, cols):
+				# scale images down to fit on screen
+				imgArray[x][y] = cv.resize(imgArray[x][y], (0, 0), None, scale, scale)
+
+				# imshow() requires BGR, so convert grayscale images to BGR
+				if len(imgArray[x][y].shape) == 2: 
+					imgArray[x][y]= cv.cvtColor( imgArray[x][y], cv.COLOR_GRAY2BGR)
+
+		imageBlank = np.zeros((height, width, 3), np.uint8)  # shouldn't this be scaled?
+		hor = [imageBlank]*rows  # initialize a blank image space
+		for x in range(0, rows):
+			hor[x] = np.hstack(imgArray[x])
+		ver = np.vstack(hor)
+
+		return ver
+	
 	def drawMap(self, arena, cones, pad, img):
 		# draw arena
 		l = int(round(arena.bbox.l * self.pxlpermm))
@@ -312,6 +441,18 @@ class Hippocampus:
 	
 		# draw pad
 		if pad:
+			l = int(round(self.pad.padl.bbox.l * self.pxlpermm))
+			t = int(round(self.pad.padl.bbox.t * self.pxlpermm))
+			r = int(round(self.pad.padl.bbox.r * self.pxlpermm))
+			b = int(round(self.pad.padl.bbox.b * self.pxlpermm))
+			cv.rectangle(img, (l,t), (r,b), (0,255,255), 1)
+
+			l = int(round(self.pad.padr.bbox.l * self.pxlpermm))
+			t = int(round(self.pad.padr.bbox.t * self.pxlpermm))
+			r = int(round(self.pad.padr.bbox.r * self.pxlpermm))
+			b = int(round(self.pad.padr.bbox.b * self.pxlpermm))
+			cv.rectangle(img, (l,t), (r,b), (127,0,128), 1)
+			
 			r = round(self.pad_radius * self.pxlpermm)
 			#x = round((arena.bbox.l + pad.center.x) * self.pxlpermm)
 			#y = round((arena.bbox.t + pad.center.y) * self.pxlpermm)
@@ -319,47 +460,56 @@ class Hippocampus:
 			y = round(pad.center.y * self.pxlpermm)
 			cv.circle(img,(x,y),r,(255,0,255),1)  # outer perimeter
 
-			pt1, pt2 = self.calcLine((x,y), r, pad.angle)
+			pt1, pt2 = calcLine((x,y), r, pad.angle)
 			cv.line(img,pt1,pt2,(255,0,255),1)  # center axis
 
-			pt = pt1 if pt1[0] < pt2[0] else pt2 # which end is up?
-			cv.circle(img,pt,3,(255,0,255),1)   # arrow pointing forward
-	
-	def calcLine(self,c,r,a):
-		h = np.radians(a)
-		#a = np.tan(a)  # angle in degrees to slope as y/x ratio
-		lenc = r
-		lenb = round(np.sin(h) * lenc) # opposite
-		lena = round(np.cos(h) * lenc) # adjacent
-		x = c[0]
-		y = c[1]
-		x1 = x + lena
-		y1 = y + lenb
-		x2 = x - lena
-		y2 = y - lenb
-		return (x1,y1), (x2,y2) 
+			cv.circle(img,pt1,3,(255,0,255),1)   # arrow pointing forward
+
+			# draw triangle
+			pt1 = pad.padl.bbox.center
+			pt2 = pad.padr.bbox.center
+			pt3 = pad.pt3
+
+			x1 = int(pt1.x * self.pxlpermm)
+			y1 = int(pt1.y * self.pxlpermm)
+			x2 = int(pt2.x * self.pxlpermm)
+			y2 = int(pt2.y * self.pxlpermm)
+			cv.line(img, (x1,y1), (x2,y2), (0,0,0),1)
+
+			x1 = int(pt2.x * self.pxlpermm)
+			y1 = int(pt2.y * self.pxlpermm)
+			x2 = int(pt3.x * self.pxlpermm)
+			y2 = int(pt3.y * self.pxlpermm)
+			cv.line(img, (x1,y1), (x2,y2), (0,0,0),1)
+
+			x1 = int(pt3.x * self.pxlpermm)
+			y1 = int(pt3.y * self.pxlpermm)
+			x2 = int(pt1.x * self.pxlpermm)
+			y2 = int(pt1.y * self.pxlpermm)
+			cv.line(img, (x1,y1), (x2,y2), (0,0,0),1)
 	
 	def drawUI(self, img):
 		if self.ui:
 			# map
 			imgMap = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
-			imgMap.fill(255)
+			imgMap.fill(255)  # made white
 			self.drawMap(self.arena, self.cones, self.pad, imgMap)
 		
 			# frame overlaid with oriented map
 			imgFinal = img.copy()
 			self.drawMap(self.arena, self.cones, self.pad, imgFinal)
 
-			# internals, values, coefficients, scalars, multipliers, calculations, factors
-			# hippocampus internal data calculations
-			self.imgInt = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
-			self.imgInt.fill(255)
-			self.drawInternals()
+			# hippocampus internal data calculations posted by programmer
+			self.imgPost = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
+			self.imgPost.fill(255)
+			self.drawPosts()
 	
-			stack = self.stackImages(0.7,([imgMap,self.imgInt,imgFinal]))
-			if self.debugCones or self.debugLzr or self.debugLzl:
+			imgTuple = ([imgMap,self.imgPost,imgFinal],)
+			if self.clsdebug >= 0:
 				imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = self.debugImages
-				stack = self.stackImages(0.7,([self.imgInt,imgHsv,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap,imgFinal]))
+				imgHsv= cv.cvtColor( imgHsv, cv.COLOR_HSV2BGR)
+				imgTuple = ([self.imgPost,self.imgColor,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap,imgFinal])
+			stack = self.stackImages(0.8,imgTuple)
 			cv.imshow('Image Processing', stack)
 
 	#
@@ -396,7 +546,8 @@ class Hippocampus:
 
 		# get a data array of polygons, one contour boundary for each object
 		contours, _ = cv.findContours(imgDilate, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
-		self.debugImages = [imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate]
+		if self.clsdebug == settings['cls']:
+			self.debugImages = [imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate]
 
 		# get bounding box for each contour
 		for contour in contours:
@@ -425,16 +576,19 @@ class Hippocampus:
 			if obj.cls == self.clsPadr:
 				padra.append(obj)
 
+		self.post('num padla', len(padla))
+		self.post('num padra', len(padra))
+		if len(padla) <= 0 or len(padra) <= 0:
+			return False
+
 		# if multiples, choose the one with the largest radius 
-		objpadl = False
-		radius = 0
+		objpadl = padla[0]
 		for obj in padla:
-			if obj.bbox.radius > radius:
+			if obj.bbox.radius > objpadl.bbox.radius:
 				objpadl = obj
-		objpadr = False
-		radius = 0
+		objpadr = padra[0]
 		for obj in padra:
-			if obj.bbox.radius > radius:
+			if obj.bbox.radius > objpadr.bbox.radius:
 				objpadr = obj
 
 		# go back and scrub objects list
@@ -447,16 +601,10 @@ class Hippocampus:
 		# padr and padl are expected to intersect
 		# if angle is straight up, they could be adjacent, but this is unlikely
 		if not objpadl.bbox.intersects( objpadr.bbox):
-			logging.warning('pad halves do not intersect')
+			logging.debug('pad halves do not intersect')
+
 
 		# from pct to pxl
-		padr = copy.deepcopy(objpadr)
-		padr.bbox.l *= self.frameWidth
-		padr.bbox.t *= self.frameHeight
-		padr.bbox.w *= self.frameWidth 
-		padr.bbox.h *= self.frameHeight 
-		padr.bbox.calc()
-
 		padl = copy.deepcopy(objpadl)
 		padl.bbox.l *= self.frameWidth
 		padl.bbox.t *= self.frameHeight
@@ -464,40 +612,46 @@ class Hippocampus:
 		padl.bbox.h *= self.frameHeight 
 		padl.bbox.calc()
 
-		# calc pad radius in pixels
-		#_,pxlPadRadius,_ = padl.bbox.center.triangulateTwoPoints(padr.bbox.center)
-		pxlpadcenter = padl.bbox.center.averageTwoPoints(padr.bbox.center)
-		pxlpt2 = Pt(padr.bbox.l, padl.bbox.t)
-		a1,pxlPadRadius,_ = pxlpadcenter.triangulateTwoPoints(pxlpt2)
-		a2,pxlPadRadius2,_ = padl.bbox.center.triangulateTwoPoints(padr.bbox.center)
+		padr = copy.deepcopy(objpadr)
+		padr.bbox.l *= self.frameWidth
+		padr.bbox.t *= self.frameHeight
+		padr.bbox.w *= self.frameWidth 
+		padr.bbox.h *= self.frameHeight 
+		padr.bbox.calc()
 
-		self.post('pxl pad radius 2', pxlPadRadius2)
-		self.post('pxl pad angle 2', a2)
+		# calc pad radius in pixels
+		_,pxlPadRadius,_ = triangulateTwoPoints(padl.bbox.center, padr.bbox.center)
 
 		# conversion factor pxl per mm
 		# nb: conversion factor implies an agl
 		self.pxlpermm = pxlPadRadius / self.pad_radius
-		self.post('pxl pad radius', self.pxlpermm)
-		self.post('pxl per mm', self.pxlpermm)
+		self.post('conversion pxl per mm', self.pxlpermm)
 		self.post('mm frame width', self.frameWidth / self.pxlpermm)
 		self.post('mm frame height', self.frameHeight/ self.pxlpermm)
 		# 170cm w : 1700 mm w
 
 		# from pxl to mm
-		padr.bbox.l /= self.pxlpermm
-		padr.bbox.t /= self.pxlpermm
-		padr.bbox.w /= self.pxlpermm
-		padr.bbox.h /= self.pxlpermm
-		padr.bbox.calc()
-
 		padl.bbox.l /= self.pxlpermm
 		padl.bbox.t /= self.pxlpermm
 		padl.bbox.w /= self.pxlpermm
 		padl.bbox.h /= self.pxlpermm
 		padl.bbox.calc()
 
+		padr.bbox.l /= self.pxlpermm
+		padr.bbox.t /= self.pxlpermm
+		padr.bbox.w /= self.pxlpermm
+		padr.bbox.h /= self.pxlpermm
+		padr.bbox.calc()
+
 		# create pad object in mm
 		pad = Pad(padl,padr)
+		self.post('padl center', padl.bbox.center)
+		self.post('padr center', padr.bbox.center)
+		self.post('quadrant', quadrantPoints(padl.bbox.center, padr.bbox.center))
+		self.post('pad center', pad.center)
+		self.post('pad angle' , pad.angle)
+		self.post('pad radius', pad.radius)
+
 		return pad
 		
 	def findCones(self, objects):
@@ -525,11 +679,10 @@ class Hippocampus:
 				cone.bbox.w /= self.pxlpermm
 				cone.bbox.h /= self.pxlpermm
 				cone.bbox.calc()
-
 				if cone.bbox.radius > radmin and cone.bbox.radius < radmax:
 					cones.append(cone)
-				else:
-					objects.remove(obj)
+				#else:
+				#	objects.remove(obj)
 
 		self.post('cones found', numconeobjs)
 		self.post('cones accepted', len(cones))
@@ -610,12 +763,12 @@ class Hippocampus:
 
 		# get settings from trackbars
 		if self.ui:
-			if self.debugCones:
-				self.readSettings( self.cone_settings, 'Cone')
-			elif self.debugLzr:
-				self.readSettings( self.padr_settings, 'LZR')
-			elif self.debugLzl:
-				self.readSettings( self.padl_settings, 'LZL')
+			if self.clsdebug == self.clsCone:
+				self.readSettings( self.cone_settings, 'cone')
+			elif self.clsdebug == self.clsPadl:
+				self.readSettings( self.padl_settings, 'padl')
+			elif self.clsdebug == self.clsPadr:
+				self.readSettings( self.padr_settings, 'padr')
 
 		# detect objects - unit: percent of frame
 		self.objects = self.detectObjects(img)
@@ -623,9 +776,8 @@ class Hippocampus:
 
 		# build map
 		self.pad = self.findPad(self.objects)
-		self.post('pad center', self.pad.center)
-		self.post('pad angle' , self.pad.angle)
-		self.post('pad radius', self.pad.radius)
+		if not self.pad:
+			return 
 
 		self.cones = self.findCones(self.objects)
 		self.arena = self.findArena(self.cones)
@@ -657,12 +809,13 @@ if __name__ == '__main__':
 	imgfolder = '../imageprocessing/images/cones/train/'
 	imgfile = 'helipad_and_3_cones.jpg'
 	imgfile = 'IMG_20200623_174503.jpg'
-	imgfile = 'sk8_angle_45_agl_1000.jpg'
-	imgfile = 'sk8_angle_135_agl_1000.jpg'
 	imgfile = 'sk8_angle_210_agl_1000.jpg'
-	imgfile = 'sk8_angle_290_agl_1000.jpg'
 	imgfile = 'sk8_1_meter_agl_1000.jpg'
 	imgfile = 'sk8_2_meter_agl_2000.jpg'
+	imgfile = 'sk8_angle_45_agl_1000.jpg'   # angle  37, upper right
+	imgfile = 'sk8_angle_135_agl_1000.jpg'  # angle 126, lower right
+	imgfile = 'sk8_angle_210_agl_1000.jpg'  # angle 217, lower left
+	imgfile = 'sk8_angle_290_agl_1000.jpg'  # angle 290, upper left
 
 	hippocampus = Hippocampus(True, True)
 	hippocampus.start()
