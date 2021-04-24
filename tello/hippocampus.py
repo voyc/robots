@@ -95,26 +95,26 @@ def calcLine(c,r,a):
 	angle = np.radians(a)
 	lenh = r # length of hypotenuse
 	#                                soh cah toa
-	leno = round(np.sin(angle) * lenh) # opposite sine(angle = opposite/hypotenuse)
-	lena = round(np.cos(angle) * lenh) # adjacent
-	x = c[0]
-	y = c[1]
+	leno = round(np.sin(angle) * lenh) # opposite: sine(angle = opposite/hypotenuse)
+	lena = round(np.cos(angle) * lenh) # adjacent: cos(angle = adjacent/hypotenuse)
 
-	quadrant = quadrantAngle(a)
+	x,y = c
 
-	if False: #quadrant == 'upper left' or quadrant == 'lower right':
-		x1 = x + lena
-		y1 = y + leno
-		x2 = x - lena
-		y2 = y - leno
-	else:
-		x1 = x + leno
-		y1 = y - lena
-		x2 = x - leno
-		y2 = y + lena
+	x1 = x + leno
+	y1 = y - lena
+	x2 = x - leno
+	y2 = y + lena
 
 	return (x1,y1), (x2,y2) 
-	
+
+def drawPolygon(img, ptarray, factor=1, color=(255,0,0), linewidth=1):	
+	a = np.multiply(ptarray,factor)
+	a = a.astype(int)
+	print(a)
+	for i in range(0,len(a)):
+		j = i+1 if i < len(a)-1 else 0
+		cv.line(img, tuple(a[i]), tuple(a[j]), color, linewidth)
+
 class Bbox:
 	def __init__(self, l,t,w,h):
 		self.l = l
@@ -186,6 +186,7 @@ class Hippocampus:
 
 		# settings
 		self.clsdebug = -1 # self.clsCone  # -1
+		self.debugPad = True
 
 		self.datalineheight = 22
 		self.datalinemargin = 5
@@ -441,53 +442,32 @@ class Hippocampus:
 	
 		# draw pad
 		if pad:
-			l = int(round(self.pad.padl.bbox.l * self.pxlpermm))
-			t = int(round(self.pad.padl.bbox.t * self.pxlpermm))
-			r = int(round(self.pad.padl.bbox.r * self.pxlpermm))
-			b = int(round(self.pad.padl.bbox.b * self.pxlpermm))
-			cv.rectangle(img, (l,t), (r,b), (0,255,255), 1)
+			if self.debugPad: # draw the halves
+				l = int(round(self.pad.padl.bbox.l * self.pxlpermm))
+				t = int(round(self.pad.padl.bbox.t * self.pxlpermm))
+				r = int(round(self.pad.padl.bbox.r * self.pxlpermm))
+				b = int(round(self.pad.padl.bbox.b * self.pxlpermm))
+				cv.rectangle(img, (l,t), (r,b), (0,255,255), 1) # bgr yellow, left
 
-			l = int(round(self.pad.padr.bbox.l * self.pxlpermm))
-			t = int(round(self.pad.padr.bbox.t * self.pxlpermm))
-			r = int(round(self.pad.padr.bbox.r * self.pxlpermm))
-			b = int(round(self.pad.padr.bbox.b * self.pxlpermm))
-			cv.rectangle(img, (l,t), (r,b), (127,0,128), 1)
+				l = int(round(self.pad.padr.bbox.l * self.pxlpermm))
+				t = int(round(self.pad.padr.bbox.t * self.pxlpermm))
+				r = int(round(self.pad.padr.bbox.r * self.pxlpermm))
+				b = int(round(self.pad.padr.bbox.b * self.pxlpermm))
+				cv.rectangle(img, (l,t), (r,b), (255,0,255), 1) # bgr purple, right
 			
+				drawPolygon(img, [pad.padl.bbox.center.tuple(), pad.padr.bbox.center.tuple(), pad.pt3.tuple()], self.pxlpermm)
+	
+			#  outer perimeter
 			r = round(self.pad_radius * self.pxlpermm)
-			#x = round((arena.bbox.l + pad.center.x) * self.pxlpermm)
-			#y = round((arena.bbox.t + pad.center.y) * self.pxlpermm)
 			x = round(pad.center.x * self.pxlpermm)
 			y = round(pad.center.y * self.pxlpermm)
-			cv.circle(img,(x,y),r,(255,0,255),1)  # outer perimeter
+			cv.circle(img,(x,y),r,(0,0,0),1)
 
+			# axis with arrow
 			pt1, pt2 = calcLine((x,y), r, pad.angle)
-			cv.line(img,pt1,pt2,(255,0,255),1)  # center axis
+			cv.line(img,pt1,pt2,(0,0,0),1)  # center axis
+			cv.circle(img,pt1,3,(0,0,0),3)   # arrow pointing forward
 
-			cv.circle(img,pt1,3,(255,0,255),1)   # arrow pointing forward
-
-			# draw triangle
-			pt1 = pad.padl.bbox.center
-			pt2 = pad.padr.bbox.center
-			pt3 = pad.pt3
-
-			x1 = int(pt1.x * self.pxlpermm)
-			y1 = int(pt1.y * self.pxlpermm)
-			x2 = int(pt2.x * self.pxlpermm)
-			y2 = int(pt2.y * self.pxlpermm)
-			cv.line(img, (x1,y1), (x2,y2), (0,0,0),1)
-
-			x1 = int(pt2.x * self.pxlpermm)
-			y1 = int(pt2.y * self.pxlpermm)
-			x2 = int(pt3.x * self.pxlpermm)
-			y2 = int(pt3.y * self.pxlpermm)
-			cv.line(img, (x1,y1), (x2,y2), (0,0,0),1)
-
-			x1 = int(pt3.x * self.pxlpermm)
-			y1 = int(pt3.y * self.pxlpermm)
-			x2 = int(pt1.x * self.pxlpermm)
-			y2 = int(pt1.y * self.pxlpermm)
-			cv.line(img, (x1,y1), (x2,y2), (0,0,0),1)
-	
 	def drawUI(self, img):
 		if self.ui:
 			# map
