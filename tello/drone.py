@@ -250,7 +250,7 @@ class Cmd:
 		self.state = 'open'
 		logging.info('cmd socket open')
 
-	# send command and get return message. BLOCKING
+	# send command to Tello and optionally get return message. BLOCKING
 	def sendCommand(self, cmd):
 		# the takeoff command is way slow to return, with the tello hanging in the air, 
 		# perhaps checking and calibrating itself before returning to the client
@@ -261,55 +261,62 @@ class Cmd:
 
 		# the command command sometimes returns a premature packet of bogus data.
 		# it can be ignored
-		retry = 1
+		retry = 0
 		if cmd == 'command':
-			retry = 3
+			retry = 2
 
 		# rc command is fire and forget
 		wait = True
 		if 'rc' in cmd:
 			wait = False
 
-		# sending commands too quick evidently overwhelms the Tello
+		# pause a moment, sending commands too quickly overwhelms the Tello
 		diff = time.time() - self.timestamp
 		if diff < cmd_time_btw_commands:
-			logging.info(f'waiting {diff} between commands')
+			logging.debug(f'waiting {diff} between commands')
 			time.sleep(diff)
 
-		# send command and wait for response
+		# send command to socket
 		rmsg = 'error'
 		timestart = time.time()
 		try:
-			logging.info(f'sendCommand {cmd} sendto')
 			msg = cmd.encode(encoding="utf-8")
 			len = self.sock.sendto(msg, cmd_address)
 		except Exception as ex:
 			logging.error(f'sendCommand {cmd} sendto failed:{str(ex)}, elapsed={time.time()-timestart}')
-		else:
-			logging.info(f'sendCommand {cmd} sendto complete, elapsed={time.time()-timestart}')
-			if wait:
-				for n in range(1,retry+1):
-					logging.info(f'sendCommand {cmd} recfrom {n}')
-					try:
-						data, server = self.sock.recvfrom(cmd_maxlen)
-					except Exception as ex:
-						logging.error(f'sendCommand {cmd} {n} recvfrom failed: {str(ex)}, elapsed={time.time()-timestart}')
-					else:
-						# bogus data: b'\xcc\x18\x01\xb9\x88V\x00\xe2\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00I\x00\x00\xa7\x0f\x00\x06\x00\x00\x00\x00\x00W\xbe'
-						if b'\xcc' in data:
-							logging.info(f'sendCommand {cmd} {n} recvfrom returned bogus data, elapsed={time.time()-timestart}')
-						else:
-							try:
-								rmsg = data.decode(encoding="utf-8")
-							except Exception as ex:
-								logging.error(f'sendCommand {cmd} {n} decode failed: {str(ex)}, elapsed={time.time()-timestart}')
-							else:
-								# success
-								rmsg = rmsg.rstrip() # battery? returns string plus newline
-								logging.info(f'sendCommand {cmd} {n} complete: {rmsg}, elapsed={time.time()-timestart}')
-								if cmd == 'takeoff':
-									self.sock.settimeout(cmd_sock_timeout)
-								break; # for retry
+			return rmsg
+			
+		if not wait:
+			logging.info(f'sendCommand {cmd} complete, elapsed={time.time()-timestart}')
+			return 'ok'
+
+		# read response from command
+		for r in range(0,retry+1):
+			n = f'retry={r},' if r else ''
+			try:
+				data, server = self.sock.recvfrom(cmd_maxlen)
+			except Exception as ex:
+				logging.error(f'sendCommand {cmd} recvfrom failed: {str(ex)}, {n} elapsed={time.time()-timestart}')
+				return rmsg
+
+			if b'\xcc' in data:
+				# bogus data: b'\xcc\x18\x01\xb9\x88V\x00\xe2\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00I\x00\x00\xa7\x0f\x00\x06\x00\x00\x00\x00\x00W\xbe'
+				logging.error(f'sendCommand {cmd} recvfrom returned bogus data, {n} elapsed={time.time()-timestart}')
+				continue
+
+			try:
+				rmsg = data.decode(encoding="utf-8")
+			except Exception as ex:
+				logging.error(f'sendCommand {cmd} decode failed: {str(ex)}, {n} elapsed={time.time()-timestart}')
+				break;
+
+			# success
+			rmsg = rmsg.rstrip() # battery? returns string plus newline
+			logging.info(f'sendCommand {cmd} complete: {rmsg}, {n} elapsed={time.time()-timestart}')
+			if cmd == 'takeoff':
+				self.sock.settimeout(cmd_sock_timeout)
+			break;
+
 		self.timestamp = time.time()
 		return rmsg;
 
@@ -365,6 +372,8 @@ class Drone:
 		# open video socket and start thread
 		self.video.open() # blocks until started, about 5 seconds
 		self.video.start()
+		
+		# can we wait for video thread to start here?
 
 		# ready for takeoff:
 		#     command mode, good battery, video running, telemetry running, ui open
@@ -438,27 +447,32 @@ if __name__ == '__main__':
 			else:
 				drone.do(cmd)
 
-	def startLogging(filename):
+	# global constants
+	logging.MISSION = 15 # 10 DEBUG, 15 MISSION, 20 INFO, 30 WARNING, 40 ERROR, 50 CRITICAL
+	logformat = '%(asctime)s %(levelno)s %(module)s %(message)s' 
+	logfolder = '/home/john/sk8/logs/'
+	logfname   = f'{logfolder}/sk8_{datetime.now().strftime("%Y%m%d")}.log'
+
+	def configureLogging(logfile):
 		logging.basicConfig(
-			format='%(asctime)s %(module)s %(levelname)s %(message)s', 
-			filename=filename, 
+			format=logformat, 
+			filename=logfile, 
 			level=logging.DEBUG) # 10 DEBUG, 20 INFO, 30 WARNING, 40 ERROR, 50 CRITICAL
+
 		console = logging.StreamHandler()
-		console.setLevel(logging.INFO)  # console does not get DEBUG level
+		console.setLevel(logging.INFO)  # console log gets info and above, no formatting
 		logging.getLogger('').addHandler(console)
 		logging.info('logging configured')
 
-	logfolder = '/home/john/sk8/logs/'
-	fname = f'{logfolder}/sk8_{datetime.now().strftime("%Y%m%d")}.log' # daily logfile
-	startLogging(fname)
+	configureLogging(logfname)
 	drone = Drone()
 	started = drone.prepareForTakeoff()
 	if started:
 		logging.info('start mission')
-		flyMission(testheight, drone)
-
-	drone.stop()
+		flyMission(testheight, drone) 
+	drone.stop() 
 	drone.wait()
 	
 '''
+todo wait for video started before ready state
 '''

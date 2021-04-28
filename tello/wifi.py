@@ -14,11 +14,13 @@ class Wifi:
 		self.original = ''
 
 	def connect(self, name=False):
+		logging.info(f'connect request to {name}')
 		name = name or self.name
 		self.original = self.get()
 		if self.original == name:
 			logging.info(f'{name} already connected')
 			return True 
+		logging.info(f'current connection: {self.original}')
 		
  		# nmcli rescans once every 30 seconds, no way to override this in nmcli
 		# default retry * delay = 45 seconds
