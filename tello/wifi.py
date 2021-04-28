@@ -6,10 +6,10 @@ import time
 import logging
 
 class Wifi:
-	def __init__(self, name, quiet=False):
+	def __init__(self, name, quiet=False, retry=15):
 		self.name = name
 		self.quiet = quiet 
-		self.retry = 10
+		self.retry = retry
 		self.delay = 3
 		self.original = ''
 
@@ -20,6 +20,9 @@ class Wifi:
 			logging.info(f'{name} already connected')
 			return True 
 		
+ 		# nmcli rescans once every 30 seconds, no way to override this in nmcli
+		# default retry * delay = 45 seconds
+		# the Tello hotspot becomes visible 10 seconds after power up, flashing yellow 
 		timestart = time.time()
 		rc = False
 		for n in range(1,self.retry+1):
@@ -28,6 +31,7 @@ class Wifi:
 			if rc:
 				break;
 			time.sleep(self.delay)
+
 		if rc:
 			logging.info(f'{name} found, elapsed={time.time()-timestart}')
 		else:
@@ -74,6 +78,7 @@ class Wifi:
 		return rc
 
 if __name__ == '__main__':
+	logging.basicConfig( level=logging.DEBUG) # 10 DEBUG, 20 INFO, 30 WARNING, 40 ERROR, 50 CRITICAL
 	wifi = Wifi('TELLO-591FFC')
 	print(wifi.check())
 	print(wifi.get())

@@ -1,6 +1,13 @@
 '''
 hippocamapus.py - object detection by color
 
+Two public methods:
+	processFrame
+		detectObjects - visual cortex, pareital lobe, occipital lobe, Brodmann area
+		buildMap - hippocampus, retrosplenial cortex
+	drawUI
+
+
 todo
 
 add home as inverted copy of initial pad
@@ -32,10 +39,14 @@ class Pt:
 		return f'({self.x},{self.y})'
 
 def averageTwoPoints(pt1, pt2):
-	x2= pt2.x
-	y2= pt2.y
-	xc = pt1.x + ((x2 - pt1.x) / 2)
-	yc = pt1.y + ((y2 - pt1.y) / 2)
+	data = [pt1.tuple(), pt2.tuple()]
+	average = [sum(x)/len(x) for x in zip(*data)]
+	xc,yc = average
+
+	#x2= pt2.x
+	#y2= pt2.y
+	#xc = pt1.x + ((x2 - pt1.x) / 2)
+	#yc = pt1.y + ((y2 - pt1.y) / 2)
 	return Pt(xc,yc)
 
 def triangulateTwoPoints(ptleft, ptright):
@@ -110,7 +121,6 @@ def calcLine(c,r,a):
 def drawPolygon(img, ptarray, factor=1, color=(255,0,0), linewidth=1):	
 	a = np.multiply(ptarray,factor)
 	a = a.astype(int)
-	print(a)
 	for i in range(0,len(a)):
 		j = i+1 if i < len(a)-1 else 0
 		cv.line(img, tuple(a[i]), tuple(a[j]), color, linewidth)
@@ -163,16 +173,64 @@ class Pad:
 	def calc(self):
 		self.center = averageTwoPoints(self.padl.bbox.center, self.padr.bbox.center)
 		self.angle,self.radius,self.pt3 = triangulateTwoPoints(self.padl.bbox.center, self.padr.bbox.center)
+		# [angle, radius]  = similar to a vector in that it indicates direction and distance
+		# [leny, lenx]  = a slope, rise over run
+		# [lenx, leny] = a vector, [2,4] means move 2 mm to the left and 4 mm up
 
 class Arena:
 	def __init__(self,bbox):
 		self.bbox = bbox
+'''
+rise straight up until the pad is in view
+copy pad to home
+continue to rise until first cone spotted
+when the pad and one cone are in view:
+	copy pad to home
+	save distance and angle between home and cone
+(note: we can theoretically assume the drone does not rotate, and therefore, 
+		one cone is enough to plot the home location)
+continue to rise, now centered on the cone
+when the second cone is found
+	now you can begin to move the pad, 
+	because with two cones, you can triangulate the home position
+when the third cone is found
+	make the final map
+even though we are going straight up, we need to navigate to hover
 
+beginner project:
+	from takeoff position, find pad, cones, rotated arena
+	navigate to hover:
+		each frame should be identical
+		assume the drone position is dead center in the frame
+		with each frame
+			build a frame map
+			compare to mission map
+			orient the frame map, by angle and distance
+			convert angle and distance to a tello command 
+			execute the command
+
+orientation for beginners
+	assume the drone does not yaw
+	let all objects be stationary and in-view in every frame
+		this allows you to use arena center and angle only to compare frame to frame
+
+an orientation is a vector: distance and angle
+
+arena is a (center, wh, angle), can be drawn as rectangle or elipse
+
+goal 1: hover over pad
+goal 2: hover over arena
+goal 3: fly around the perimeter - more difficult orientation?
+goal 4: perfect landing on pad (add dot if necessary)
+
+cheat: use two cones as starting gate, or four
+
+'''
 class Map:
-	def __init__(self):
-		self.cones = False
-		self.pad = False
-		self.arena = False
+	def __init__(self, pad, cones, arena):
+		self.pad = pad
+		self.cones = cones
+		self.arena = arena
 
 class Hippocampus:
 	def __init__(self, ui=True, saveTrain=True):
@@ -254,6 +312,11 @@ class Hippocampus:
 		self.frameWidth  = 0     #     ?      720      720
 		self.frameHeight = 0     #     ?      540      405
 		self.frameDepth  = 0     #     ?        3        3
+
+		self.frameMap = False
+		self.baseMap = False
+		self.ovec = False  # orienting vector
+
 		self.imgColor = False
 		self.imgPost = False
 		self.posts = {}
@@ -423,7 +486,12 @@ class Hippocampus:
 
 		return ver
 	
-	def drawMap(self, arena, cones, pad, img):
+	def drawMap(self, map, img):
+		
+		pad = map.pad if map.pad else false
+		cones = map.cones if map.cones else False
+		arena = map.arena if map.arena else False
+
 		# draw arena
 		l = int(round(arena.bbox.l * self.pxlpermm))
 		t = int(round(arena.bbox.t * self.pxlpermm))
@@ -443,16 +511,16 @@ class Hippocampus:
 		# draw pad
 		if pad:
 			if self.debugPad: # draw the halves
-				l = int(round(self.pad.padl.bbox.l * self.pxlpermm))
-				t = int(round(self.pad.padl.bbox.t * self.pxlpermm))
-				r = int(round(self.pad.padl.bbox.r * self.pxlpermm))
-				b = int(round(self.pad.padl.bbox.b * self.pxlpermm))
+				l = int(round(pad.padl.bbox.l * self.pxlpermm))
+				t = int(round(pad.padl.bbox.t * self.pxlpermm))
+				r = int(round(pad.padl.bbox.r * self.pxlpermm))
+				b = int(round(pad.padl.bbox.b * self.pxlpermm))
 				cv.rectangle(img, (l,t), (r,b), (0,255,255), 1) # bgr yellow, left
 
-				l = int(round(self.pad.padr.bbox.l * self.pxlpermm))
-				t = int(round(self.pad.padr.bbox.t * self.pxlpermm))
-				r = int(round(self.pad.padr.bbox.r * self.pxlpermm))
-				b = int(round(self.pad.padr.bbox.b * self.pxlpermm))
+				l = int(round(pad.padr.bbox.l * self.pxlpermm))
+				t = int(round(pad.padr.bbox.t * self.pxlpermm))
+				r = int(round(pad.padr.bbox.r * self.pxlpermm))
+				b = int(round(pad.padr.bbox.b * self.pxlpermm))
 				cv.rectangle(img, (l,t), (r,b), (255,0,255), 1) # bgr purple, right
 			
 				drawPolygon(img, [pad.padl.bbox.center.tuple(), pad.padr.bbox.center.tuple(), pad.pt3.tuple()], self.pxlpermm)
@@ -469,15 +537,17 @@ class Hippocampus:
 			cv.circle(img,pt1,3,(0,0,0),3)   # arrow pointing forward
 
 	def drawUI(self, img):
-		if self.ui:
+		if self.ui and self.frameMap and self.baseMap:
 			# map
 			imgMap = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
 			imgMap.fill(255)  # made white
-			self.drawMap(self.arena, self.cones, self.pad, imgMap)
+			self.drawMap(self.frameMap, imgMap)
 		
 			# frame overlaid with oriented map
 			imgFinal = img.copy()
-			self.drawMap(self.arena, self.cones, self.pad, imgFinal)
+			self.drawMap(self.frameMap, imgFinal)
+
+			self.drawMap(self.baseMap, imgFinal)
 
 			# hippocampus internal data calculations posted by programmer
 			self.imgPost = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
@@ -583,7 +653,6 @@ class Hippocampus:
 		if not objpadl.bbox.intersects( objpadr.bbox):
 			logging.debug('pad halves do not intersect')
 
-
 		# from pct to pxl
 		padl = copy.deepcopy(objpadl)
 		padl.bbox.l *= self.frameWidth
@@ -633,7 +702,7 @@ class Hippocampus:
 		self.post('pad radius', pad.radius)
 
 		return pad
-		
+
 	def findCones(self, objects):
 		# choose only correctly sized objects, scrub object list
 		cones = []
@@ -668,14 +737,19 @@ class Hippocampus:
 		self.post('cones accepted', len(cones))
 		return cones
 		
-	def findArena(self, cones):
-		# make an array of points and pass it to cv.RotatedRect()
-		#pta = np.empty((0,0))
-		#for cone in cones:	
-		#	pt = cv.Point2f(cone.center.x,cone.center.y)
-		#	pta.append(pt)
-		#rect = cv.minAreaRect(pta)
 
+	def findArenaRot(self, cones):
+		pta = []
+		for cone in cones:	
+			pt = cone.bbox.center.tuple()
+			pta.append(pt)
+		rect = cv.minAreaRect(np.array(pta)) # center, (w,h), angle as -90 to 0
+		box = cv.boxPoints(rect)   # 4 points
+		box = np.int0(box)          # convert to int to pass to cv.rectangle
+		arenarot = ArenaRot(rect)
+		return arenarot
+ 	
+	def findArena(self, cones):
 		# non-rotated arena, bbox from cones
 		l = self.frameWidth
 		r = 0
@@ -734,6 +808,16 @@ class Hippocampus:
 		else:
 			return self.detectObjectsCV(img)
 
+	def buildMap(self,objects):
+		pad = self.findPad(objects)
+		if not pad:
+			return False
+
+		cones = self.findCones(objects)
+		arena = self.findArena(cones)
+		map = Map(pad, cones, arena)
+		return map
+	
 	def processFrame(self,img,baro_agl):
 		self.baro_agl = baro_agl
 		self.framenum += 1
@@ -755,17 +839,45 @@ class Hippocampus:
 		self.post('objects found',len(self.objects))
 
 		# build map
-		self.pad = self.findPad(self.objects)
-		if not self.pad:
-			return 
+		self.frameMap = self.buildMap(self.objects)
+		if not self.baseMap:
+			self.baseMap = self.frameMap
+		else:
+			# orient frame to map
+			angle,radius,_ = triangulateTwoPoints( self.baseMap.pad.center, self.frameMap.pad.center)
+			# use this to navigate angle and radius, to counteract drift
+			# assume stable agl and no yaw, so angle and radius refers to drift
+			# in this case, drawing basemap over framemap results only in offset, not rotation or scale
 
-		self.cones = self.findCones(self.objects)
-		self.arena = self.findArena(self.cones)
+			
+			ovec = np.array(self.frameMap.pad.center.tuple()) - np.array(self.baseMap.pad.center.tuple())
+			diffx,diffy = ovec
 
-		# orient frame to map
+			cmd = ''
+			if diffx > 100:
+				cmd = 'left 20'
+			elif diffx < -100:
+				cmd = 'right 20'
+			elif diffy > 100:
+				cmd = 'forward 20'
+			elif diffx < -100:
+				cmd = 'back 20'
+			#jsendCommand(cmd)
+			print(cmd)
+
+		#	sendCommand('sdk?')
+
+			# compare pad angle and radius between basemap and framemap
+			# use this to reorient frame to map
+			# rotate basemap and draw on top of frame image
+			# rotate framemap and frameimg and draw underneath basemap
+
 
 		# save image and objects for mission debriefing and neural net training
 		self.saveTrainingData(img, self.objects)
+
+		if self.ui:
+			self.drawUI(img)
 
 	def parseFilenameForAgl(self, fname):
 		agl = int(fname.split('_agl_')[1].split('.')[0])
@@ -797,12 +909,19 @@ if __name__ == '__main__':
 	imgfile = 'sk8_angle_210_agl_1000.jpg'  # angle 217, lower left
 	imgfile = 'sk8_angle_290_agl_1000.jpg'  # angle 290, upper left
 
+	imgfile1 = 'sk8_angle_45_agl_1000.jpg'   # angle  37, upper right
+	imgfile2 = 'sk8_angle_135_agl_1000.jpg'  # angle 126, lower right
+
 	hippocampus = Hippocampus(True, True)
 	hippocampus.start()
 
+	ht = hippocampus.parseFilenameForAgl(imgfile1)
+	img = cv.imread(imgfolder+imgfile1, cv.IMREAD_UNCHANGED)
+	hippocampus.processFrame(img, ht)
+
 	while True:
-		ht = hippocampus.parseFilenameForAgl(imgfile)
-		img = cv.imread(imgfolder+imgfile, cv.IMREAD_UNCHANGED)
+		ht = hippocampus.parseFilenameForAgl(imgfile2)
+		img = cv.imread(imgfolder+imgfile2, cv.IMREAD_UNCHANGED)
 		hippocampus.processFrame(img, ht)
 		hippocampus.drawUI(img)
 		if cv.waitKey(1) & 0xFF == ord('q'):
