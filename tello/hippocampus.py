@@ -1,24 +1,13 @@
 '''
-hippocamapus.py - object detection by color
+hippocamapus.py - class Hippocampus - object detection by color and contour using computer vision
 
-Two public methods:
-	processFrame
+Public methods:
+	processFrame(img,framenum,telemetry)
 		detectObjects - visual cortex, pareital lobe, occipital lobe, Brodmann area
 		buildMap - hippocampus, retrosplenial cortex
-	drawUI
-
-
-todo
-
-add home as inverted copy of initial pad
-fit arena to rotated rect
-superimpose map onto frame
-underimpose frame under map
-match frame to map
-
-calc pxlpermm from pad, cones, or camera height
-
+		drawUI
 '''
+
 import cv2 as cv
 import numpy as np
 from datetime import datetime
@@ -26,6 +15,7 @@ import logging
 import os
 import copy
 import colorsys
+import universal
 
 class Pt:
 	def __init__(self, x, y):
@@ -78,6 +68,7 @@ def triangulateTwoPoints(ptleft, ptright):
 	return degrs, hypotenuse, ptr
 	
 def quadrantAngle(angle):
+	# return the quadrant of a given angle
 	quadrant = ''
 	if angle >= 0 and angle < 90:
 		quadrant = 'upper right'
@@ -90,6 +81,7 @@ def quadrantAngle(angle):
 	return quadrant
 
 def quadrantPoints(ptleft, ptright):
+	# return the quadrant of an angle given two points
 	quadrant = ''
 	if ptleft.x < ptright.x and ptleft.y < ptright.y:
 		quadrant = 'upper right'
@@ -101,21 +93,19 @@ def quadrantPoints(ptleft, ptright):
 		quadrant = 'lower left'
 	return quadrant
 
-
 def calcLine(c,r,a):
-	angle = np.radians(a)
+	# return the two endpoints of a line, given centerpoint, radius, and angle
+	x,y = c
 	lenh = r # length of hypotenuse
-	#                                soh cah toa
+	angle = np.radians(a)
+	                                   # soh cah toa
 	leno = round(np.sin(angle) * lenh) # opposite: sine(angle = opposite/hypotenuse)
 	lena = round(np.cos(angle) * lenh) # adjacent: cos(angle = adjacent/hypotenuse)
-
-	x,y = c
 
 	x1 = x + leno
 	y1 = y - lena
 	x2 = x - leno
 	y2 = y + lena
-
 	return (x1,y1), (x2,y2) 
 
 def drawPolygon(img, ptarray, factor=1, color=(255,0,0), linewidth=1):	
@@ -126,6 +116,8 @@ def drawPolygon(img, ptarray, factor=1, color=(255,0,0), linewidth=1):
 		cv.line(img, tuple(a[i]), tuple(a[j]), color, linewidth)
 
 class Bbox:
+	# bbox is defined by an l-t point and a w-h vector, this is what NN data uses
+	# redefined with b,r, center, diameter, radius
 	def __init__(self, l,t,w,h):
 		self.l = l
 		self.t = t
@@ -134,17 +126,17 @@ class Bbox:
 		self.calc()
 
 	def calc(self):
+		# bottom right is a point
+		# center is a point
 		self.r = self.l + self.w
 		self.b = self.t + self.h
 		self.center = Pt(self.l+round(self.w/2,6), self.t+round(self.h/2,6))
 		self.diameter = (self.w+self.h)/2
 		self.radius = self.diameter/2
 
-	def intersects(self, r2):
-		if self.l > r2.l and self.l < r2.r \
-		or self.r > r2.l and self.r < r2.r \
-		or self.t > r2.t and self.t < r2.b \
-		or self.b > r2.t and self.b < r2.b: 
+	def intersects(self, box2):
+		if ((self.l > box2.l and self.l < box2.r) or (self.r > box2.l and self.r < box2.r)) \
+		and ((self.t > box2.t and self.t < box2.b) or (self.b > box2.t and self.b < box2.b)): 
 			return True
 		else:
 			return False
@@ -169,6 +161,7 @@ class Pad:
 		self.padl = padl
 		self.padr = padr
 		self.calc()
+		self.purpose = 'frame'  # frame or home
 
 	def calc(self):
 		self.center = averageTwoPoints(self.padl.bbox.center, self.padr.bbox.center)
@@ -227,10 +220,11 @@ cheat: use two cones as starting gate, or four
 
 '''
 class Map:
-	def __init__(self, pad, cones, arena):
+	def __init__(self, pad, cones, arena, home=False):
 		self.pad = pad
 		self.cones = cones
 		self.arena = arena
+		self.home = home 
 
 class Hippocampus:
 	def __init__(self, ui=True, saveTrain=True):
@@ -244,17 +238,21 @@ class Hippocampus:
 
 		# settings
 		self.clsdebug = -1 # self.clsCone  # -1
-		self.debugPad = True
+		self.debugPad = True 
+
+		self.frameWidth  = 640   # 960
+		self.frameHeight = 480   # 720
+		self.frameDepth  = 3
 
 		self.datalineheight = 22
 		self.datalinemargin = 5
 
 		self.useNeuralNet = False
 
-		self.save_train_nth = 10
-		self.save_post_nth = 60
-
-		self.outfolderbase = '/home/john/sk8/images/'
+		self.process_frame_nth = 1 #6 # fps is normally 33, we process 5 per second
+		self.save_frame_nth = 1
+		self.save_post_nth = 6
+		self.save_train_nth = 60
 
 		self.pad_radius = 70     # pad is 14 cm square
 		self.cone_radius = 40    # cone diameter is 8 cm
@@ -308,20 +306,16 @@ class Hippocampus:
 		}
 
 		# variables
-		self.framenum = 0        # tello    nexus    pixel     
-		self.frameWidth  = 0     #     ?      720      720
-		self.frameHeight = 0     #     ?      540      405
-		self.frameDepth  = 0     #     ?        3        3
+		self.framenum = 0        # tello    nexus     pixel->prepd
 
 		self.frameMap = False
 		self.baseMap = False
 		self.ovec = False  # orienting vector
 
 		self.imgColor = False
-		self.imgPost = False
+		self.imgPrep = False
 		self.posts = {}
 		self.debugImages = []
-		self.outfolder = ''
 	
 		# aircraft altitude is measured in multiple ways
 		#    agl - above ground level
@@ -333,29 +327,19 @@ class Hippocampus:
 		#    the elevation of Chiang Mai is 310 meters
 
 		# before takeoff, the camera is 20mm above the pad
+
 		# all of our internal calculations are in mm
 
-		# check to see that telemetry data and height commands are equivalent
-		# design a mission to test
-		# write debug msgs to log showing comparison and differences
-
-		# we use a technique of 
-		# we compare apparent size to known size of 
-		# we are taking downward-facing photos of pad and cones
-		# objects with known size
-
-		self.baro_agl = 0    # reported by tello barometer
-		self.camera_agl = 0  # computed by apparent size of pad in image
-		self.pxlpermm = 0    # computed as function of agl
+		self.pxlpermm = 0 # computed by the size of the pad, in pixels vs mm
+		# the pxlpermm value implies an agl
 
 	def openUI(self):
-		if self.ui:
-			if self.clsdebug == self.clsCone:
-				self.openSettings(self.cone_settings, 'cone')
-			elif self.clsdebug == self.clsPadl:
-				self.openSettings(self.padl_settings, 'padl')
-			elif self.clsdebug == self.clsPadr:
-				self.openSettings(self.padr_settings, 'padr')
+		if self.clsdebug == self.clsCone:
+			self.openSettings(self.cone_settings, 'cone')
+		elif self.clsdebug == self.clsPadl:
+			self.openSettings(self.padl_settings, 'padl')
+		elif self.clsdebug == self.clsPadr:
+			self.openSettings(self.padr_settings, 'padr')
 
 	def closeUI(self):
 		if self.ui:
@@ -364,14 +348,14 @@ class Hippocampus:
 	def post(self,key,value):
 		self.posts[key] = value
 	
-	def drawPosts(self):
+	def drawPosts(self,imgPost):
 		linenum = 1
 		ssave = ''
 		for k in self.posts.keys():
 			v = self.posts[k]
 			s = f'{k}={v}'
 			pt = (self.datalinemargin, self.datalineheight * linenum)
-			cv.putText(self.imgPost, s, pt, cv.FONT_HERSHEY_SIMPLEX,.7,(0,0,0), 1)
+			cv.putText(imgPost, s, pt, cv.FONT_HERSHEY_SIMPLEX,.7,(0,0,0), 1)
 			linenum += 1
 			ssave += s + ';'
 		if self.framenum % self.save_post_nth == 0:
@@ -431,37 +415,6 @@ class Hippocampus:
 			for x in range(self.frameWidth):
 				self.imgColor[y,x] = colormax   # [128,128,128]
 	
-	def xstackImages(self,scale,imgArray):
-		rows = len(imgArray)
-		cols = len(imgArray[0])
-		rowsAvailable = isinstance(imgArray[0], list)
-		width = imgArray[0][0].shape[1]
-		height = imgArray[0][0].shape[0]
-		if rowsAvailable:
-			for x in range ( 0, rows):
-				for y in range(0, cols):
-					if imgArray[x][y].shape[:2] == imgArray[0][0].shape [:2]:
-						imgArray[x][y] = cv.resize(imgArray[x][y], (0, 0), None, scale, scale)
-					else:
-						imgArray[x][y] = cv.resize(imgArray[x][y], (imgArray[0][0].shape[1], imgArray[0][0].shape[0]), None, scale, scale)
-					if len(imgArray[x][y].shape) == 2: imgArray[x][y]= cv.cvtColor( imgArray[x][y], cv.COLOR_GRAY2BGR)
-			imageBlank = np.zeros((height, width, 3), np.uint8)
-			hor = [imageBlank]*rows
-			hor_con = [imageBlank]*rows
-			for x in range(0, rows):
-				hor[x] = np.hstack(imgArray[x])
-			ver = np.vstack(hor)
-		else:
-			for x in range(0, rows):
-				if imgArray[x].shape[:2] == imgArray[0].shape[:2]:
-					imgArray[x] = cv.resize(imgArray[x], (0, 0), None, scale, scale)
-				else:
-					imgArray[x] = cv.resize(imgArray[x], (imgArray[0].shape[1], imgArray[0].shape[0]), None,scale, scale)
-				if len(imgArray[x].shape) == 2: imgArray[x] = cv.cvtColor(imgArray[x], cv.COLOR_GRAY2BGR)
-			hor= np.hstack(imgArray)
-			ver = hor
-		return ver
-	
 	def stackImages(self,scale,imgArray):
 		# imgArray is a tuple of lists
 		rows = len(imgArray)     # number of lists in the tuple
@@ -487,80 +440,130 @@ class Hippocampus:
 		return ver
 	
 	def drawMap(self, map, img):
-		
 		pad = map.pad if map.pad else false
 		cones = map.cones if map.cones else False
 		arena = map.arena if map.arena else False
 
 		# draw arena
-		l = int(round(arena.bbox.l * self.pxlpermm))
-		t = int(round(arena.bbox.t * self.pxlpermm))
-		r = int(round(arena.bbox.r * self.pxlpermm))
-		b = int(round(arena.bbox.b * self.pxlpermm))
-		cv.rectangle(img, (l,t), (r,b), (127,0,0), 1)
+		if arena:
+			l = int(round(arena.bbox.l * self.pxlpermm))
+			t = int(round(arena.bbox.t * self.pxlpermm))
+			r = int(round(arena.bbox.r * self.pxlpermm))
+			b = int(round(arena.bbox.b * self.pxlpermm))
+			cv.rectangle(img, (l,t), (r,b), (127,0,0), 1)
 	
 		# draw cones
-		r = int(round(self.cone_radius * self.pxlpermm))
-		for cone in cones:
-			#x = int(round(arena.bbox.center.x + (obj.bbox.center.x * self.frameWidth)))
-			#y = int(round(arena.bbox.center.y + (obj.bbox.center.y * self.frameHeight)))
-			x = int(round(cone.bbox.center.x * self.pxlpermm))
-			y = int(round(cone.bbox.center.y * self.pxlpermm))
-			cv.circle(img,(x,y),r,(0,0,255),1)
+		if cones:
+			r = int(round(self.cone_radius * self.pxlpermm))
+			for cone in cones:
+				#x = int(round(arena.bbox.center.x + (obj.bbox.center.x * self.frameWidth)))
+				#y = int(round(arena.bbox.center.y + (obj.bbox.center.y * self.frameHeight)))
+				x = int(round(cone.bbox.center.x * self.pxlpermm))
+				y = int(round(cone.bbox.center.y * self.pxlpermm))
+				cv.circle(img,(x,y),r,(0,0,255),1)
 	
 		# draw pad
 		if pad:
-			if self.debugPad: # draw the halves
-				l = int(round(pad.padl.bbox.l * self.pxlpermm))
-				t = int(round(pad.padl.bbox.t * self.pxlpermm))
-				r = int(round(pad.padl.bbox.r * self.pxlpermm))
-				b = int(round(pad.padl.bbox.b * self.pxlpermm))
-				cv.rectangle(img, (l,t), (r,b), (0,255,255), 1) # bgr yellow, left
+			if pad.purpose == 'frame':
+				if self.debugPad: # draw the halves
+					l = int(round(pad.padl.bbox.l * self.pxlpermm))
+					t = int(round(pad.padl.bbox.t * self.pxlpermm))
+					r = int(round(pad.padl.bbox.r * self.pxlpermm))
+					b = int(round(pad.padl.bbox.b * self.pxlpermm))
+					cv.rectangle(img, (l,t), (r,b), (0,255,255), 1) # bgr yellow, left
 
-				l = int(round(pad.padr.bbox.l * self.pxlpermm))
-				t = int(round(pad.padr.bbox.t * self.pxlpermm))
-				r = int(round(pad.padr.bbox.r * self.pxlpermm))
-				b = int(round(pad.padr.bbox.b * self.pxlpermm))
-				cv.rectangle(img, (l,t), (r,b), (255,0,255), 1) # bgr purple, right
-			
-				drawPolygon(img, [pad.padl.bbox.center.tuple(), pad.padr.bbox.center.tuple(), pad.pt3.tuple()], self.pxlpermm)
-	
-			#  outer perimeter
-			r = round(self.pad_radius * self.pxlpermm)
-			x = round(pad.center.x * self.pxlpermm)
-			y = round(pad.center.y * self.pxlpermm)
-			cv.circle(img,(x,y),r,(0,0,0),1)
+					l = int(round(pad.padr.bbox.l * self.pxlpermm))
+					t = int(round(pad.padr.bbox.t * self.pxlpermm))
+					r = int(round(pad.padr.bbox.r * self.pxlpermm))
+					b = int(round(pad.padr.bbox.b * self.pxlpermm))
+					cv.rectangle(img, (l,t), (r,b), (255,0,255), 1) # bgr purple, right
+				
+					drawPolygon(img, [pad.padl.bbox.center.tuple(), pad.padr.bbox.center.tuple(), pad.pt3.tuple()], self.pxlpermm)
+				
+				color = (0,0,0)
+				#  outer perimeter
+				r = round(self.pad_radius * self.pxlpermm)
+				x = round(pad.center.x * self.pxlpermm)
+				y = round(pad.center.y * self.pxlpermm)
+				cv.circle(img,(x,y),r,color,1)
 
-			# axis with arrow
-			pt1, pt2 = calcLine((x,y), r, pad.angle)
-			cv.line(img,pt1,pt2,(0,0,0),1)  # center axis
-			cv.circle(img,pt1,3,(0,0,0),3)   # arrow pointing forward
+				# axis with arrow
+				pt1, pt2 = calcLine((x,y), r, pad.angle)
+				cv.line(img,pt1,pt2,color,1)  # center axis
+				cv.circle(img,pt1,3,color,3)   # arrow pointing forward
 
-	def drawUI(self, img):
-		if self.ui and self.frameMap and self.baseMap:
-			# map
-			imgMap = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
-			imgMap.fill(255)  # made white
-			self.drawMap(self.frameMap, imgMap)
+			elif pad.purpose == 'home':
+				# draw props
+				r = round(self.pad_radius * self.pxlpermm)
+				x = round(pad.center.x * self.pxlpermm)
+				y = round(pad.center.y * self.pxlpermm)
+				color = (255,128,128)
+				radius_prop = .3 * r
+				radius_xframe = .7 * r
+				pta = []
+				for a in [45,135,225,315]:
+					ra = np.radians(a)
+					xx = x + int(radius_xframe * np.cos(ra))
+					xy = y + int(radius_xframe * np.sin(ra))
+					pta.append((xx,xy))
+					cv.circle(img,(xx,xy),int(radius_prop), color,2)
+
+				# draw x-frame
+				cv.line(img,pta[0],pta[2],color,4)  # center axis
+				cv.line(img,pta[1],pta[3],color,4)  # center axis
+				
+				# draw drone body
+				#cv.rectangle(img, (l,t), (r,b), (127,0,0), 1)
+
+	def drawUI(self):
 		
-			# frame overlaid with oriented map
-			imgFinal = img.copy()
-			self.drawMap(self.frameMap, imgFinal)
+		if not self.ui:
+			return
+		if not self.frameMap or not self.baseMap:
+			return;
+		if self.framenum % self.process_frame_nth:
+			return
 
-			self.drawMap(self.baseMap, imgFinal)
+		img = self.imgPrep
 
-			# hippocampus internal data calculations posted by programmer
-			self.imgPost = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
-			self.imgPost.fill(255)
-			self.drawPosts()
+		# create empty map
+		imgMap = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
+		imgMap.fill(255)  # made white
 	
-			imgTuple = ([imgMap,self.imgPost,imgFinal],)
-			if self.clsdebug >= 0:
-				imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = self.debugImages
-				imgHsv= cv.cvtColor( imgHsv, cv.COLOR_HSV2BGR)
-				imgTuple = ([self.imgPost,self.imgColor,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap,imgFinal])
-			stack = self.stackImages(0.8,imgTuple)
-			cv.imshow('Image Processing', stack)
+		# create final as copy of original
+		imgFinal = img.copy()
+
+		# draw frame map on map and final
+		self.drawMap(self.frameMap, imgMap)
+		self.drawMap(self.baseMap, imgMap)
+		self.drawMap(self.frameMap, imgFinal)
+
+		# draw base map on the final
+		self.drawMap(self.baseMap, imgFinal)
+
+		# draw ovec
+		ptFrame = tuple(np.int0(np.array(self.frameMap.pad.center.tuple()) * self.pxlpermm))
+		ptBase = tuple(np.int0(np.array(self.baseMap.pad.center.tuple()) * self.pxlpermm))
+		color = (0,0,255)
+		cv.line(imgMap,ptFrame,ptBase,color,3)  # ovec line between pads
+		cv.line(imgFinal,ptFrame,ptBase,color,3)  # ovec line between pads
+
+		# draw internal data calculations posted by programmer
+		imgPost = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
+		imgPost.fill(255)
+		self.drawPosts(imgPost)
+	
+		# stack all images into one
+		#imgTuple = ([imgMap,imgPost,imgFinal],)
+		imgTuple = ([imgPost,imgFinal],)
+		if self.clsdebug >= 0:
+			imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = self.debugImages
+			imgHsv= cv.cvtColor( imgHsv, cv.COLOR_HSV2BGR)
+			imgTuple = ([imgPost,self.imgColor,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap,imgFinal])
+		stack = self.stackImages(0.8,imgTuple)
+
+		# show
+		cv.imshow('Image Processing', stack)
 
 	#
 	# end UI section, begin image processing section
@@ -629,6 +632,10 @@ class Hippocampus:
 		self.post('num padla', len(padla))
 		self.post('num padra', len(padra))
 		if len(padla) <= 0 or len(padra) <= 0:
+			if len(padla) <= 0:
+				logging.warning('missing pad left')
+			if len(padra) <= 0:
+				logging.warning('missing pad right')
 			return False
 
 		# if multiples, choose the one with the largest radius 
@@ -671,6 +678,11 @@ class Hippocampus:
 		# calc pad radius in pixels
 		_,pxlPadRadius,_ = triangulateTwoPoints(padl.bbox.center, padr.bbox.center)
 
+		# pad diameter in pixels must be less than half the frameWidth, otherwise we're too low
+		#if pxlPadRadius > (self.frameWidth * .2):
+		#	logging.warning('pad radius too small')
+		#	return False
+
 		# conversion factor pxl per mm
 		# nb: conversion factor implies an agl
 		self.pxlpermm = pxlPadRadius / self.pad_radius
@@ -678,6 +690,7 @@ class Hippocampus:
 		self.post('mm frame width', self.frameWidth / self.pxlpermm)
 		self.post('mm frame height', self.frameHeight/ self.pxlpermm)
 		# 170cm w : 1700 mm w
+		logging.debug(f'pxlpermm:{self.pxlpermm}')
 
 		# from pxl to mm
 		padl.bbox.l /= self.pxlpermm
@@ -735,6 +748,8 @@ class Hippocampus:
 
 		self.post('cones found', numconeobjs)
 		self.post('cones accepted', len(cones))
+		if len(cones) <= 0:
+			cones = False
 		return cones
 		
 
@@ -750,6 +765,9 @@ class Hippocampus:
 		return arenarot
  	
 	def findArena(self, cones):
+		if not cones:
+			return False
+
 		# non-rotated arena, bbox from cones
 		l = self.frameWidth
 		r = 0
@@ -778,8 +796,8 @@ class Hippocampus:
 	
 	def saveTrainingData(self,img,objects):
 		if self.saveTrain and self.framenum % self.save_train_nth == 0:
-			ht = str(self.camera_agl*10) # remove decimal point
-			fname = f'{self.outfolder}/sk8_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}_ht_{ht}'
+			ht = 0
+			fname = f'{self.outdir}/sk8_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}_ht_{ht}'
 			imgname = f'{fname}.jpg'
 			txtname = f'{fname}.txt'
 			cv.imwrite(imgname,img)
@@ -791,12 +809,9 @@ class Hippocampus:
 
 	def start(self):
 		logging.info('hippocampus starting')
-		self.openUI()
-
-		# create daily log folder
-		self.outfolder = f'{self.outfolderbase}{datetime.now().strftime("%Y%m%d")}/'
-		if not os.path.exists(self.outfolder):
-			os.makedirs(self.outfolder)
+		if self.ui:
+			self.openUI()
+			logging.info('UI opened')
 
 	def stop(self):
 		logging.info('hippocampus stopping')
@@ -818,12 +833,24 @@ class Hippocampus:
 		map = Map(pad, cones, arena)
 		return map
 	
-	def processFrame(self,img,baro_agl):
-		self.baro_agl = baro_agl
+	def processFrame(self,img, framenum, teldata):
 		self.framenum += 1
-		self.frameHeight,self.frameWidth,self.frameDepth = img.shape
-		self.post('pxl frame width', self.frameWidth)
-		self.post('pxl frame height', self.frameHeight)
+		ovec = False
+		rccmd = 'rc 0 0 0 0'
+
+		if self.framenum % self.process_frame_nth: 
+			return ovec,rccmd
+
+		self.post('input frame num', framenum)
+		self.post('frame num', self.framenum)
+
+		# reduce dimensions from 960x720 to 640x480
+		img = cv.resize(img, (self.frameWidth, self.frameHeight))
+
+		# flip vertically to correct for mirror
+		img = cv.flip(img, 0) # 0:vertically
+		
+		self.imgPrep = img # save for use by drawUI
 
 		# get settings from trackbars
 		if self.ui:
@@ -840,92 +867,141 @@ class Hippocampus:
 
 		# build map
 		self.frameMap = self.buildMap(self.objects)
-		if not self.baseMap:
-			self.baseMap = self.frameMap
-		else:
-			# orient frame to map
-			angle,radius,_ = triangulateTwoPoints( self.baseMap.pad.center, self.frameMap.pad.center)
-			# use this to navigate angle and radius, to counteract drift
-			# assume stable agl and no yaw, so angle and radius refers to drift
-			# in this case, drawing basemap over framemap results only in offset, not rotation or scale
+		if not self.frameMap:
+			return ovec,rccmd
 
+		# first time, save base  ??? periodically make new base
+		if True: #not self.baseMap:
+			pxlpermm_at_1_meter = 0.7300079591720976
+			self.baseMap = copy.deepcopy(self.frameMap)
+			self.baseMap.pad.purpose = 'home'
 			
-			ovec = np.array(self.frameMap.pad.center.tuple()) - np.array(self.baseMap.pad.center.tuple())
-			diffx,diffy = ovec
+			# for hover on pad
+			# here, baseMap means desired position: dead center, straight up, 1 meter agl
+			x = (self.frameWidth/2) / self.pxlpermm
+			y = (self.frameHeight/2) / self.pxlpermm
+			self.baseMap.pad.center = Pt(x,y)
+			self.baseMap.pad.angle = 0 
+			self.baseMap.pad.radius = (self.frameHeight/2) / pxlpermm_at_1_meter
 
-			cmd = ''
-			if diffx > 100:
-				cmd = 'left 20'
-			elif diffx < -100:
-				cmd = 'right 20'
-			elif diffy > 100:
-				cmd = 'forward 20'
-			elif diffx < -100:
-				cmd = 'back 20'
-			#jsendCommand(cmd)
-			print(cmd)
+		# orient frame to map
+		angle,radius,_ = triangulateTwoPoints( self.baseMap.pad.center, self.frameMap.pad.center)
+		# use this to navigate angle and radius, to counteract drift
+		# assume stable agl and no yaw, so angle and radius refers to drift
+		# in this case, drawing basemap over framemap results only in offset, not rotation or scale
+		
+		ovec = np.array(self.frameMap.pad.center.tuple()) - np.array(self.baseMap.pad.center.tuple())
+		diffx,diffy = ovec
+		ovec = (diffx, diffy, 0, self.framenum)
 
-		#	sendCommand('sdk?')
-
-			# compare pad angle and radius between basemap and framemap
-			# use this to reorient frame to map
-			# rotate basemap and draw on top of frame image
-			# rotate framemap and frameimg and draw underneath basemap
-
+		# compare pad angle and radius between basemap and framemap
+		# use this to reorient frame to map
+		# rotate basemap and draw on top of frame image
+		# rotate framemap and frameimg and draw underneath basemap
 
 		# save image and objects for mission debriefing and neural net training
 		self.saveTrainingData(img, self.objects)
 
-		if self.ui:
-			self.drawUI(img)
+		rccmd = universal.composeRcCommand(ovec)
+		self.post('nav cmd', rccmd)
+
+		# display through portal to human observer
+		#self.drawUI(img)
+
+		return ovec, rccmd
 
 	def parseFilenameForAgl(self, fname):
 		agl = int(fname.split('_agl_')[1].split('.')[0])
 		return agl
 
 if __name__ == '__main__':
-	def startLogging(filename):
-		logging.basicConfig(
-			format='%(asctime)s %(module)s %(levelname)s %(message)s', 
-			filename=filename, 
-			level=logging.DEBUG) # 10 DEBUG, 20 INFO, 30 WARNING, 40 ERROR, 50 CRITICAL
-		console = logging.StreamHandler()
-		console.setLevel(logging.INFO)  # console does not get DEBUG level
-		logging.getLogger('').addHandler(console)
-		logging.info('logging configured')
+	# run a drone simulator
+	universal.configureLogging()
+	logging.debug('')
+	logging.debug('')
 
-	logfolder = '/home/john/sk8/logs/'
-	fname = f'{logfolder}/sk8_{datetime.now().strftime("%Y%m%d")}.log' # daily logfile
-	startLogging(fname)
+	dirframe = '/home/john/sk8/20210506/081115/frame'
+	framenum = 1
+	dirframe = '/home/john/sk8/20210504/130902/frame'
+	framenum = 180
 
-	imgfolder = '../imageprocessing/images/cones/train/'
-	imgfile = 'helipad_and_3_cones.jpg'
-	imgfile = 'IMG_20200623_174503.jpg'
-	imgfile = 'sk8_angle_210_agl_1000.jpg'
-	imgfile = 'sk8_1_meter_agl_1000.jpg'
-	imgfile = 'sk8_2_meter_agl_2000.jpg'
-	imgfile = 'sk8_angle_45_agl_1000.jpg'   # angle  37, upper right
-	imgfile = 'sk8_angle_135_agl_1000.jpg'  # angle 126, lower right
-	imgfile = 'sk8_angle_210_agl_1000.jpg'  # angle 217, lower left
-	imgfile = 'sk8_angle_290_agl_1000.jpg'  # angle 290, upper left
-
-	imgfile1 = 'sk8_angle_45_agl_1000.jpg'   # angle  37, upper right
-	imgfile2 = 'sk8_angle_135_agl_1000.jpg'  # angle 126, lower right
-
-	hippocampus = Hippocampus(True, True)
+	hippocampus = Hippocampus(ui=True, saveTrain=False)
 	hippocampus.start()
 
-	ht = hippocampus.parseFilenameForAgl(imgfile1)
-	img = cv.imread(imgfolder+imgfile1, cv.IMREAD_UNCHANGED)
-	hippocampus.processFrame(img, ht)
-
 	while True:
-		ht = hippocampus.parseFilenameForAgl(imgfile2)
-		img = cv.imread(imgfolder+imgfile2, cv.IMREAD_UNCHANGED)
-		hippocampus.processFrame(img, ht)
-		hippocampus.drawUI(img)
-		if cv.waitKey(1) & 0xFF == ord('q'):
-			break
+		fname = f'{dirframe}/{framenum}.jpg'
+		frame = cv.imread( fname, cv.IMREAD_UNCHANGED)
+		if frame is None:
+			logging.error(f'file not found: {fname}')
+			break;
+
+		ovec = hippocampus.processFrame(frame, framenum, None)
+		hippocampus.drawUI()
+
+		k = cv.waitKey(0)  # in milliseconds, must be integer
+		if k & 0xFF == ord('n'):
+			framenum += 1
+			continue
+		elif k & 0xFF == ord('p'):
+			framenum -= 1
+			continue
+		elif k & 0xFF == ord('q'):
+			break;
 
 	hippocampus.stop()
 
+'''
+
+todo
+
+1.  show rc command in post
+	composeRC now in drone::Cmd. maybe make it universal, it's only math and maximums
+
+2. execute rc command, to hover over pad
+
+3. draw drone
+
+future:
+	home position: as inverted copy of initial pad, in fixed position to arena 
+	sk8 position: pad surrounded by oval.
+
+temporary:
+	pad position, fixed
+
+drone position: center of frame, straight up (now erroneously named base or home)
+	draw as X-frame, smaller diameter than pad
+
+basemap: centered, angled, and framed on arena, plus home
+	fit arena to rotated rect
+
+x superimpose map onto frame, frameMap matches frame by definition
+
+underimpose frame under basemap
+	match frame to map  (3 cones, 2 cones, whatever, which line up?)
+
+convert Pt to tuple
+	use tuple for point and list for vector
+	use np.array() for matrix math among points and vectors
+	all points are 2D, except for the drone position, which is 3D
+		the 4th D could be yaw angle
+
+test cases
+	angle of pad, 4 quadrants
+	on the ground
+	missing left
+	missing right
+	missing cones
+	missing left, right, cones
+
+go with previous calculations
+
+input telemetry
+	timestamp, n, nf, agl 
+
+are we airborne?  do we use takeoff?
+
+when the drone is on the pad, how is the radius calculated?
+
+mirror calibration
+
+'''

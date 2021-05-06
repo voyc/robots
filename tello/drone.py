@@ -1,63 +1,29 @@
-''' drone.py - class Drone, drive the tello drone. 
-embeds Wifi
-embeds Hippocampus - should probably be separate, along with Cortex
-main flies missions
-
-for stability:
-	- lights on
-	- AC off
-	- blanket on floor
-
-sendCommand
-	only command requires retry
-	only takeoff requires timeout change
-	simplify messaging for all other commands
-
-navigator with 
-	thread
-	queue of requests
-	default hover method between requests
-
-technically, the navigator will be  driving the sk8, not the drone
-	we need a dual navigator function, one for the drone, one for the sk8
-
-# todo: add a mission log, comprised of cmd and telemetry data
-# todo: add replay mission feature, using mission log combined with saved video
-		
-Tello LED codes
-red, green, yellow   blink alternating   startup diagnostics, 10 seconds
-yellow               blink quickly       wifi ready, not connected, signal lost
-green                blink slowly        wifi connected
-
-green                blink double        VPS on, Vision Positioning System 
-yellow               blink slowly        VPS off
-
-red                  blink slowly        low battery
-red                  blink quickly       critically low battery
-red                  solid               critical error
-
-blue                 solid               charging complete
-blue                 blink slowly        charging
-blue                 blink quickly       charging error
+''' 
+drone.py - class Drone, drive the Tello drone.  see documentation below. 
 '''
-
 import socket
 import time
 from time import strftime
-from datetime import datetime
 import threading 
 import sys
 import numpy as np
 import cv2 as cv
 import struct
-import logging
 from hippocampus import Hippocampus
 from wifi import Wifi
+import copy
+import universal
+import logging
 
 # global constants
 tello_ssid = 'TELLO-591FFC'
 tello_ip = '192.168.10.1'
-safe_battery = 20
+safe_battery = 20  # percent of full charge
+min_agl = 20  # mm, camera above the ground 
+use_rc = True   # rc command vs mission commands
+use_hippocampus = True 
+use_ui = True
+save_train = False
 
 # three ports, three sockets.  firewall must be open to these ports.
 telemetry_port = 8890   # UDP server socket to repeatedly send a string of telemetry data
@@ -67,15 +33,16 @@ cmd_port = 8889         # UDP client socket to receive commands and optionally r
 telemetry_address = ('',telemetry_port)
 telemetry_sock_timeout = 10
 telemetry_maxlen = 1518 #?
-telemetry_log_nth = 60
 
 video_url = f'udp://{tello_ip}:{video_port}'
 video_maxlen = 2**16
+video_save_frame_nth = 1 # 0:none, 1:all, n:every nth
 
 cmd_address = (tello_ip, cmd_port)
 cmd_sock_timeout = 7 # seconds
 cmd_takeoff_timeout = 20  # seconds. takeoff slow to return
 cmd_time_btw_commands = 0.1  # seconds.  Commands too quick => Tello not respond.
+cmd_time_btw_rc_commands = 0.01 # rc command is fire and forget, does not requie a recvfrom
 cmd_maxlen = 1518
 
 class Telemetry(threading.Thread):
@@ -83,13 +50,12 @@ class Telemetry(threading.Thread):
 		self.state = 'init'  # open, run, stop, crash
 		logging.info('telemetry object initializing')
 		self.sock  = False
-		self.baro_base = False
-		self.baro_temp_array = []
-		self.baro_height = False
 		threading.Thread.__init__(self)
 		self.baro_base = 0
 		self.lock = threading.Lock()
 		self.data = {
+			'n':253253,       # custom stat, count of data received 
+			'agl':310,        # custom stat, differential baro
 			'pitch':-2,
 			'roll':-2,
 			'yaw':2,
@@ -105,8 +71,7 @@ class Telemetry(threading.Thread):
 			'time':0,
 			'agx':-37.00,
 			'agy':48.00,
-			'agz':-1008.00,
-			'agl':310         # custom stat added by us
+			'agz':-1008.00
 		}
 
 	def open(self):
@@ -124,24 +89,24 @@ class Telemetry(threading.Thread):
 		count = 0
 		self.state = 'run'
 		while self.state == 'run': 
+			count += 1
 			try:
 				data, server = self.sock.recvfrom( telemetry_maxlen)
 			except Exception as ex:
 				logging.error('telemetry recvfrom failed: ' + str(ex))
 				self.state = 'crash'
 				break
+
 			sdata = data.strip().decode('utf-8')
 			ddata = self.unpack(sdata)
-			self.calcAgl(ddata)
+			agl = self.calcAgl(ddata)
+			ddata['agl'] = agl
+			ddata['n'] = count
+
 			self.lock.acquire()
-			self.data = ddata
+			self.ddata = ddata
+			self.sdata = sdata
 			self.lock.release()
-	
-			# log
-			count += 1
-			if count >= telemetry_log_nth:
-				count = 0
-				logging.debug(sdata)
 
 		logging.info(f'telemetry thread {self.state}')
 		self.sock.close()
@@ -149,9 +114,10 @@ class Telemetry(threading.Thread):
 	
 	def get(self):
 		self.lock.acquire()
-		data = deepcopy.deepcopy(self.data)
+		ddata = copy.deepcopy(self.ddata)
+		sdata = copy.deepcopy(self.sdata)
 		self.lock.release()
-		return data
+		return (ddata,sdata)
 
 	def unpack(self, sdata):
 		# data=b'pitch:-2;roll:-2;yaw:2;vgx:0;vgy:0;vgz:0;templ:62;temph:65;tof:6553;h:0;bat:42;baro:404.45;time:0;agx:-37.00;agy:48.00;agz:-1008.00;'
@@ -165,31 +131,36 @@ class Telemetry(threading.Thread):
 				ddata[name] = float(value);
 			else:
 				ddata[name] = int(value);
-		return ddata
-	
+		return ddata 
+
 	def calcAgl(self, data):
-		# calc AGL per the barometer reading
-		#    tello baro is assumed to be MSL in meters to two decimal places
-		#    the elevation of Chiang Mai is 310 meters
-		baro = int(data['baro'] * 100) # m to mm, float to int
-		if not self.baro_base:
-			self.baro_base = baro
-		else:
-			agl = baro - self.baro_base
-			data['agl'] = max(agl,20) # minimum height is 20mm, camera above the ground
-		return
+		# calc AGL per the barometer reading 
+		#    tello baro is assumed to be MSL in meters to two decimal places 
+		#    the elevation of Chiang Mai is 310 meters 
+		baro = int(data['baro'] * 1000) # m to mm, float to int 
+		agl = 0
+		if not self.baro_base: 
+			self.baro_base = baro 
+		else: 
+			agl = baro - self.baro_base 
+			agl = max(agl,min_agl)
+		return agl
 
 class Video(threading.Thread):
-	def __init__(self): # override
+	def __init__(self, drone): # override
+		self.drone = drone 
 		self.stream = False
 		self.state = 'init' # init, run, stop, crash
 		self.hippocampus = False
 		threading.Thread.__init__(self)
+		self.lock = threading.Lock()
+		self.framenum = 0
+		self.frame = False
 
 	def open(self):
 		timestart = time.time()
 		logging.info('start video capture')
-		self.stream = cv.VideoCapture(video_url)  # takes about 5 seconds
+		self.stream = cv.VideoCapture(video_url)  # BLOCKING takes about 5 seconds
 		if not self.stream.isOpened():
 			logging.error(f'Cannot open camera. abort. elapsed={time.time()-timestart}')
 			self.state = 'crash'
@@ -197,45 +168,105 @@ class Video(threading.Thread):
 		self.state = 'open'
 		logging.info(f'video capture started, elapsed={time.time()-timestart}')
 
+		# create mission frames folder
+		self.dirframe = universal.makedir('frame')
+
 	def stop(self):
 		self.state = 'stop'
 	
-	def run(self): # override
+	def run(self): # override  # Video::run() - this is the main loop, does navigation and flying
 		# start hippocampus
-		self.hippocampus = Hippocampus(True, True)
-		self.hippocampus.start()
+		if use_hippocampus:
+			self.hippocampus = Hippocampus(ui=use_ui, saveTrain=save_train)
+			self.hippocampus.start()
 	
 		logging.info(f'video thread started')
 		self.state = 'run'
+		timestart = time.time()
+		timeprev = timestart
+		framenum = 0
 		while self.state == 'run': 
 			# Capture frame-by-frame
+			framenum += 1
 			ret, frame = self.stream.read()
 			if not ret:
 				logging.error('Cannot receive frame.  Stream end?. Exiting.')
 				self.state == 'crash'
 				break
-	
-			# detect objects, build map, draw map
-			ovec = self.hippocampus.processFrame(frame, 0)
-			self.hippocampus.drawUI(frame)
-	
-			# Display the resulting frame
-			if cv.waitKey(1) == ord('q'):
-				self.state == 'stop'
-		
-		logging.info(f'video thread {self.state}')
 
-		self.hippocampus.stop()
+			# get telemetry
+			ddata, sdata = self.drone.telemetry.get()
+
+			# detect objects, build map, draw map
+			ovec = False
+			rccmd = ''
+			if self.hippocampus:
+				ovec,rccmd = self.hippocampus.processFrame(frame, framenum, ddata)
+
+			# get course
+
+
+			# navigate
+			#if ovec:
+			#	rccmd = self.drone.cmd.composeRcCommand(ovec)
+			#	logging.info(rccmd)
+
+			# execute
+			# cmd.sendCommand
+
+			# save frame and mission data to disk
+			if framenum % video_save_frame_nth == 0:
+				fname = f'{self.dirframe}/{framenum}.jpg'
+				cv.imwrite(fname,frame)
+
+				# mission log format timestamp elapsed framenum telenum rc telem
+				ts = time.time()
+				tsd = ts - timeprev
+				src = rccmd.replace(' ','-')
+				prefix = f"rc:{src};ts:{ts};tsd:{tsd};n:{ddata['n']};fn:{framenum};agl:{ddata['agl']};"
+				timeprev = ts
+				logging.log(logging.MISSION, prefix + sdata)
+
+			# set frame, framenum, and ovec for use by other threads
+			self.lock.acquire()
+			self.framenum = framenum
+			self.frame = frame
+			self.ovec = ovec
+			self.lock.release()
+
+			if use_ui:
+				self.hippocampus.drawUI()
+				k = cv.waitKey(1)  # in milliseconds, must be integer
+				if k & 0xFF == ord('q'):
+					self.state == 'stop'
+					break;
+		
+		logging.info(f'video thread {self.state}') # close or crash
+		timestop = time.time()
+		logging.info(f'num frames: {framenum}, fps: {int(framenum/(timestop-timestart))}')
+
+		if self.hippocampus:
+			self.hippocampus.stop()
 
 		if self.stream and self.stream.isOpened():
 			self.stream.release()
 			logging.info('video stream closed')
 
-class Cmd:
-	def __init__(self):
+	def get(self):
+		self.lock(acquire)
+		num = self.framenum
+		frame = copy.deepcopy(self.frame)
+		self.lock.release()
+		return num, frame
+
+class Cmd(threading.Thread):
+	def __init__(self): #override
 		self.state = 'init' # open, close
 		self.sock = False
 		self.timestamp = 0
+		threading.Thread.__init__(self)
+		self.lock = threading.Lock()
+		self.flighttime = 0
 
 	def close(self):
 		self.sock.close()
@@ -250,19 +281,21 @@ class Cmd:
 		self.state = 'open'
 		logging.info('cmd socket open')
 
-	# send command to Tello and optionally get return message. BLOCKING
+	# send command to Tello and optionally get return message. BLOCKING, recvfrom is the slow bit
 	def sendCommand(self, cmd):
 		# the takeoff command is way slow to return, with the tello hanging in the air, 
 		# perhaps checking and calibrating itself before returning to the client
+		self.lock.acquire()
 		timeout = cmd_sock_timeout
 		if cmd == 'takeoff':
 			timeout = cmd_takeoff_timeout
 			self.sock.settimeout(timeout)
 
 		# the command command sometimes returns a premature packet of bogus data.
-		# it can be ignored
+		# the battery? command sometimes returns "ok" instead of an integer
+		# both can be ignored and retried
 		retry = 0
-		if cmd == 'command':
+		if cmd == 'command' or cmd == 'battery?':
 			retry = 2
 
 		# rc command is fire and forget
@@ -272,7 +305,10 @@ class Cmd:
 
 		# pause a moment, sending commands too quickly overwhelms the Tello
 		diff = time.time() - self.timestamp
-		if diff < cmd_time_btw_commands:
+		threshhold = cmd_time_btw_commands
+		if 'rc' in cmd:
+			threshhold = cmd_time_btw_rc_commands
+		if diff < threshhold:
 			logging.debug(f'waiting {diff} between commands')
 			time.sleep(diff)
 
@@ -304,6 +340,10 @@ class Cmd:
 				logging.error(f'sendCommand {cmd} recvfrom returned bogus data, {n} elapsed={time.time()-timestart}')
 				continue
 
+			if cmd == 'battery?' and b'ok' in data:
+				logging.error(f'sendCommand {cmd} recvfrom returned "ok", {n} elapsed={time.time()-timestart}')
+				continue
+
 			try:
 				rmsg = data.decode(encoding="utf-8")
 			except Exception as ex:
@@ -318,7 +358,68 @@ class Cmd:
 			break;
 
 		self.timestamp = time.time()
+		self.lock.release()
 		return rmsg;
+
+	#def run(self): # override
+	#	timestart = time.time()
+	#	while True:
+	#		if time.time() - timestart > self.flighttime:
+	#			break
+
+	#		if self.hippocampus:
+	#			ovec = self.hippocampus.get() # get map vector in mm
+
+	#		cmd = False
+	#		if use_rc:
+	#			cmd = self.composeRcommand(ovec)
+	#		else:
+	#			cmd = self.composeMissionCommand(ovec)
+	#		if cmd:
+	#			drone.cmd.sendCommand(cmd)
+
+	#def composeRcCommand(self, ovec): # compose tello rc command
+	#	# input orientation vector in mm, diff between frameMap and baseMap
+	#	x,y,z,w = ovec
+
+	#	# output rc cmd string, 'rc x y z w'
+	#	# each param is -100 to 100, as pct of full velocity
+	#	# x:left/right, y:back/forward, z:down/up, w:ccw/cw angular velocity yaw
+
+	#	max_mmo = 200 # maximum mm offset
+	#	max_vel = 60 # maximum safe velocity
+
+	#	# if we're off by 30cm or more, land
+	#	if abs(x) > max_mmo or abx(y) > max_mmo:
+	#		return False
+
+	#	# interpolate to safe velocity range
+	#	x = int((x/(max_mmo*2))*(max_vel*2))
+	#	y = int((y/(max_mmo*2))*(max_vel*2))
+
+	#	cmd = f'rc {x} {y} {z} {w}'
+	#	return cmd
+
+	#def composeMissionCommand(self, ovec): # compose tello rc command
+	#	# input orientation vector in mm, diff between frameMap and baseMap
+	#	x,y,z,w = ovec
+
+	#	# output mission cmd string
+	#	# left, right, up, down, forward, back, cw, ccw
+
+	#	# temporarily ignore height and yaw
+	#	cmd = False
+	#	if abs(x) > abs(y) and abs(x) > 10:
+	#		if x < 0:
+	#			cmd = 'left {min(x,-20)}' 
+	#		else:
+	#			cmd = 'right {max(x,20)}'
+	#	elif abs(y) > abs(x) and abs(y) > 10:
+	#		if y < 0:
+	#			cmd = 'back {min(y,-20)}'
+	#		else:
+	#			cmd = 'forward {max(y,20)}'
+	#	return cmd
 
 class Drone:
 	def __init__(self):
@@ -326,21 +427,22 @@ class Drone:
 		self.video = False
 		self.telemetry = False
 		self.cmd = False
+		self.wifi = False
 
 	def prepareForTakeoff(self):
 		logging.info('eyes starting ' + mode)
 		timestart = time.time()
 		
 		# connect to tello
-		wifi = Wifi(tello_ssid, retry=15)
-		connected = wifi.connect()
+		self.wifi = Wifi(tello_ssid, retry=15)
+		connected = self.wifi.connect()
 		if not connected:
 			return False
 		
 		# create three objects, one for each socket
 		self.telemetry = Telemetry()
-		self.video = Video()
 		self.cmd = Cmd()
+		self.video = Video(self)
 
 		# open cmd socket
 		self.cmd.open()
@@ -361,7 +463,7 @@ class Drone:
 		if int(batt) < safe_battery:
 			logging.error('battery low.  aborting.')
 			return False
-		logging.info('battery ok')
+		logging.info('battery check goahead')
 
 		# start video
 		so = self.cmd.sendCommand("streamon")
@@ -381,21 +483,29 @@ class Drone:
 		logging.info(f'ready for takeoff, elapsed {timestart-time.time()}')
 		return True
 
-	def wait(self):  # BLOCKING
-		self.telemetry.join()
-		self.video.join()
+	#def fly(self, flighttime):
+	#	if self.state != 'airborne':
+	#		return
+	#	self.cmd.flighttime = flighttime
+	#	self.cmd.start()
+
+	def wait(self):  # BLOCKING until sub threads stopped
+		if self.telemetry.is_alive():
+			self.telemetry.join()
+		if self.video.is_alive():
+			self.video.join()
 
 	def stop(self):
 		if self.state == 'airborne':
-			self.land()
+			self.do('land')
 		self.telemetry.stop()
 		self.video.stop()
 		self.cmd.close()
 		logging.info('eyes shutdown')
+		logging.info('restoring wifi')
+		self.wifi.restore()
 
 	def do(self, cmd):
-		if 'hover' in cmd:  # set hover position?, default nav? 
-			pass
 		if 'takeoff' in cmd:
 			self.state = 'takeoff'
 		if 'land' in cmd:
@@ -420,7 +530,7 @@ if __name__ == '__main__':
 	)
 	testheight = (
 			'sdk?\n'
-			'rc 10 10 10 10\n'  # left/right, forward/back, up/down, yaw; -100 to 100
+			'rc 0 0 0 0\n'  # left/right, forward/back, up/down, yaw; -100 to 100
 			'height?\n'
 			'tof?\n'
 			'baro?'
@@ -428,12 +538,20 @@ if __name__ == '__main__':
 	demo = (
 			'takeoff\n'
 			'up 20\n'
-			'cw 360\n'
+			'cw 90\n'
 			'right 20\n'
+			'cww 90\n'
+			'forward 20\n'
+			'down 40\n'
 			'land'
 	)
 	testvideo = (
-			'pause 15'
+			'pause 10'
+	)
+	hover = (
+			'takeoff\n'
+			'hover 5\n'
+			'land'
 	)
 	
 	# run a mission
@@ -444,35 +562,139 @@ if __name__ == '__main__':
 				logging.info(cmd)
 				n = cmd.split(' ')[1]
 				time.sleep(int(n))
+			elif 'hover' in cmd:
+				logging.info(cmd)
+				n = cmd.split(' ')[1]
+				drone.fly(int(n))
 			else:
 				drone.do(cmd)
 
-	# global constants
-	logging.MISSION = 15 # 10 DEBUG, 15 MISSION, 20 INFO, 30 WARNING, 40 ERROR, 50 CRITICAL
-	logformat = '%(asctime)s %(levelno)s %(module)s %(message)s' 
-	logfolder = '/home/john/sk8/logs/'
-	logfname   = f'{logfolder}/sk8_{datetime.now().strftime("%Y%m%d")}.log'
-
-	def configureLogging(logfile):
-		logging.basicConfig(
-			format=logformat, 
-			filename=logfile, 
-			level=logging.DEBUG) # 10 DEBUG, 20 INFO, 30 WARNING, 40 ERROR, 50 CRITICAL
-
-		console = logging.StreamHandler()
-		console.setLevel(logging.INFO)  # console log gets info and above, no formatting
-		logging.getLogger('').addHandler(console)
-		logging.info('logging configured')
-
-	configureLogging(logfname)
+	universal.configureLogging()
 	drone = Drone()
 	started = drone.prepareForTakeoff()
 	if started:
 		logging.info('start mission')
-		flyMission(testheight, drone) 
+		flyMission(testvideo, drone) 
+		logging.info('mission complete')
 	drone.stop() 
 	drone.wait()
+'''
+rename eyes.py, class Eyes, really?
+	Video = eyes, visual cortex
+	Telemetry = sensory nervous system other than vision
+	Cmd = motor nervous system, controlling the eye muscles
+
+commands described in Tello SDK User Guide, online PDF, 1.0 or 2.0
+	our Tello has SDK 1.3, includes "rc", but not "sdk?"
+
+mentors:
+	github, damiafuentes/djitellopy/tello.py
+
+class Drone embeds three singleton objects, one each for the three Tello sockets:
+	Telemetry - public method get() shares the latest telemetry data object
+	Video - public method get() shares the latest frame
+	Cmd - public method sendCommand(cmd)  shares access to Tello commands
+
+class Drone also embeds Wifi, to connect to the Tello hub 
+
+
+embeds Hippocampus - should probably be separate, along with Cortex
+main flies missions
+
+for effectiveness of Tello Vision Positioning System (VPS):
+	lights on
+	AC off
+	blanket on floor
+
+Tello LED codes, see User Guide:
+	red,grn,yel   blink alternating   startup diagnostics, 10 seconds
+	yellow        blink quickly       wifi ready, not connected, signal lost
+	green         blink slowly        wifi connected
 	
+	green         blink double        VPS on
+	yellow        blink slowly        VPS off
+	
+	red           blink slowly        low battery
+	red           blink quickly       critically low battery
+	red           solid               critical error
+	
+	blue          solid               charging complete
+	blue          blink slowly        charging
+	blue          blink quickly       charging error
+
+todo:
+
+save video
+	on demand, snap command, for testing mirror calibration
+	by nth, instead of true/false
+	every frame, with or without data
+	filename: folder by day, folder by mission, frame number, jpgs only
+		mission clock, elapsed time between frames
+		file-modified timestamp, does it match mission clock?
+
+mirror calibration, do command, like pause or hover or follow
+
+
+navigator (new):
+	thread
+	queue of requests
+	default hover method between requests
+	one Navigator class: two instances, one for drone, one for skate	
+
+hippocampus.buildMap:
+	thread
+	mirror correction
+	photo angle correction
+
+tello rc command, based on multiple vectors:
+	hippocampus:
+		drift correction
+	navigator:
+		course correction	
+
+cmd:
+	wait for video started before ready state
+		
+video:
+	avoid "Circular buffer overrun" error
+		see: https://stackoverflow.com/questions/35338478/buffering-while-converting-stream-to-frames-with-ffmpegj
+
+navigator states = 'hover', 'home', 'perimeter', 'calibrate'
+if flight-time exceeded   # which thread does this?  navigator?
+	self.state = 'home'
+	proceed to pad
+	lower until pad no longer visible
+	land
+
+using the Tello rc command is virtual sticks mode or virtual joysticks
+DJI has a flight controller sdk for more advanced aircraft
+this describes different modes for using virtual joysticks
+
+I have to assume these are the defaults
+
+setRollPitchControlMode(RollPitchControlMode.VELOCITY);
+setYawControlMode(YawControlMode.ANGULAR_VELOCITY);
+setVerticalControlMode(VerticalControlMode.VELOCITY);
+setRollPitchCoordinateSystem(FlightCoordinateSystem.BODY);
+
+coordinate system is body or ground
+if ground, x,y are relative to the ground, regardless of the yaw position
+if body, x,y are relative to the body, constantly changing as the yaw position changes
+
+defaults
+coordinate system: body
+vertical control mode: velocity
+roll pitch controll mode: velocity
+yaw control mode: angular velocity
+
+rc x,y,z,w
+
+x is roll, -100 is full left velocity, +100 is full right velocity
+y is pitch, -100 is full back velocity, +100 is full forward velocity
+z is vertical, -100 is full down velocity, +100 is full up velocity
+w is yaw, -100 is full CCW spin velocity, +100 is full CW spin velocity
+
+numbers are a percentage of full velocity
+
 '''
-todo wait for video started before ready state
-'''
+
