@@ -5,7 +5,7 @@ Public methods:
 	processFrame(img,framenum,telemetry)
 		detectObjects - visual cortex, pareital lobe, occipital lobe, Brodmann area
 		buildMap - hippocampus, retrosplenial cortex
-		drawUI
+	drawUI()
 '''
 
 import cv2 as cv
@@ -141,6 +141,13 @@ class Bbox:
 		else:
 			return False
 
+	def touchesEdge(self, frameWidth, frameHeight):
+		touches = False
+		if self.l <= 1 or self.r >= frameWidth-2 \
+		or self.t <= 1 or self.b >= frameHeight-2: 
+			touches = True
+		return touches
+
 	def expand(self, padding):
 		self.l -= padding
 		self.t -= padding
@@ -237,7 +244,7 @@ class Hippocampus:
 		self.clsPadr = 2
 
 		# settings
-		self.clsdebug = -1 # self.clsCone  # -1
+		self.clsdebug = 1 # self.clsCone  # -1
 		self.debugPad = True 
 
 		self.frameWidth  = 640   # 960
@@ -383,7 +390,6 @@ class Hippocampus:
 		self.imgColor = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
 
 		hl,hu,sl,su,vl,vu,_,_,_ = settings.values()
-		print(hl)	
 		hl /= 179
 		hu /= 179
 		sl /= 255
@@ -559,7 +565,8 @@ class Hippocampus:
 		if self.clsdebug >= 0:
 			imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = self.debugImages
 			imgHsv= cv.cvtColor( imgHsv, cv.COLOR_HSV2BGR)
-			imgTuple = ([imgPost,self.imgColor,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap,imgFinal])
+			#imgTuple = ([imgPost,self.imgColor,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap,imgFinal])
+			imgTuple = ([imgPost,self.imgColor,imgMasked],[imgMap,imgFinal,imgCanny])
 		stack = self.stackImages(0.8,imgTuple)
 
 		# show
@@ -580,6 +587,12 @@ class Hippocampus:
 		return objects
 
 	def detectContours(self,img,settings,objects):
+		# draw a one-pixel black border around the whole image
+		#	when the drone is on the pad, 
+		#	each halfpad object extends past the image boundary on three sides, 
+		#	and findContours detects only the remaining edge as an object
+		cv.rectangle(img, (0,0), (self.frameWidth-1,self.frameHeight-1), (0,0,0), 1)
+
 		# mask based on hsv ranges
 		lower = np.array([settings['hue_min'],settings['sat_min'],settings['val_min']])
 		upper = np.array([settings['hue_max'],settings['sat_max'],settings['val_max']])
@@ -691,6 +704,14 @@ class Hippocampus:
 		self.post('mm frame height', self.frameHeight/ self.pxlpermm)
 		# 170cm w : 1700 mm w
 		logging.debug(f'pxlpermm:{self.pxlpermm}')
+
+		# is pad complete?
+		padfound = 'complete'
+		if padl.bbox.touchesEdge(self.frameWidth,self.frameHeight) \
+		or padr.bbox.touchesEdge(self.frameWidth,self.frameHeight):
+			padfound = 'partial'
+			logging.debug('pad is partial because it crosses the edge')
+		self.post('pad', padfound)
 
 		# from pxl to mm
 		padl.bbox.l /= self.pxlpermm
@@ -951,15 +972,18 @@ if __name__ == '__main__':
 	hippocampus.stop()
 
 '''
-
 todo
 
-1.  show rc command in post
-	composeRC now in drone::Cmd. maybe make it universal, it's only math and maximums
+1. benchmark flight(s), manual
+	a. drift to all four quadrants
+	b. ground to 2 meters
+	c. rotation to four quadrants
+
+2. incorporate land cmd
 
 2. execute rc command, to hover over pad
 
-3. draw drone
+3. mirror calibration
 
 future:
 	home position: as inverted copy of initial pad, in fixed position to arena 
@@ -967,9 +991,6 @@ future:
 
 temporary:
 	pad position, fixed
-
-drone position: center of frame, straight up (now erroneously named base or home)
-	draw as X-frame, smaller diameter than pad
 
 basemap: centered, angled, and framed on arena, plus home
 	fit arena to rotated rect
@@ -993,15 +1014,11 @@ test cases
 	missing cones
 	missing left, right, cones
 
-go with previous calculations
-
-input telemetry
-	timestamp, n, nf, agl 
+dead reckoning
+	when pad and arena is lost
+	go with previous calculations
 
 are we airborne?  do we use takeoff?
 
 when the drone is on the pad, how is the radius calculated?
-
-mirror calibration
-
 '''
