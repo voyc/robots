@@ -244,7 +244,7 @@ class Hippocampus:
 		self.clsPadr = 2
 
 		# settings
-		self.clsdebug = 1 # self.clsCone  # -1
+		self.clsdebug = -1 # self.clsCone  # -1
 		self.debugPad = True 
 
 		self.frameWidth  = 640   # 960
@@ -525,8 +525,6 @@ class Hippocampus:
 		
 		if not self.ui:
 			return
-		if not self.frameMap or not self.baseMap:
-			return;
 		if self.framenum % self.process_frame_nth:
 			return
 
@@ -539,20 +537,21 @@ class Hippocampus:
 		# create final as copy of original
 		imgFinal = img.copy()
 
-		# draw frame map on map and final
-		self.drawMap(self.frameMap, imgMap)
-		self.drawMap(self.baseMap, imgMap)
-		self.drawMap(self.frameMap, imgFinal)
-
-		# draw base map on the final
-		self.drawMap(self.baseMap, imgFinal)
+		# draw maps
+		if self.frameMap:
+			self.drawMap(self.frameMap, imgMap)
+			self.drawMap(self.frameMap, imgFinal)
+		if self.baseMap:
+			self.drawMap(self.baseMap, imgMap)
+			self.drawMap(self.baseMap, imgFinal)
 
 		# draw ovec
-		ptFrame = tuple(np.int0(np.array(self.frameMap.pad.center.tuple()) * self.pxlpermm))
-		ptBase = tuple(np.int0(np.array(self.baseMap.pad.center.tuple()) * self.pxlpermm))
-		color = (0,0,255)
-		cv.line(imgMap,ptFrame,ptBase,color,3)  # ovec line between pads
-		cv.line(imgFinal,ptFrame,ptBase,color,3)  # ovec line between pads
+		if self.frameMap and self.baseMap:
+			ptFrame = tuple(np.int0(np.array(self.frameMap.pad.center.tuple()) * self.pxlpermm))
+			ptBase = tuple(np.int0(np.array(self.baseMap.pad.center.tuple()) * self.pxlpermm))
+			color = (0,0,255)
+			cv.line(imgMap,ptFrame,ptBase,color,3)  # ovec line between pads
+			cv.line(imgFinal,ptFrame,ptBase,color,3)  # ovec line between pads
 
 		# draw internal data calculations posted by programmer
 		imgPost = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
@@ -703,7 +702,6 @@ class Hippocampus:
 		self.post('mm frame width', self.frameWidth / self.pxlpermm)
 		self.post('mm frame height', self.frameHeight/ self.pxlpermm)
 		# 170cm w : 1700 mm w
-		logging.debug(f'pxlpermm:{self.pxlpermm}')
 
 		# is pad complete?
 		padfound = 'complete'
@@ -885,6 +883,8 @@ class Hippocampus:
 		# detect objects - unit: percent of frame
 		self.objects = self.detectObjects(img)
 		self.post('objects found',len(self.objects))
+		if teldata:
+			logging.debug(f"pxlpermm:{self.pxlpermm}, agl:{teldata['agl']}")
 
 		# build map
 		self.frameMap = self.buildMap(self.objects)
@@ -913,7 +913,7 @@ class Hippocampus:
 		
 		ovec = np.array(self.frameMap.pad.center.tuple()) - np.array(self.baseMap.pad.center.tuple())
 		diffx,diffy = ovec
-		ovec = (diffx, diffy, 0, self.framenum)
+		ovec = (diffx, diffy, 0, 0)
 
 		# compare pad angle and radius between basemap and framemap
 		# use this to reorient frame to map
@@ -945,6 +945,10 @@ if __name__ == '__main__':
 	framenum = 1
 	dirframe = '/home/john/sk8/20210504/130902/frame'
 	framenum = 180
+	dirframe = '/home/john/sk8/20210507/121709/frame'
+	dirframe = '/home/john/sk8/20210507/143357/frame'
+	dirframe = '/home/john/sk8/20210507/172959/frame'
+	framenum = 1
 
 	hippocampus = Hippocampus(ui=True, saveTrain=False)
 	hippocampus.start()

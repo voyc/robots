@@ -21,7 +21,7 @@ tello_ip = '192.168.10.1'
 safe_battery = 20  # percent of full charge
 min_agl = 20  # mm, camera above the ground 
 use_rc = True   # rc command vs mission commands
-use_hippocampus = True 
+use_hippocampus = False 
 use_ui = True
 save_train = False
 
@@ -138,7 +138,7 @@ class Telemetry(threading.Thread):
 		#    tello baro is assumed to be MSL in meters to two decimal places 
 		#    the elevation of Chiang Mai is 310 meters 
 		baro = int(data['baro'] * 1000) # m to mm, float to int 
-		agl = 0
+		agl = min_agl
 		if not self.baro_base: 
 			self.baro_base = baro 
 		else: 
@@ -198,21 +198,21 @@ class Video(threading.Thread):
 			ddata, sdata = self.drone.telemetry.get()
 
 			# detect objects, build map, draw map
-			ovec = False
-			rccmd = ''
-			if self.hippocampus:
-				ovec,rccmd = self.hippocampus.processFrame(frame, framenum, ddata)
+			if not self.hippocampus:
+				continue
 
-			# get course
+			# detect objects, build map, draw map
+			ovec,rccmd = self.hippocampus.processFrame(frame, framenum, ddata)
 
+			# stop immediatly if lost
+			if rccmd == 'land':
+				self.drone.cmd.do('land')
+				self.state == 'stop'
+				break;
 
-			# navigate
-			#if ovec:
-			#	rccmd = self.drone.cmd.composeRcCommand(ovec)
-			#	logging.info(rccmd)
-
-			# execute
-			# cmd.sendCommand
+			# fly
+			if self.drone.state == 'airborne':
+				self.drone.cmd.sendCommand(rccmd)
 
 			# save frame and mission data to disk
 			if framenum % video_save_frame_nth == 0:
@@ -222,7 +222,7 @@ class Video(threading.Thread):
 				# mission log format timestamp elapsed framenum telenum rc telem
 				ts = time.time()
 				tsd = ts - timeprev
-				src = rccmd.replace(' ','-')
+				src = rccmd.replace(' ','.')
 				prefix = f"rc:{src};ts:{ts};tsd:{tsd};n:{ddata['n']};fn:{framenum};agl:{ddata['agl']};"
 				timeprev = ts
 				logging.log(logging.MISSION, prefix + sdata)
@@ -267,6 +267,7 @@ class Cmd(threading.Thread):
 		threading.Thread.__init__(self)
 		self.lock = threading.Lock()
 		self.flighttime = 0
+		self.threshhold = 0
 
 	def close(self):
 		self.sock.close()
@@ -283,9 +284,11 @@ class Cmd(threading.Thread):
 
 	# send command to Tello and optionally get return message. BLOCKING, recvfrom is the slow bit
 	def sendCommand(self, cmd):
+		# make this method reentrant
+		self.lock.acquire()
+
 		# the takeoff command is way slow to return, with the tello hanging in the air, 
 		# perhaps checking and calibrating itself before returning to the client
-		self.lock.acquire()
 		timeout = cmd_sock_timeout
 		if cmd == 'takeoff':
 			timeout = cmd_takeoff_timeout
@@ -305,12 +308,12 @@ class Cmd(threading.Thread):
 
 		# pause a moment, sending commands too quickly overwhelms the Tello
 		diff = time.time() - self.timestamp
-		threshhold = cmd_time_btw_commands
-		if 'rc' in cmd:
-			threshhold = cmd_time_btw_rc_commands
-		if diff < threshhold:
+		if diff < self.threshhold:
 			logging.debug(f'waiting {diff} between commands')
 			time.sleep(diff)
+		self.threshhold = cmd_time_btw_commands # set pause self.threshhold for next command
+		if 'rc' in cmd:
+			self.threshhold = cmd_time_btw_rc_commands
 
 		# send command to socket
 		rmsg = 'error'
@@ -320,42 +323,42 @@ class Cmd(threading.Thread):
 			len = self.sock.sendto(msg, cmd_address)
 		except Exception as ex:
 			logging.error(f'sendCommand {cmd} sendto failed:{str(ex)}, elapsed={time.time()-timestart}')
-			return rmsg
-			
-		if not wait:
-			logging.info(f'sendCommand {cmd} complete, elapsed={time.time()-timestart}')
-			return 'ok'
-
-		# read response from command
-		for r in range(0,retry+1):
-			n = f'retry={r},' if r else ''
-			try:
-				data, server = self.sock.recvfrom(cmd_maxlen)
-			except Exception as ex:
-				logging.error(f'sendCommand {cmd} recvfrom failed: {str(ex)}, {n} elapsed={time.time()-timestart}')
-				return rmsg
-
-			if b'\xcc' in data:
-				# bogus data: b'\xcc\x18\x01\xb9\x88V\x00\xe2\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00I\x00\x00\xa7\x0f\x00\x06\x00\x00\x00\x00\x00W\xbe'
-				logging.error(f'sendCommand {cmd} recvfrom returned bogus data, {n} elapsed={time.time()-timestart}')
-				continue
-
-			if cmd == 'battery?' and b'ok' in data:
-				logging.error(f'sendCommand {cmd} recvfrom returned "ok", {n} elapsed={time.time()-timestart}')
-				continue
-
-			try:
-				rmsg = data.decode(encoding="utf-8")
-			except Exception as ex:
-				logging.error(f'sendCommand {cmd} decode failed: {str(ex)}, {n} elapsed={time.time()-timestart}')
-				break;
-
-			# success
-			rmsg = rmsg.rstrip() # battery? returns string plus newline
-			logging.info(f'sendCommand {cmd} complete: {rmsg}, {n} elapsed={time.time()-timestart}')
-			if cmd == 'takeoff':
-				self.sock.settimeout(cmd_sock_timeout)
-			break;
+		else:
+			if not wait:
+				logging.info(f'sendCommand {cmd} complete, elapsed={time.time()-timestart}')
+				rmsg = 'ok'
+			else:
+				# read response from command
+				for r in range(0,retry+1):
+					n = f'retry={r},' if r else ''
+					try:
+						data, server = self.sock.recvfrom(cmd_maxlen)
+					except Exception as ex:
+						logging.error(f'sendCommand {cmd} recvfrom failed: {str(ex)}, {n} elapsed={time.time()-timestart}')
+						break
+					else:
+						if b'\xcc' in data:
+							# bogus data: b'\xcc\x18\x01\xb9\x88V\x00\xe2\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00I\x00\x00\xa7\x0f\x00\x06\x00\x00\x00\x00\x00W\xbe'
+							logging.error(f'sendCommand {cmd} recvfrom returned bogus data, {n} elapsed={time.time()-timestart}')
+							continue
+	
+						# sometimes, data received is from the previous command
+						if cmd == 'battery?' and b'ok' in data:
+							logging.error(f'sendCommand {cmd} recvfrom returned "ok", {n} elapsed={time.time()-timestart}')
+							continue
+	
+						try:
+							rmsg = data.decode(encoding="utf-8")
+						except Exception as ex:
+							logging.error(f'sendCommand {cmd} decode failed: {str(ex)}, {n} elapsed={time.time()-timestart}')
+							break;
+	
+						# success
+						rmsg = rmsg.rstrip() # battery? returns string plus newline
+						logging.info(f'sendCommand {cmd} complete: {rmsg}, {n} elapsed={time.time()-timestart}')
+						if cmd == 'takeoff':
+							self.sock.settimeout(cmd_sock_timeout)
+						break;
 
 		self.timestamp = time.time()
 		self.lock.release()
@@ -548,33 +551,112 @@ if __name__ == '__main__':
 	testvideo = (
 			'pause 10'
 	)
-	hover = (
+	xhover = (
 			'takeoff\n'
-			'hover 5\n'
+			'go left\n'
+			'pause 2\n'
+			'go right\n'
+			'pause 2\n'
+			'go forward\n'
+			'pause 2\n'
+			'go back\n'
+			'pause 2\n'
+			'go hold\n'
+			'pause 2\n'
 			'land'
+	)
+	xxhover = (
+			'go startmotors\n'
+			'pause 2\n'
+			'go liftoff\n'
+			'pause 2\n'
+			'go hold\n'
+			'pause 2\n'
+			'go left\n'
+			'pause 1\n'
+			'go right\n'
+			'pause 1\n'
+			'go forward\n'
+			'pause 2\n'
+			'go back\n'
+			'pause 1\n'
+			'go forward\n'
+			'pause 0.5\n'
+			'go hold\n'
+			'pause 1\n'
+			'land'
+	)
+	xxxhover = (
+			'go startmotors\n'
+			'pause 2\n'
+			'go liftoff\n'
+			'pause 2\n'
+			'go hold\n'
+			'pause 2\n'
+			'go up\n'
+			'pause 1\n'
+			'go down\n'
+			'pause 1\n'
+			'go cw\n'
+			'pause 2\n'
+			'go ccw\n'
+			'pause 1\n'
+			'go hold\n'
+			'pause 1\n'
+			'go land\n'
+			'go stopmotors2'
+	)
+	hover = (
+			'go startmotors\n'
+			'pause 2\n'
+			'emergency'
 	)
 	
 	# run a mission
 	def flyMission(s, drone):
 		a = s.split('\n')
-		for cmd in a:
-			if 'pause' in cmd:
-				logging.info(cmd)
-				n = cmd.split(' ')[1]
-				time.sleep(int(n))
-			elif 'hover' in cmd:
-				logging.info(cmd)
-				n = cmd.split(' ')[1]
-				drone.fly(int(n))
+		for directive in a:
+			logging.info(f'mission: {directive}')
+			if 'pause' in directive:
+				n = directive.split(' ')[1]
+				time.sleep(float(n))
+			#elif 'hover' in directive:
+			#	n = directive.split(' ')[1]
+			#	drone.fly(int(n))
+			elif 'go' in directive:
+				speed = 50
+				d = directive.split(' ')[1]
+				
+				# left stick
+				if d == 'left'   : x,y,z,w = (-speed,0,0,0)
+				if d == 'right'  : x,y,z,w = (speed,0,0,0)
+				if d == 'forward': x,y,z,w = (0,speed,0,0)
+				if d == 'back'   : x,y,z,w = (0,-speed,0,0)
+
+				# right stick
+				if d == 'up'     : x,y,z,w = (0,0,speed,0)
+				if d == 'down'   : x,y,z,w = (0,0,-speed,0)
+				if d == 'cw'     : x,y,z,w = (0,0,0,speed)
+				if d == 'ccw'    : x,y,z,w = (0,0,0,-speed)
+
+				if d == 'hold'   : x,y,z,w = (0,0,0,0)
+				if d == 'startmotors' : x,y,z,w = (-100,-100,-100,100) # both sticks down and inward
+				if d == 'stopmotors1' : x,y,z,w = (-100,-100,-100,100) # same as startmotors
+				if d == 'stopmotors2' : x,y,z,w = (0,-100,0,0) # left stick full back
+				if d == 'liftoff'     : x,y,z,w = (0,0,speed,0)
+				if d == 'land'        : x,y,z,w = (0,0,-40,0)
+
+				scmd = f'rc {x} {y} {z} {w}'
+				drone.cmd.sendCommand(scmd)
 			else:
-				drone.do(cmd)
+				drone.do(directive)
 
 	universal.configureLogging()
 	drone = Drone()
 	started = drone.prepareForTakeoff()
 	if started:
 		logging.info('start mission')
-		flyMission(testvideo, drone) 
+		flyMission(hover, drone) 
 		logging.info('mission complete')
 	drone.stop() 
 	drone.wait()
