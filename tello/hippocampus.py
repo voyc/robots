@@ -2,7 +2,7 @@
 hippocamapus.py - class Hippocampus - object detection by color and contour using computer vision
 
 Public methods:
-	processFrame(img,framenum,telemetry)
+	#processFrame(img,framenum,telemetry)
 		detectObjects - visual cortex, pareital lobe, occipital lobe, Brodmann area
 		buildMap - hippocampus, retrosplenial cortex
 	drawUI()
@@ -294,119 +294,31 @@ class Hippocampus:
 		self.cone_radius = 40    # cone diameter is 8 cm
 		self.cone_radius_range = 0.40
 		self.arena_padding = 80  # turning radius. keep sk8 in the arena.
-
 		self.arena_margin = 40
-		self.barmax = {
-			'hue_min'  : 360, # degrees
-			'hue_max'  : 360,
-			'sat_min'  : 100, # pct of color, 0=white
-			'sat_max'  : 100,
-			'val_min'  : 100, # pct of color, 0=black, takes precedence
-			'val_max'  : 100,
-			'canny_lo' : 255,
-			'canny_hi' : 255
-		}
-		self.barnames = {
-			'hue_min',
-			'hue_max',
-			'sat_min',
-			'sat_max',
-			'val_min',
-			'val_max',
-			'canny_lo',
-			'canny_hi',
-			'cls'     
-		}
 		
-
-		self.cone_settings = {
-			'hue_min'  :   0, # 0,
-			'hue_max'  :  16, # 8,
-			'sat_min'  :  42, # 107,
-			'sat_max'  : 100, # 255,
-			'val_min'  :  35, # 89,
-			'val_max'  : 100, # 255,
-			'canny_lo' :  82,
-			'canny_hi' : 127,  # Canny recommended a upper:lower ratio between 2:1 and 3:1.
-			'cls'      : self.clsCone,
-		}
-		self.padl_settings = {
-			'hue_min'  :  52, # 26,
-			'hue_max'  : 106, # 53,
-			'sat_min'  :  42, # 107,
-			'sat_max'  : 100, # 255,
-			'val_min'  :  41, # 104,
-			'val_max'  :  96, # 245,
-			'canny_lo' :  82,
-			'canny_hi' : 127,
-			'cls'      : self.clsPadl
-		}
-		self.padr_settings = {
-			'hue_min'  : 283, # 261, # 130,
-			'hue_max'  : 320, # 342, # 170,
-			'sat_min'  :  24, #  18, # 45, 
-			'sat_max'  :  76, #  47, # 118,
-			'val_min'  :  30, #  45, # 115,
-			'val_max'  :  85,        # 255,
-			'canny_lo' :  82,
-			'canny_hi' : 127,
-			'cls'      : self.clsPadr
-		}
-		self.spot_settings = {
-			'hue_min'  : 283,
-			'hue_max'  : 360,
-			'sat_min'  :  46,
-			'sat_max'  : 100,
-			'val_min'  :  40,
-			'val_max'  : 100,
-			'canny_lo' :  82,
-			'canny_hi' : 127,
-			'cls'      : self.clsSpot
-		}
-
-		self.debug_settings = [
-			self.cone_settings,
-			self.padl_settings,
-			self.padr_settings,
-			self.spot_settings
+		self.obj_settings = [ # class code      hue      sat      val     canny
+		              ( self.clsCone,   0,  8,  42,100,  35,100,  82,127 ),
+		              ( self.clsPadl,  52,106,  42,100,  41, 96,  82,127 ),
+		              ( self.clsPadr, 283,320,  24, 76,  30, 85,  82,127 ),
+		              ( self.clsSpot, 283,360,  46,100,  40,100,  82,127 )
 		]
-
-		#                          hue      sat      val     canny
-
-		#self.padr_settings    = ( 10, 41,  88,100,  84,199,  82,127)
-
-		self.magenta_settings = (270,330,  50,100,  50,100,  82,127) # bright color swatch
-
-		self.navy_settings    = (181,352,   3, 58,   0, 33,  82,127) # tape, dark
-		self.pumpkin_settings = (  3, 36,  80,100,  55, 86,  82,127) # tape, bright
-		self.yellow_settings  = ( 52, 76,  45, 93,  56, 82,  82,127) # tape, bright
-		self.purple_settings  = (244,360,  32, 52,  35, 82,  82,127) # tape, medium dark
-		self.coral_settings   = (321,360,  54,100,  48, 81,  82,127) # tape, bright but like cone
-		self.ocean_settings   = (184,260,  27, 69,  24, 50,  82,127) # tape, dark
-		self.forest_settings  = ( 60,181,  14,100,   2, 32,  82,127) # tape, dark
-
+		self.magenta_settings = ( 10, 270,330,  50,100,  50,100,  82,127 ) # bright color swatch
+		self.navy_settings    = ( 11, 181,352,   3, 58,   0, 33,  82,127 ) # tape, dark
+		self.pumpkin_settings = ( 12,   3, 36,  80,100,  55, 86,  82,127 ) # tape, bright
+		self.yellow_settings  = ( 13,  52, 76,  45, 93,  56, 82,  82,127 ) # tape, bright
+		self.purple_settings  = ( 14, 244,360,  32, 52,  35, 82,  82,127 ) # tape, medium dark
+		self.coral_settings   = ( 15, 321,360,  54,100,  48, 81,  82,127 ) # tape, bright but like cone
+		self.ocean_settings   = ( 16, 184,260,  27, 69,  24, 50,  82,127 ) # tape, dark
+		self.forest_settings  = ( 17,  60,181,  14,100,   2, 32,  82,127 ) # tape, dark
+		self.barmax           = ( 18, 360,360, 100,100, 100,100, 255,255 )
+		self.barnames = ( 'cls',  'hue_min', 'hue_max', 'sat_min', 'sat_max', 'val_min', 'val_max', 'canny_lo', 'canny_hi')
 		self.clsname = [ 'cone','padl','padr','spot' ]
-		clsname = self.clsname[self.clsdebug]
-		hl,hu,sl,su,vl,vu,cl,cu = self.magenta_settings
 
-		# best colors			
-#		self.spot_settings = self.yellow_settings
-#		self.spot_settings = self.coral_settings
-#		self.spot_settings = self.pumpkin_settings
-#		self.spot_settings = self.purple_settings
-#
-#		# worst colors, too dark, imprecise hue range
-#		self.spot_settings = self.navy_settings
-#		self.spot_settings = self.ocean_settings
-#		self.spot_settings = self.forest_settings
-#
 		# variables
 		self.framenum = 0        # tello    nexus     pixel->prepd
-
 		self.frameMap = False
 		self.baseMap = False
 		self.ovec = False  # orienting vector
-
 		self.imgPrep = False
 		self.posts = {}
 		self.debugImages = []
@@ -429,10 +341,11 @@ class Hippocampus:
 
 	def reopenUI(self, cls):
 		# read values from trackbars and print to log
-		settings = self.readSettings()
+		#settings = self.readSettings()
+		#print(settings)
 
 		# close the debug dialog window
-		self.closeUI()
+		self.closeDebugDialog()
 
 		# set new debugging class code
 		self.clsdebug = cls
@@ -476,7 +389,9 @@ class Hippocampus:
 	def openSettings(self):
 		# callback on track movement
 		def on_trackbar(val):
-			self.readSettings()
+			#jsettings = self.readSettings()
+			#self.obj_settings[self.clsdebug] = settings
+			return
 
 		# open the dialog
 		if self.ui and self.isDebugging():
@@ -485,24 +400,36 @@ class Hippocampus:
 			cv.resizeWindow( name,self.dialog_width, self.dialog_height)   # ignored with WINDOW_AUTOSIZE
 
 			# create the trackbars
-			settings = self.debug_settings[self.clsdebug]
-			for setting in settings:
-				if setting != 'cls':
-					cv.createTrackbar(setting, name, settings[setting], self.barmax[setting], on_trackbar)
+			settings = self.obj_settings[self.clsdebug]
+			#for setting in settings:
+			#	if setting != 'cls':
+			#		cv.createTrackbar(setting, name, settings[setting], self.barmax[setting], on_trackbar)
+			for n in range(1,9):
+				barname = self.barnames[n]
+				value = settings[n]
+				maxvalue = self.barmax[n]
+				cv.createTrackbar(barname, name, value, maxvalue, on_trackbar)
 	
 	def readSettings(self):
 		# read the settings from the trackbars
-		settings = self.debug_settings[self.clsdebug]
-		name = self.clsname[self.clsdebug]
-		for setting in settings:
-			if setting != 'cls':
-				settings[setting] = cv.getTrackbarPos(setting, name)
+		settings = self.obj_settings[self.clsdebug]
+		windowname = self.clsname[self.clsdebug]
+		#for setting in settings:
+		#	if setting != 'cls':
+		#		settings[setting] = cv.getTrackbarPos(setting, name)
+		newset = [settings[0]]
+		for n in range(1,9):
+			barname = self.barnames[n]
+			value = cv.getTrackbarPos(barname, windowname)
+			newset.append(value)
+		settings = tuple(newset)
 
 		# create the color image for visualizing threshhold hsv values
 		imgColor = self.createColorImage(settings)
 
 		# show the color image within the dialog window
-		cv.imshow(name, imgColor)
+		cv.imshow(windowname, imgColor)
+		self.obj_settings[self.clsdebug] = settings
 		return settings
 
 	def createColorImage(self, settings):
@@ -515,15 +442,16 @@ class Hippocampus:
 		# s = saturation as pct,        0=white, 100=pure color, at zero => gray scale
 		# v = value "intensity" as pct, 0=black, 100=pure color, takes precedence over sat
 
-		hl,hu,sl,su,vl,vu,_,_,_ = settings.values()
-
 		# trackbar settings are 360,100,100; convert to 0 to 1
-		hl /= self.barmax['hue_min']  # 0 to 360 degrees
-		hu /= self.barmax['hue_max']
-		sl /= self.barmax['sat_min']  # 0 to 100 pct
-		su /= self.barmax['sat_max']
-		vl /= self.barmax['val_min']  # 0 to 100 pct
-		vu /= self.barmax['val_max']
+		a = np.array(settings) / np.array(self.barmax)
+		cls,hl,hu,sl,su,vl,vu,_,_ = a
+		#cls,hl,hu,sl,su,vl,vu,_,_ = settings
+		#hl /= self.barmax['hue_min']  # 0 to 360 degrees
+		#hu /= self.barmax['hue_max']
+		#sl /= self.barmax['sat_min']  # 0 to 100 pct
+		#su /= self.barmax['sat_max']
+		#vl /= self.barmax['val_min']  # 0 to 100 pct
+		#vu /= self.barmax['val_max']
 
 		# colorsys values are all 0.0 to 1.0
 		rl,gl,bl = colorsys.hsv_to_rgb(hl,sl,vl)
@@ -740,10 +668,10 @@ class Hippocampus:
 
 	def detectObjectsCV(self,img):
 		objects = []
-		self.detectContours(img, self.cone_settings, objects)
-		self.detectContours(img, self.padl_settings, objects)
-		self.detectContours(img, self.padr_settings, objects)
-		self.detectContours(img, self.spot_settings, objects)
+		self.detectContours(img, self.obj_settings[self.clsCone], objects)
+		self.detectContours(img, self.obj_settings[self.clsPadl], objects)
+		self.detectContours(img, self.obj_settings[self.clsPadr], objects)
+		self.detectContours(img, self.obj_settings[self.clsSpot], objects)
 		return objects
 
 	def detectContours(self,img,settings,objects):
@@ -758,12 +686,20 @@ class Hippocampus:
 
 		# opencv values are 0 to 179,255,255
 		# trackbar settings are 360,100,100
-		hl = settings['hue_min'] / 2  # 0 to 360 degrees
-		hu = settings['hue_max'] / 2
-		sl = int((settings['sat_min'] / self.barmax['sat_min']) * 255)  # 0 to 100 pct
-		su = int((settings['sat_max'] / self.barmax['sat_max']) * 255)
-		vl = int((settings['val_min'] / self.barmax['val_min']) * 255)  # 0 to 100 pct
-		vu = int((settings['val_max'] / self.barmax['val_max']) * 255)
+		#hl = settings['hue_min'] / 2  # 0 to 360 degrees
+		#hu = settings['hue_max'] / 2
+		#sl = int((settings['sat_min'] / self.barmax['sat_min']) * 255)  # 0 to 100 pct
+		#su = int((settings['sat_max'] / self.barmax['sat_max']) * 255)
+		#vl = int((settings['val_min'] / self.barmax['val_min']) * 255)  # 0 to 100 pct
+		#vu = int((settings['val_max'] / self.barmax['val_max']) * 255)
+
+		cls,hl,hu,sl,su,vl,vu,cl,cu = settings
+		hl = int(hl / 2)
+		hu = int(hu / 2)
+		sl = int((sl / self.barmax[3]) * 255)  # 0 to 100 pct
+		su = int((su / self.barmax[4]) * 255)
+		vl = int((vl / self.barmax[5]) * 255)  # 0 to 100 pct
+		vu = int((vu / self.barmax[6]) * 255)
 
 		#lower = np.array([(settings['hue_min']/2),settings['sat_min'],settings['val_min']])
 		#upper = np.array([(settings['hue_max']/2),settings['sat_max'],settings['val_max']])
@@ -777,7 +713,7 @@ class Hippocampus:
 		imgGray = cv.cvtColor(imgBlur, cv.COLOR_BGR2GRAY)
 	
 		# canny: edge detection.  Canny recommends hi:lo ratio around 2:1 or 3:1.
-		imgCanny = cv.Canny(imgGray, settings['canny_lo'], settings['canny_hi'])
+		imgCanny = cv.Canny(imgGray, cl, cu)
 	
 		# dilate: thicken the line
 		kernel = np.ones((5, 5))
@@ -785,7 +721,7 @@ class Hippocampus:
 
 		# get a data array of polygons, one contour boundary for each object
 		contours, _ = cv.findContours(imgDilate, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
-		if self.clsdebug == settings['cls']:
+		if self.clsdebug == cls:
 			self.debugImages = [imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate]
 
 		# get bounding box for each contour
@@ -801,7 +737,7 @@ class Hippocampus:
 			th = round(h/self.frameHeight, 6)
 
 			bbox = Bbox(tl,tt,tw,th)
-			obj = DetectedObject(settings['cls'], bbox)
+			obj = DetectedObject(cls, bbox)
 			objects.append(obj)
 		return
 
