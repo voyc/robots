@@ -268,10 +268,9 @@ class Hippocampus:
 		self.clsSpot = 3
 
 		# settings
-		self.clsdebug = self.clsSpot
+		self.clsdebug = self.clsCone
 		self.debugPad = True 
 
-		self.dialog_name = 'debug Settings'
 		self.dialog_width = 480
 		self.dialog_height = 480
 
@@ -307,6 +306,18 @@ class Hippocampus:
 			'canny_lo' : 255,
 			'canny_hi' : 255
 		}
+		self.barnames = {
+			'hue_min',
+			'hue_max',
+			'sat_min',
+			'sat_max',
+			'val_min',
+			'val_max',
+			'canny_lo',
+			'canny_hi',
+			'cls'     
+		}
+		
 
 		self.cone_settings = {
 			'hue_min'  :   0, # 0,
@@ -331,28 +342,27 @@ class Hippocampus:
 			'cls'      : self.clsPadl
 		}
 		self.padr_settings = {
-			'hue_min'  :  39, # 261, # 130,
-			'hue_max'  : 143, # 342, # 170,
-			'sat_min'  :   0, #  18, # 45, 
-			'sat_max'  : 100, #  47, # 118,
-			'val_min'  :   0, #  45, # 115,
-			'val_max'  : 100,        # 255,
-			'canny_lo' : 82,
+			'hue_min'  : 283, # 261, # 130,
+			'hue_max'  : 320, # 342, # 170,
+			'sat_min'  :  24, #  18, # 45, 
+			'sat_max'  :  76, #  47, # 118,
+			'val_min'  :  30, #  45, # 115,
+			'val_max'  :  85,        # 255,
+			'canny_lo' :  82,
 			'canny_hi' : 127,
 			'cls'      : self.clsPadr
 		}
 		self.spot_settings = {
-			'hue_min'  : 270,
-			'hue_max'  : 330,
-			'sat_min'  :  50,
+			'hue_min'  : 283,
+			'hue_max'  : 360,
+			'sat_min'  :  46,
 			'sat_max'  : 100,
-			'val_min'  :  50,
+			'val_min'  :  40,
 			'val_max'  : 100,
 			'canny_lo' :  82,
 			'canny_hi' : 127,
 			'cls'      : self.clsSpot
 		}
-		
 
 		self.debug_settings = [
 			self.cone_settings,
@@ -362,6 +372,8 @@ class Hippocampus:
 		]
 
 		#                          hue      sat      val     canny
+
+		#self.padr_settings    = ( 10, 41,  88,100,  84,199,  82,127)
 
 		self.magenta_settings = (270,330,  50,100,  50,100,  82,127) # bright color swatch
 
@@ -415,19 +427,33 @@ class Hippocampus:
 		self.pxlpermm = 0 # computed by the size of the pad, in pixels vs mm
 		# the pxlpermm value implies an agl
 
-	def openUI(self):
-		if self.clsdebug == self.clsCone:
-			self.openSettings(self.cone_settings, 'cone')
-		elif self.clsdebug == self.clsPadl:
-			self.openSettings(self.padl_settings, 'padl')
-		elif self.clsdebug == self.clsPadr:
-			self.openSettings(self.padr_settings, 'padr')
-		elif self.clsdebug == self.clsSpot:
-			self.openSettings(self.spot_settings, 'spot')
+	def reopenUI(self, cls):
+		# read values from trackbars and print to log
+		settings = self.readSettings()
 
+		# close the debug dialog window
+		self.closeUI()
+
+		# set new debugging class code
+		self.clsdebug = cls
+
+		# open a new debug dialog window
+		self.openSettings()
+
+	def isDebugging(self):
+		return self.clsdebug > self.clsNone
+
+	def openUI(self):
+		if self.ui and self.isDebugging():
+			self.openSettings()
+
+	def closeDebugDialog(self):
+		if self.ui and self.isDebugging():
+			name = self.clsname[self.clsdebug]
+			cv.destroyWindow(name)
+	
 	def closeUI(self):
-		if self.ui:
-			cv.destroyAllWindows()
+		cv.destroyAllWindows()
 
 	def post(self,key,value):
 		self.posts[key] = value
@@ -447,39 +473,46 @@ class Hippocampus:
 		if self.framenum % self.save_post_nth == 0:
 			logging.debug(ssave)
 	
-	def openSettings(self, settings, name):
-		#def empty(a): # passed to trackbar
-		#	pass
-	
+	def openSettings(self):
+		# callback on track movement
 		def on_trackbar(val):
-			settings
-			name
-			self.readSettings(self.padr_settings, 'padr Settings')
+			self.readSettings()
 
-		self.dialog_name = f'{name} Settings'
-		cv.namedWindow( self.dialog_name) # default WINDOW_AUTOSIZE, manual resizeable
-		cv.resizeWindow( self.dialog_name,self.dialog_width, self.dialog_height)   # ignored with WINDOW_AUTOSIZE
-		for setting in settings:
-			if setting != 'cls':
-				print(setting)
-				cv.createTrackbar(setting, self.dialog_name, settings[setting], self.barmax[setting], on_trackbar)
+		# open the dialog
+		if self.ui and self.isDebugging():
+			name = self.clsname[self.clsdebug]
+			cv.namedWindow(name) # default WINDOW_AUTOSIZE, manual resizeable
+			cv.resizeWindow( name,self.dialog_width, self.dialog_height)   # ignored with WINDOW_AUTOSIZE
+
+			# create the trackbars
+			settings = self.debug_settings[self.clsdebug]
+			for setting in settings:
+				if setting != 'cls':
+					cv.createTrackbar(setting, name, settings[setting], self.barmax[setting], on_trackbar)
 	
-	def readSettings(self, settings, name):
+	def readSettings(self):
 		# read the settings from the trackbars
+		settings = self.debug_settings[self.clsdebug]
+		name = self.clsname[self.clsdebug]
 		for setting in settings:
 			if setting != 'cls':
-				settings[setting] = cv.getTrackbarPos(setting, self.dialog_name)
+				settings[setting] = cv.getTrackbarPos(setting, name)
 
 		# create the color image for visualizing threshhold hsv values
+		imgColor = self.createColorImage(settings)
 
-		# hsv
-		# https://alloyui.com/examples/color-picker/hsv.html
+		# show the color image within the dialog window
+		cv.imshow(name, imgColor)
+		return settings
 
-		# h = primary     red  yellow  green  cyan  blue  magenta  red
-		# h = hue degrees   0      60    120   180   240      300  359  360
-		# h = hue inRange   0      30     60    90   120      150  179  180
-		#    6 primary colors, each with a 60 degree range, 6*60=360
-		# s = saturation as pct,        0=white, 100=pure color, at zero, gray scale
+	def createColorImage(self, settings):
+		# hsv, see https://alloyui.com/examples/color-picker/hsv.html
+
+		# h = 6 primary colors, each with a 60 degree range, 6*60=360
+		#     primary     red  yellow  green  cyan  blue  magenta  red
+		#     hue degrees   0      60    120   180   240      300  359  360
+		#     hue inRange   0      30     60    90   120      150  179  180
+		# s = saturation as pct,        0=white, 100=pure color, at zero => gray scale
 		# v = value "intensity" as pct, 0=black, 100=pure color, takes precedence over sat
 
 		hl,hu,sl,su,vl,vu,_,_,_ = settings.values()
@@ -506,6 +539,7 @@ class Hippocampus:
 		colormin = bl,gl,rl
 		colormax = bu,gu,ru
 
+		# BGR values for hue only
 		hrl,hgl,hbl = colorsys.hsv_to_rgb(hl,1.0,1.0)
 		hru,hgu,hbu = colorsys.hsv_to_rgb(hu,1.0,1.0)
 		hrl *= 255
@@ -521,6 +555,8 @@ class Hippocampus:
 		color_image_width = 200
 		color_image_height = 100
 		imgColor = np.zeros((color_image_height, color_image_width, 3), np.uint8) # blank image
+
+		# divide images into four quadrants, top row is hue range, bottom row is hsv range
 		for y in range(0, int(color_image_height/2)):
 			for x in range(0, int(color_image_width/2)):
 				imgColor[y,x] = huemin
@@ -531,9 +567,7 @@ class Hippocampus:
 				imgColor[y,x] = colormin
 			for x in range(int(color_image_width/2), color_image_width):
 				imgColor[y,x] = colormax
-
-		# show the color image within the dialog window
-		cv.imshow(self.dialog_name, imgColor)
+		return imgColor
 	
 	def stackImages(self,scale,imgArray):
 		# imgArray is a tuple of lists
@@ -686,7 +720,7 @@ class Hippocampus:
 		# stack all images into one
 		#imgTuple = ([imgMap,imgPost,imgFinal],)
 		imgTuple = ([imgPost,imgFinal],)
-		if self.clsdebug >= 0:
+		if self.isDebugging():
 			imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = self.debugImages
 			imgHsv= cv.cvtColor( imgHsv, cv.COLOR_HSV2BGR)
 			#imgTuple = ([imgPost,self.imgColor,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap,imgFinal])
@@ -1063,14 +1097,7 @@ class Hippocampus:
 
 		# get settings from trackbars
 		if self.ui:
-			if self.clsdebug == self.clsCone:
-				self.readSettings( self.cone_settings, 'cone')
-			elif self.clsdebug == self.clsPadl:
-				self.readSettings( self.padl_settings, 'padl')
-			elif self.clsdebug == self.clsPadr:
-				self.readSettings( self.padr_settings, 'padr')
-			elif self.clsdebug == self.clsSpot:
-				self.readSettings( self.spot_settings, 'spot')
+			self.readSettings()
 
 		# detect objects - unit: percent of frame
 		self.objects = self.detectObjects(img)
@@ -1136,27 +1163,6 @@ if __name__ == '__main__':
 	logging.debug('')
 	logging.debug('')
 
-	dirframe = '/home/john/sk8/20210506/081115/frame'
-	framenum = 1
-	dirframe = '/home/john/sk8/20210504/130902/frame'
-	framenum = 180
-	dirframe = '/home/john/sk8/20210507/121709/frame'
-	dirframe = '/home/john/sk8/20210507/143357/frame'
-	dirframe = '/home/john/sk8/20210507/172959/frame'
-	dirframe = '/home/john/sk8/20210509/114205/frame'  # dot on the ground
-	dirframe = '/home/john/sk8/20210510/170554/frame'
-	'''
-	151 yellow and purple
-	209 pink
-	224 cyan
-	243 green
-	260 orange
-	289 blue
-	384 all colors
-	425 foot
-	495 knee
-	686 last frame
-	'''
 	dirframe = '/home/john/sk8/bench/frame'
 	framenum = 1
 
@@ -1181,6 +1187,18 @@ if __name__ == '__main__':
 			framenum -= 1
 			continue
 		elif k & 0xFF == ord('r'):
+			continue
+		elif k & 0xFF == ord('0'):
+			hippocampus.reopenUI(0)
+			continue
+		elif k & 0xFF == ord('1'):
+			hippocampus.reopenUI(1)
+			continue
+		elif k & 0xFF == ord('2'):
+			hippocampus.reopenUI(2)
+			continue
+		elif k & 0xFF == ord('3'):
+			hippocampus.reopenUI(3)
 			continue
 		elif k & 0xFF == ord('q'):
 			break;
