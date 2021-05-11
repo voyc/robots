@@ -163,16 +163,38 @@ class DetectedObject:
 		self.cls = cls
 		self.bbox = bbox
 		
+class Spot:
+	def __init__(self, bbox, pxlpermm):
+		self.bbox = bbox
+		self.pxlpermm = pxlpermm
+
 class Pad:
 	def __init__(self,padl,padr):
 		self.padl = padl
 		self.padr = padr
+		self.spot = False
+		self.pxlpermm = False
 		self.calc()
 		self.purpose = 'frame'  # frame or home
+		self.state = ''
+		self.half_state = ''
+
+	def getBbox(self):
+		l = self.center.x - self.radius
+		t = self.center.y - self.radius
+		w = self.radius
+		h = self.radius
+		bx = Bbox(l,t,w,h)
+		return bx
 
 	def calc(self):
-		self.center = averageTwoPoints(self.padl.bbox.center, self.padr.bbox.center)
-		self.angle,self.radius,self.pt3 = triangulateTwoPoints(self.padl.bbox.center, self.padr.bbox.center)
+		if self.padl and self.padr:
+			self.center = averageTwoPoints(self.padl.bbox.center, self.padr.bbox.center)
+			self.angle,self.radius,self.pt3 = triangulateTwoPoints(self.padl.bbox.center, self.padr.bbox.center)
+		else:
+			self.center = Pt(0,0)
+			self.angle = 0
+			self.radius = 0
 		# [angle, radius]  = similar to a vector in that it indicates direction and distance
 		# [leny, lenx]  = a slope, rise over run
 		# [lenx, leny] = a vector, [2,4] means move 2 mm to the left and 4 mm up
@@ -234,18 +256,24 @@ class Map:
 		self.home = home 
 
 class Hippocampus:
-	def __init__(self, ui=True, saveTrain=True):
+	def __init__(self, ui=True, saveTrain=False):
 		self.ui = ui
 		self.saveTrain = saveTrain
 
 		# object classification codes
+		self.clsNone = -1
 		self.clsCone = 0
 		self.clsPadl = 1
 		self.clsPadr = 2
+		self.clsSpot = 3
 
 		# settings
-		self.clsdebug = -1 # self.clsCone  # -1
+		self.clsdebug = self.clsSpot
 		self.debugPad = True 
+
+		self.dialog_name = 'debug Settings'
+		self.dialog_width = 480
+		self.dialog_height = 480
 
 		self.frameWidth  = 640   # 960
 		self.frameHeight = 480   # 720
@@ -257,10 +285,12 @@ class Hippocampus:
 		self.useNeuralNet = False
 
 		self.process_frame_nth = 1 #6 # fps is normally 33, we process 5 per second
+		self.save_post_nth = 1
+		self.save_train_nth = 1
 		self.save_frame_nth = 1
-		self.save_post_nth = 6
-		self.save_train_nth = 60
 
+		self.spot_radius = 8     # spot is 16 mm diameter
+		self.spot_offset = 46    # spot center is 46 mm forward of pad center
 		self.pad_radius = 70     # pad is 14 cm square
 		self.cone_radius = 40    # cone diameter is 8 cm
 		self.cone_radius_range = 0.40
@@ -268,50 +298,96 @@ class Hippocampus:
 
 		self.arena_margin = 40
 		self.barmax = {
-			'hue_min'  : 255,
-			'hue_max'  : 255,
-			'sat_min'  : 255,
-			'sat_max'  : 255,
-			'val_min'  : 255,
-			'val_max'  : 255,
+			'hue_min'  : 360, # degrees
+			'hue_max'  : 360,
+			'sat_min'  : 100, # pct of color, 0=white
+			'sat_max'  : 100,
+			'val_min'  : 100, # pct of color, 0=black, takes precedence
+			'val_max'  : 100,
 			'canny_lo' : 255,
 			'canny_hi' : 255
 		}
 
 		self.cone_settings = {
-			'hue_min'  : 0,
-			'hue_max'  : 8,
-			'sat_min'  : 107,
-			'sat_max'  : 255,
-			'val_min'  : 89,
-			'val_max'  : 255,
-			'canny_lo' : 82,
+			'hue_min'  :   0, # 0,
+			'hue_max'  :  16, # 8,
+			'sat_min'  :  42, # 107,
+			'sat_max'  : 100, # 255,
+			'val_min'  :  35, # 89,
+			'val_max'  : 100, # 255,
+			'canny_lo' :  82,
 			'canny_hi' : 127,  # Canny recommended a upper:lower ratio between 2:1 and 3:1.
 			'cls'      : self.clsCone,
 		}
 		self.padl_settings = {
-			'hue_min'  : 26,
-			'hue_max'  : 53,
-			'sat_min'  : 107,
-			'sat_max'  : 255,
-			'val_min'  : 104,
-			'val_max'  : 245,
-			'canny_lo' : 82,
+			'hue_min'  :  52, # 26,
+			'hue_max'  : 106, # 53,
+			'sat_min'  :  42, # 107,
+			'sat_max'  : 100, # 255,
+			'val_min'  :  41, # 104,
+			'val_max'  :  96, # 245,
+			'canny_lo' :  82,
 			'canny_hi' : 127,
 			'cls'      : self.clsPadl
 		}
 		self.padr_settings = {
-			'hue_min'  : 130, #122,
-			'hue_max'  : 170, #166,
-			'sat_min'  : 45,  #37,
-			'sat_max'  : 118, #96,
-			'val_min'  : 115, #71,
-			'val_max'  : 255, #192, #146,
+			'hue_min'  :  39, # 261, # 130,
+			'hue_max'  : 143, # 342, # 170,
+			'sat_min'  :   0, #  18, # 45, 
+			'sat_max'  : 100, #  47, # 118,
+			'val_min'  :   0, #  45, # 115,
+			'val_max'  : 100,        # 255,
 			'canny_lo' : 82,
 			'canny_hi' : 127,
 			'cls'      : self.clsPadr
 		}
+		self.spot_settings = {
+			'hue_min'  : 270,
+			'hue_max'  : 330,
+			'sat_min'  :  50,
+			'sat_max'  : 100,
+			'val_min'  :  50,
+			'val_max'  : 100,
+			'canny_lo' :  82,
+			'canny_hi' : 127,
+			'cls'      : self.clsSpot
+		}
+		
 
+		self.debug_settings = [
+			self.cone_settings,
+			self.padl_settings,
+			self.padr_settings,
+			self.spot_settings
+		]
+
+		#                          hue      sat      val     canny
+
+		self.magenta_settings = (270,330,  50,100,  50,100,  82,127) # bright color swatch
+
+		self.navy_settings    = (181,352,   3, 58,   0, 33,  82,127) # tape, dark
+		self.pumpkin_settings = (  3, 36,  80,100,  55, 86,  82,127) # tape, bright
+		self.yellow_settings  = ( 52, 76,  45, 93,  56, 82,  82,127) # tape, bright
+		self.purple_settings  = (244,360,  32, 52,  35, 82,  82,127) # tape, medium dark
+		self.coral_settings   = (321,360,  54,100,  48, 81,  82,127) # tape, bright but like cone
+		self.ocean_settings   = (184,260,  27, 69,  24, 50,  82,127) # tape, dark
+		self.forest_settings  = ( 60,181,  14,100,   2, 32,  82,127) # tape, dark
+
+		self.clsname = [ 'cone','padl','padr','spot' ]
+		clsname = self.clsname[self.clsdebug]
+		hl,hu,sl,su,vl,vu,cl,cu = self.magenta_settings
+
+		# best colors			
+#		self.spot_settings = self.yellow_settings
+#		self.spot_settings = self.coral_settings
+#		self.spot_settings = self.pumpkin_settings
+#		self.spot_settings = self.purple_settings
+#
+#		# worst colors, too dark, imprecise hue range
+#		self.spot_settings = self.navy_settings
+#		self.spot_settings = self.ocean_settings
+#		self.spot_settings = self.forest_settings
+#
 		# variables
 		self.framenum = 0        # tello    nexus     pixel->prepd
 
@@ -319,7 +395,6 @@ class Hippocampus:
 		self.baseMap = False
 		self.ovec = False  # orienting vector
 
-		self.imgColor = False
 		self.imgPrep = False
 		self.posts = {}
 		self.debugImages = []
@@ -347,6 +422,8 @@ class Hippocampus:
 			self.openSettings(self.padl_settings, 'padl')
 		elif self.clsdebug == self.clsPadr:
 			self.openSettings(self.padr_settings, 'padr')
+		elif self.clsdebug == self.clsSpot:
+			self.openSettings(self.spot_settings, 'spot')
 
 	def closeUI(self):
 		if self.ui:
@@ -354,6 +431,8 @@ class Hippocampus:
 
 	def post(self,key,value):
 		self.posts[key] = value
+		s = f'{key}={value}'
+		logging.debug(s)
 	
 	def drawPosts(self,imgPost):
 		linenum = 1
@@ -369,57 +448,92 @@ class Hippocampus:
 			logging.debug(ssave)
 	
 	def openSettings(self, settings, name):
-		def empty(a): # passed to trackbar
-			pass
+		#def empty(a): # passed to trackbar
+		#	pass
 	
-		window_name = f'{name} Settings'
-		cv.namedWindow( window_name)
-		cv.resizeWindow( window_name,640,240)
+		def on_trackbar(val):
+			settings
+			name
+			self.readSettings(self.padr_settings, 'padr Settings')
+
+		self.dialog_name = f'{name} Settings'
+		cv.namedWindow( self.dialog_name) # default WINDOW_AUTOSIZE, manual resizeable
+		cv.resizeWindow( self.dialog_name,self.dialog_width, self.dialog_height)   # ignored with WINDOW_AUTOSIZE
 		for setting in settings:
 			if setting != 'cls':
-				cv.createTrackbar(setting, window_name, settings[setting], self.barmax[setting],empty)
+				print(setting)
+				cv.createTrackbar(setting, self.dialog_name, settings[setting], self.barmax[setting], on_trackbar)
 	
 	def readSettings(self, settings, name):
-		window_name = f'{name} Settings'
+		# read the settings from the trackbars
 		for setting in settings:
 			if setting != 'cls':
-				settings[setting] = cv.getTrackbarPos(setting, window_name)
+				settings[setting] = cv.getTrackbarPos(setting, self.dialog_name)
 
-		# create the debugging color image
-		# debug hsv range
-		self.imgColor = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
+		# create the color image for visualizing threshhold hsv values
+
+		# hsv
+		# https://alloyui.com/examples/color-picker/hsv.html
+
+		# h = primary     red  yellow  green  cyan  blue  magenta  red
+		# h = hue degrees   0      60    120   180   240      300  359  360
+		# h = hue inRange   0      30     60    90   120      150  179  180
+		#    6 primary colors, each with a 60 degree range, 6*60=360
+		# s = saturation as pct,        0=white, 100=pure color, at zero, gray scale
+		# v = value "intensity" as pct, 0=black, 100=pure color, takes precedence over sat
 
 		hl,hu,sl,su,vl,vu,_,_,_ = settings.values()
-		hl /= 179
-		hu /= 179
-		sl /= 255
-		su /= 255
-		vl /= 255
-		vu /= 255
 
+		# trackbar settings are 360,100,100; convert to 0 to 1
+		hl /= self.barmax['hue_min']  # 0 to 360 degrees
+		hu /= self.barmax['hue_max']
+		sl /= self.barmax['sat_min']  # 0 to 100 pct
+		su /= self.barmax['sat_max']
+		vl /= self.barmax['val_min']  # 0 to 100 pct
+		vu /= self.barmax['val_max']
+
+		# colorsys values are all 0.0 to 1.0
 		rl,gl,bl = colorsys.hsv_to_rgb(hl,sl,vl)
 		ru,gu,bu = colorsys.hsv_to_rgb(hu,su,vu)
 
+		# RBG and BGR valus are 0 to 255; convert from 0 to 1
 		rl *= 255
 		ru *= 255
 		gl *= 255
 		gu *= 255
 		bl *= 255
-		vu *= 255
-		
-
+		bu *= 255
 		colormin = bl,gl,rl
 		colormax = bu,gu,ru
-		#colormin = [settings['hue_min'],settings['sat_min'],settings['val_min']]
-		#colormax = [settings['hue_max'],settings['sat_max'],settings['val_max']]
 
-		#imgColor.fill(255)
-		for y in range(0, int(self.frameHeight/2)):
-			for x in range(self.frameWidth):
-				self.imgColor[y,x] = colormin   # [255,255,255]
-		for y in range(int(self.frameHeight/2), self.frameHeight):
-			for x in range(self.frameWidth):
-				self.imgColor[y,x] = colormax   # [128,128,128]
+		hrl,hgl,hbl = colorsys.hsv_to_rgb(hl,1.0,1.0)
+		hru,hgu,hbu = colorsys.hsv_to_rgb(hu,1.0,1.0)
+		hrl *= 255
+		hru *= 255
+		hgl *= 255
+		hgu *= 255
+		hbl *= 255
+		hbu *= 255
+		huemin = hbl,hgl,hrl
+		huemax = hbu,hgu,hru
+
+		# an image is an array of numbers, depth 3, opencv uses BGR
+		color_image_width = 200
+		color_image_height = 100
+		imgColor = np.zeros((color_image_height, color_image_width, 3), np.uint8) # blank image
+		for y in range(0, int(color_image_height/2)):
+			for x in range(0, int(color_image_width/2)):
+				imgColor[y,x] = huemin
+			for x in range(int(color_image_width/2), color_image_width):
+				imgColor[y,x] = huemax
+		for y in range(int(color_image_height/2), color_image_height):
+			for x in range(0, int(color_image_width/2)):
+				imgColor[y,x] = colormin
+			for x in range(int(color_image_width/2), color_image_width):
+				imgColor[y,x] = colormax
+
+		# show the color image within the dialog window
+		cv.imshow(self.dialog_name, imgColor)
 	
 	def stackImages(self,scale,imgArray):
 		# imgArray is a tuple of lists
@@ -446,7 +560,8 @@ class Hippocampus:
 		return ver
 	
 	def drawMap(self, map, img):
-		pad = map.pad if map.pad else false
+		pad = map.pad if map.pad else False
+		spot = map.pad.spot if map.pad.spot else False
 		cones = map.cones if map.cones else False
 		arena = map.arena if map.arena else False
 
@@ -472,19 +587,22 @@ class Hippocampus:
 		if pad:
 			if pad.purpose == 'frame':
 				if self.debugPad: # draw the halves
-					l = int(round(pad.padl.bbox.l * self.pxlpermm))
-					t = int(round(pad.padl.bbox.t * self.pxlpermm))
-					r = int(round(pad.padl.bbox.r * self.pxlpermm))
-					b = int(round(pad.padl.bbox.b * self.pxlpermm))
-					cv.rectangle(img, (l,t), (r,b), (0,255,255), 1) # bgr yellow, left
+					if pad.padl:
+						l = int(round(pad.padl.bbox.l * self.pxlpermm))
+						t = int(round(pad.padl.bbox.t * self.pxlpermm))
+						r = int(round(pad.padl.bbox.r * self.pxlpermm))
+						b = int(round(pad.padl.bbox.b * self.pxlpermm))
+						cv.rectangle(img, (l,t), (r,b), (0,255,255), 1) # BGR yellow, left
 
-					l = int(round(pad.padr.bbox.l * self.pxlpermm))
-					t = int(round(pad.padr.bbox.t * self.pxlpermm))
-					r = int(round(pad.padr.bbox.r * self.pxlpermm))
-					b = int(round(pad.padr.bbox.b * self.pxlpermm))
-					cv.rectangle(img, (l,t), (r,b), (255,0,255), 1) # bgr purple, right
+					if pad.padr:
+						l = int(round(pad.padr.bbox.l * self.pxlpermm))
+						t = int(round(pad.padr.bbox.t * self.pxlpermm))
+						r = int(round(pad.padr.bbox.r * self.pxlpermm)) -1
+						b = int(round(pad.padr.bbox.b * self.pxlpermm)) -1
+						cv.rectangle(img, (l,t), (r,b), (255,0,255), 1) # BGR purple, right
 				
-					drawPolygon(img, [pad.padl.bbox.center.tuple(), pad.padr.bbox.center.tuple(), pad.pt3.tuple()], self.pxlpermm)
+					if pad.padl and pad.padr:
+						drawPolygon(img, [pad.padl.bbox.center.tuple(), pad.padr.bbox.center.tuple(), pad.pt3.tuple()], self.pxlpermm)
 				
 				color = (0,0,0)
 				#  outer perimeter
@@ -520,6 +638,13 @@ class Hippocampus:
 				
 				# draw drone body
 				#cv.rectangle(img, (l,t), (r,b), (127,0,0), 1)
+
+		if spot:
+			color = (255,255,255)
+			r = round(spot.bbox.radius * self.pxlpermm)
+			x = round(spot.bbox.center.x * self.pxlpermm)
+			y = round(spot.bbox.center.y * self.pxlpermm)
+			cv.circle(img,(x,y),r,color,1)
 
 	def drawUI(self):
 		
@@ -565,8 +690,9 @@ class Hippocampus:
 			imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = self.debugImages
 			imgHsv= cv.cvtColor( imgHsv, cv.COLOR_HSV2BGR)
 			#imgTuple = ([imgPost,self.imgColor,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap,imgFinal])
-			imgTuple = ([imgPost,self.imgColor,imgMasked],[imgMap,imgFinal,imgCanny])
-		stack = self.stackImages(0.8,imgTuple)
+			#imgTuple = ([imgPost,self.imgColor,imgMasked],[imgMap,imgFinal,imgCanny])
+			imgTuple = ([imgPost,imgMask,imgMasked],[imgMap,imgFinal,imgCanny])
+		stack = self.stackImages(1.0,imgTuple)
 
 		# show
 		cv.imshow('Image Processing', stack)
@@ -583,6 +709,7 @@ class Hippocampus:
 		self.detectContours(img, self.cone_settings, objects)
 		self.detectContours(img, self.padl_settings, objects)
 		self.detectContours(img, self.padr_settings, objects)
+		self.detectContours(img, self.spot_settings, objects)
 		return objects
 
 	def detectContours(self,img,settings,objects):
@@ -593,10 +720,23 @@ class Hippocampus:
 		cv.rectangle(img, (0,0), (self.frameWidth-1,self.frameHeight-1), (0,0,0), 1)
 
 		# mask based on hsv ranges
-		lower = np.array([settings['hue_min'],settings['sat_min'],settings['val_min']])
-		upper = np.array([settings['hue_max'],settings['sat_max'],settings['val_max']])
+		# settings are 0 to 360,100,100
+
+		# opencv values are 0 to 179,255,255
+		# trackbar settings are 360,100,100
+		hl = settings['hue_min'] / 2  # 0 to 360 degrees
+		hu = settings['hue_max'] / 2
+		sl = int((settings['sat_min'] / self.barmax['sat_min']) * 255)  # 0 to 100 pct
+		su = int((settings['sat_max'] / self.barmax['sat_max']) * 255)
+		vl = int((settings['val_min'] / self.barmax['val_min']) * 255)  # 0 to 100 pct
+		vu = int((settings['val_max'] / self.barmax['val_max']) * 255)
+
+		#lower = np.array([(settings['hue_min']/2),settings['sat_min'],settings['val_min']])
+		#upper = np.array([(settings['hue_max']/2),settings['sat_max'],settings['val_max']])
+		lower = np.array([hl,sl,vl])
+		upper = np.array([hu,su,vu])
 		imgHsv = cv.cvtColor(img,cv.COLOR_BGR2HSV)
-		imgMask = cv.inRange(imgHsv,lower,upper)
+		imgMask = cv.inRange(imgHsv,lower,upper) # choose pixels by hsv threshholds
 		imgMasked = cv.bitwise_and(img,img, mask=imgMask)
 	
 		imgBlur = cv.GaussianBlur(imgMasked, (7, 7), 1)
@@ -631,108 +771,160 @@ class Hippocampus:
 			objects.append(obj)
 		return
 
-	def findPad(self, objects):
-		padla = []
+	def findSpot(self, objects, pad):
+		spota = []
 		for obj in objects:
-			if obj.cls == self.clsPadl:
-				padla.append(obj)
-		padra = []
-		for obj in objects:
-			if obj.cls == self.clsPadr:
-				padra.append(obj)
+			if obj.cls == self.clsSpot:
+				spota.append(obj)
 
-		self.post('num padla', len(padla))
-		self.post('num padra', len(padra))
-		if len(padla) <= 0 or len(padra) <= 0:
-			if len(padla) <= 0:
-				logging.warning('missing pad left')
-			if len(padra) <= 0:
-				logging.warning('missing pad right')
+		self.post('num spot', len(spota))
+		if len(spota) <= 0:
+			logging.warning('missing spot')
 			return False
 
 		# if multiples, choose the one with the largest radius 
-		objpadl = padla[0]
-		for obj in padla:
-			if obj.bbox.radius > objpadl.bbox.radius:
-				objpadl = obj
-		objpadr = padra[0]
-		for obj in padra:
-			if obj.bbox.radius > objpadr.bbox.radius:
-				objpadr = obj
+		objspot = spota[0]
+		for obj in spota:
+			#if pad and not pad.getBbox().intersects(obj.bbox):
+			#	continue
+			if obj.bbox.radius > objspot.bbox.radius:
+				objspot = obj
 
 		# go back and scrub objects list
 		for obj in objects:
-			if obj.cls == self.clsPadl and obj is not objpadl:
+			if obj.cls == self.clsSpot and obj is not objspot:
 				objects.remove(obj)
-			if obj.cls == self.clsPadr and obj is not objpadr:
-				objects.remove(obj)
-
-		# padr and padl are expected to intersect
-		# if angle is straight up, they could be adjacent, but this is unlikely
-		if not objpadl.bbox.intersects( objpadr.bbox):
-			logging.debug('pad halves do not intersect')
 
 		# from pct to pxl
-		padl = copy.deepcopy(objpadl)
-		padl.bbox.l *= self.frameWidth
-		padl.bbox.t *= self.frameHeight
-		padl.bbox.w *= self.frameWidth 
-		padl.bbox.h *= self.frameHeight 
-		padl.bbox.calc()
-
-		padr = copy.deepcopy(objpadr)
-		padr.bbox.l *= self.frameWidth
-		padr.bbox.t *= self.frameHeight
-		padr.bbox.w *= self.frameWidth 
-		padr.bbox.h *= self.frameHeight 
-		padr.bbox.calc()
-
-		# calc pad radius in pixels
-		_,pxlPadRadius,_ = triangulateTwoPoints(padl.bbox.center, padr.bbox.center)
-
-		# pad diameter in pixels must be less than half the frameWidth, otherwise we're too low
-		#if pxlPadRadius > (self.frameWidth * .2):
-		#	logging.warning('pad radius too small')
-		#	return False
+		bbox = copy.deepcopy(objspot.bbox)
+		bbox.l *= self.frameWidth
+		bbox.t *= self.frameHeight
+		bbox.w *= self.frameWidth 
+		bbox.h *= self.frameHeight 
+		bbox.calc()  # calc center, radius
 
 		# conversion factor pxl per mm
-		# nb: conversion factor implies an agl
-		self.pxlpermm = pxlPadRadius / self.pad_radius
-		self.post('conversion pxl per mm', self.pxlpermm)
-		self.post('mm frame width', self.frameWidth / self.pxlpermm)
-		self.post('mm frame height', self.frameHeight/ self.pxlpermm)
-		# 170cm w : 1700 mm w
+		pxlpermm = bbox.radius / self.spot_radius
+		self.post('spot pxlpermm', pxlpermm)
+
+		spot = Spot(bbox,pxlpermm) # units=pxl
+		return spot
+
+	def findHalf(self, objects, cls):
+		clsname = 'left' if cls == self.clsPadl else 'right' # for posts
+
+		a = []
+		for obj in objects:
+			if obj.cls == cls:
+				a.append(obj)
+		self.post(f'pad {clsname}', len(a))
+
+		# ideally we have one and only one
+		o = False
+		if len(a) >= 1:
+			o = a[0]
+		else:
+			logging.debug(f'missing half {clsname}')
+
+		# if multiples, choose the one with the largest radius 
+		if len(a) > 1:
+			for obj in a:
+				if obj.bbox.radius > o.bbox.radius:
+					o = obj
+
+			# go back and scrub objects list
+			for obj in objects:
+				if obj.cls == cls and obj is not o:
+					objects.remove(obj)
+
+		# from pct to pxl
+		half = copy.deepcopy(o)
+		if half:
+			half.bbox.l *= self.frameWidth
+			half.bbox.t *= self.frameHeight
+			half.bbox.w *= self.frameWidth 
+			half.bbox.h *= self.frameHeight 
+			half.bbox.calc()
+		return half
+
+	def findPad(self, objects):
+		padl = self.findHalf(objects, self.clsPadl)
+		padr = self.findHalf(objects, self.clsPadr)
+
+		# padr and padl are expected to intersect (unless perfectly straight up)
+		if padl and padr and not padl.bbox.intersects( padr.bbox):
+			logging.debug('pad halves do not intersect')
+
+		if padl and not padr:
+			padr = copy.deepcopy(padl)
+			padr.bbox.l += (padr.bbox.w * 2)
+			padr.bbox.calc()
+		if padr and not padl:
+			padl = copy.deepcopy(padr)
+			padl.bbox.l -= (padl.bbox.w * 2)
+			padl.bbox.calc()
+
+		pad = Pad(padl, padr)
 
 		# is pad complete?
-		padfound = 'complete'
-		if padl.bbox.touchesEdge(self.frameWidth,self.frameHeight) \
-		or padr.bbox.touchesEdge(self.frameWidth,self.frameHeight):
-			padfound = 'partial'
-			logging.debug('pad is partial because it crosses the edge')
-		self.post('pad', padfound)
+		if padl and padr:
+			if padl.bbox.touchesEdge(self.frameWidth,self.frameHeight) \
+			or padr.bbox.touchesEdge(self.frameWidth,self.frameHeight):
+				pad.half_state = 'partial'
+			else:
+				pad.half_state = 'complete'
+		else:
+			pad.half_state = 'missing'
+		self.post('pad half state', pad.half_state)
 
-		# from pxl to mm
-		padl.bbox.l /= self.pxlpermm
-		padl.bbox.t /= self.pxlpermm
-		padl.bbox.w /= self.pxlpermm
-		padl.bbox.h /= self.pxlpermm
-		padl.bbox.calc()
+		spot = self.findSpot(objects, pad)
+		pad.spot = spot
 
-		padr.bbox.l /= self.pxlpermm
-		padr.bbox.t /= self.pxlpermm
-		padr.bbox.w /= self.pxlpermm
-		padr.bbox.h /= self.pxlpermm
-		padr.bbox.calc()
+		# using pad or spot
+		if pad.half_state == 'complete':
+			pad.state = 'pad'
+		elif spot:
+			pad.state = 'spot'
+		elif pad.half_state == 'partial':
+			pad.state = 'pad'
+		else:
+			pad.state = 'missing' # no pad, no spot
+		self.post('pad state', pad.state)
 
-		# create pad object in mm
-		pad = Pad(padl,padr)
-		self.post('padl center', padl.bbox.center)
-		self.post('padr center', padr.bbox.center)
-		self.post('quadrant', quadrantPoints(padl.bbox.center, padr.bbox.center))
-		self.post('pad center', pad.center)
-		self.post('pad angle' , pad.angle)
-		self.post('pad radius', pad.radius)
+		# calc conversion factor 
+		if pad.state == 'pad':
+			pad.calc()
+			self.pxlpermm = pad.radius / self.pad_radius
+		elif pad.state == 'spot':
+			self.pxlpermm = spot.pxlpermm
+		if self.pxlpermm == 0.0:		
+			pad.state = 'missing'
 
+		# convert to mm, calc radius
+		if pad.state != 'missing':
+			if pad.padl:
+				pad.padl.bbox.l /= self.pxlpermm
+				pad.padl.bbox.t /= self.pxlpermm
+				pad.padl.bbox.w /= self.pxlpermm
+				pad.padl.bbox.h /= self.pxlpermm
+				pad.padl.bbox.calc()
+			if pad.padr:
+				pad.padr.bbox.l /= self.pxlpermm
+				pad.padr.bbox.t /= self.pxlpermm
+				pad.padr.bbox.w /= self.pxlpermm
+				pad.padr.bbox.h /= self.pxlpermm
+				pad.padr.bbox.calc()
+			if spot:
+				spot.bbox.l /= self.pxlpermm
+				spot.bbox.t /= self.pxlpermm
+				spot.bbox.w /= self.pxlpermm
+				spot.bbox.h /= self.pxlpermm
+				spot.bbox.calc()
+
+				pad.calc()
+			if pad.state == 'spot':
+				pad.center.x = spot.bbox.center.x
+				pad.center.y = spot.bbox.center.y # + self.spot_offset
 		return pad
 
 	def findCones(self, objects):
@@ -817,9 +1009,7 @@ class Hippocampus:
 		if self.saveTrain and self.framenum % self.save_train_nth == 0:
 			ht = 0
 			fname = f'{self.outdir}/sk8_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}_ht_{ht}'
-			imgname = f'{fname}.jpg'
 			txtname = f'{fname}.txt'
-			cv.imwrite(imgname,img)
 			f = open(txtname, 'a')
 
 			for obj in objects:
@@ -879,20 +1069,28 @@ class Hippocampus:
 				self.readSettings( self.padl_settings, 'padl')
 			elif self.clsdebug == self.clsPadr:
 				self.readSettings( self.padr_settings, 'padr')
+			elif self.clsdebug == self.clsSpot:
+				self.readSettings( self.spot_settings, 'spot')
 
 		# detect objects - unit: percent of frame
 		self.objects = self.detectObjects(img)
 		self.post('objects found',len(self.objects))
-		if teldata:
-			logging.debug(f"pxlpermm:{self.pxlpermm}, agl:{teldata['agl']}")
 
 		# build map
 		self.frameMap = self.buildMap(self.objects)
 		if not self.frameMap:
 			return ovec,rccmd
 
+		if teldata:
+			agl = teldata['agl'] if teldata else 0
+			perspot = self.frameMap.spot.pxlpermm
+			perpad = self.frameMap.pad.pxlpermm
+			logging.debug(f'pxlpermm:{self.pxlpermm} spot:{perspot}, pad:{perpad}, agl:{agl}')
+
 		# first time, save base  ??? periodically make new base
-		if True: #not self.baseMap:
+		#if True: #not self.baseMap:
+		if self.pxlpermm > 0.0:
+				
 			pxlpermm_at_1_meter = 0.7300079591720976
 			self.baseMap = copy.deepcopy(self.frameMap)
 			self.baseMap.pad.purpose = 'home'
@@ -905,15 +1103,15 @@ class Hippocampus:
 			self.baseMap.pad.angle = 0 
 			self.baseMap.pad.radius = (self.frameHeight/2) / pxlpermm_at_1_meter
 
-		# orient frame to map
-		angle,radius,_ = triangulateTwoPoints( self.baseMap.pad.center, self.frameMap.pad.center)
-		# use this to navigate angle and radius, to counteract drift
-		# assume stable agl and no yaw, so angle and radius refers to drift
-		# in this case, drawing basemap over framemap results only in offset, not rotation or scale
-		
-		ovec = np.array(self.frameMap.pad.center.tuple()) - np.array(self.baseMap.pad.center.tuple())
-		diffx,diffy = ovec
-		ovec = (diffx, diffy, 0, 0)
+			# orient frame to map
+			angle,radius,_ = triangulateTwoPoints( self.baseMap.pad.center, self.frameMap.pad.center)
+			# use this to navigate angle and radius, to counteract drift
+			# assume stable agl and no yaw, so angle and radius refers to drift
+			# in this case, drawing basemap over framemap results only in offset, not rotation or scale
+			
+			ovec = np.array(self.frameMap.pad.center.tuple()) - np.array(self.baseMap.pad.center.tuple())
+			diffx,diffy = ovec
+			ovec = (diffx, diffy, 0, 0)
 
 		# compare pad angle and radius between basemap and framemap
 		# use this to reorient frame to map
@@ -923,17 +1121,14 @@ class Hippocampus:
 		# save image and objects for mission debriefing and neural net training
 		self.saveTrainingData(img, self.objects)
 
-		rccmd = universal.composeRcCommand(ovec)
-		self.post('nav cmd', rccmd)
+		if ovec:
+			rccmd = universal.composeRcCommand(ovec)
+			self.post('nav cmd', rccmd)
 
 		# display through portal to human observer
-		#self.drawUI(img)
+		self.drawUI()
 
-		return ovec, rccmd
-
-	def parseFilenameForAgl(self, fname):
-		agl = int(fname.split('_agl_')[1].split('.')[0])
-		return agl
+		return ovec,rccmd
 
 if __name__ == '__main__':
 	# run a drone simulator
@@ -948,6 +1143,21 @@ if __name__ == '__main__':
 	dirframe = '/home/john/sk8/20210507/121709/frame'
 	dirframe = '/home/john/sk8/20210507/143357/frame'
 	dirframe = '/home/john/sk8/20210507/172959/frame'
+	dirframe = '/home/john/sk8/20210509/114205/frame'  # dot on the ground
+	dirframe = '/home/john/sk8/20210510/170554/frame'
+	'''
+	151 yellow and purple
+	209 pink
+	224 cyan
+	243 green
+	260 orange
+	289 blue
+	384 all colors
+	425 foot
+	495 knee
+	686 last frame
+	'''
+	dirframe = '/home/john/sk8/bench/frame'
 	framenum = 1
 
 	hippocampus = Hippocampus(ui=True, saveTrain=False)
@@ -961,14 +1171,16 @@ if __name__ == '__main__':
 			break;
 
 		ovec = hippocampus.processFrame(frame, framenum, None)
-		hippocampus.drawUI()
 
-		k = cv.waitKey(0)  # in milliseconds, must be integer
+		# kill switch
+		k = cv.waitKey(1)  # in milliseconds, must be integer
 		if k & 0xFF == ord('n'):
 			framenum += 1
 			continue
 		elif k & 0xFF == ord('p'):
 			framenum -= 1
+			continue
+		elif k & 0xFF == ord('r'):
 			continue
 		elif k & 0xFF == ord('q'):
 			break;
@@ -987,7 +1199,7 @@ todo
 
 2. execute rc command, to hover over pad
 
-3. mirror calibration
+e. mirror calibration
 
 future:
 	home position: as inverted copy of initial pad, in fixed position to arena 

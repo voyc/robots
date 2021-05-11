@@ -20,10 +20,13 @@ tello_ssid = 'TELLO-591FFC'
 tello_ip = '192.168.10.1'
 safe_battery = 20  # percent of full charge
 min_agl = 20  # mm, camera above the ground 
+
 use_rc = True   # rc command vs mission commands
 use_hippocampus = False 
 use_ui = True
-save_train = False
+save_frame = True
+save_train = False 
+save_mission = True
 
 # three ports, three sockets.  firewall must be open to these ports.
 telemetry_port = 8890   # UDP server socket to repeatedly send a string of telemetry data
@@ -36,7 +39,6 @@ telemetry_maxlen = 1518 #?
 
 video_url = f'udp://{tello_ip}:{video_port}'
 video_maxlen = 2**16
-video_save_frame_nth = 1 # 0:none, 1:all, n:every nth
 
 cmd_address = (tello_ip, cmd_port)
 cmd_sock_timeout = 7 # seconds
@@ -177,7 +179,7 @@ class Video(threading.Thread):
 	def run(self): # override  # Video::run() - this is the main loop, does navigation and flying
 		# start hippocampus
 		if use_hippocampus:
-			self.hippocampus = Hippocampus(ui=use_ui, saveTrain=save_train)
+			self.hippocampus = Hippocampus( use_ui, save_train)
 			self.hippocampus.start()
 	
 		logging.info(f'video thread started')
@@ -198,34 +200,34 @@ class Video(threading.Thread):
 			ddata, sdata = self.drone.telemetry.get()
 
 			# detect objects, build map, draw map
-			if not self.hippocampus:
-				continue
+			ovec = (0,0,0,0)
+			if self.hippocampus:
+				# detect objects, build map, draw map
+				ovec,rccmd = self.hippocampus.processFrame(frame, framenum, ddata)
 
-			# detect objects, build map, draw map
-			ovec,rccmd = self.hippocampus.processFrame(frame, framenum, ddata)
+				# stop immediatly if lost
+				if rccmd == 'land':
+					self.drone.cmd.do('land')
+					self.state == 'stop'
+					break;
 
-			# stop immediatly if lost
-			if rccmd == 'land':
-				self.drone.cmd.do('land')
-				self.state == 'stop'
-				break;
+				# fly
+				if self.drone.state == 'airborne' and ovec:
+					self.drone.cmd.sendCommand(rccmd)
 
-			# fly
-			if self.drone.state == 'airborne':
-				self.drone.cmd.sendCommand(rccmd)
+				# save mission data
+				if save_mission:
+					ts = time.time()
+					tsd = ts - timeprev
+					src = rccmd.replace(' ','.')
+					prefix = f"rc:{src};ts:{ts};tsd:{tsd};n:{ddata['n']};fn:{framenum};agl:{ddata['agl']};"
+					timeprev = ts
+					logging.log(logging.MISSION, prefix + sdata)
 
-			# save frame and mission data to disk
-			if framenum % video_save_frame_nth == 0:
+			# save frame
+			if save_frame:
 				fname = f'{self.dirframe}/{framenum}.jpg'
 				cv.imwrite(fname,frame)
-
-				# mission log format timestamp elapsed framenum telenum rc telem
-				ts = time.time()
-				tsd = ts - timeprev
-				src = rccmd.replace(' ','.')
-				prefix = f"rc:{src};ts:{ts};tsd:{tsd};n:{ddata['n']};fn:{framenum};agl:{ddata['agl']};"
-				timeprev = ts
-				logging.log(logging.MISSION, prefix + sdata)
 
 			# set frame, framenum, and ovec for use by other threads
 			self.lock.acquire()
@@ -234,12 +236,11 @@ class Video(threading.Thread):
 			self.ovec = ovec
 			self.lock.release()
 
-			if use_ui:
-				self.hippocampus.drawUI()
-				k = cv.waitKey(1)  # in milliseconds, must be integer
-				if k & 0xFF == ord('q'):
-					self.state == 'stop'
-					break;
+			# kill switch
+			k = cv.waitKey(1)  # in milliseconds, must be integer
+			if k & 0xFF == ord('q'):
+				self.state == 'stop'
+				break;
 		
 		logging.info(f'video thread {self.state}') # close or crash
 		timestop = time.time()
@@ -364,66 +365,6 @@ class Cmd(threading.Thread):
 		self.lock.release()
 		return rmsg;
 
-	#def run(self): # override
-	#	timestart = time.time()
-	#	while True:
-	#		if time.time() - timestart > self.flighttime:
-	#			break
-
-	#		if self.hippocampus:
-	#			ovec = self.hippocampus.get() # get map vector in mm
-
-	#		cmd = False
-	#		if use_rc:
-	#			cmd = self.composeRcommand(ovec)
-	#		else:
-	#			cmd = self.composeMissionCommand(ovec)
-	#		if cmd:
-	#			drone.cmd.sendCommand(cmd)
-
-	#def composeRcCommand(self, ovec): # compose tello rc command
-	#	# input orientation vector in mm, diff between frameMap and baseMap
-	#	x,y,z,w = ovec
-
-	#	# output rc cmd string, 'rc x y z w'
-	#	# each param is -100 to 100, as pct of full velocity
-	#	# x:left/right, y:back/forward, z:down/up, w:ccw/cw angular velocity yaw
-
-	#	max_mmo = 200 # maximum mm offset
-	#	max_vel = 60 # maximum safe velocity
-
-	#	# if we're off by 30cm or more, land
-	#	if abs(x) > max_mmo or abx(y) > max_mmo:
-	#		return False
-
-	#	# interpolate to safe velocity range
-	#	x = int((x/(max_mmo*2))*(max_vel*2))
-	#	y = int((y/(max_mmo*2))*(max_vel*2))
-
-	#	cmd = f'rc {x} {y} {z} {w}'
-	#	return cmd
-
-	#def composeMissionCommand(self, ovec): # compose tello rc command
-	#	# input orientation vector in mm, diff between frameMap and baseMap
-	#	x,y,z,w = ovec
-
-	#	# output mission cmd string
-	#	# left, right, up, down, forward, back, cw, ccw
-
-	#	# temporarily ignore height and yaw
-	#	cmd = False
-	#	if abs(x) > abs(y) and abs(x) > 10:
-	#		if x < 0:
-	#			cmd = 'left {min(x,-20)}' 
-	#		else:
-	#			cmd = 'right {max(x,20)}'
-	#	elif abs(y) > abs(x) and abs(y) > 10:
-	#		if y < 0:
-	#			cmd = 'back {min(y,-20)}'
-	#		else:
-	#			cmd = 'forward {max(y,20)}'
-	#	return cmd
-
 class Drone:
 	def __init__(self):
 		self.state = 'start', # start, ready, takeoff, airborne, land, down
@@ -483,7 +424,7 @@ class Drone:
 		# ready for takeoff:
 		#     command mode, good battery, video running, telemetry running, ui open
 		self.state = 'ready'
-		logging.info(f'ready for takeoff, elapsed {timestart-time.time()}')
+		logging.info(f'ready for takeoff, elapsed={time.time()-timestart}')
 		return True
 
 	#def fly(self, flighttime):
@@ -549,9 +490,9 @@ if __name__ == '__main__':
 			'land'
 	)
 	testvideo = (
-			'pause 10'
+			'pause 20'
 	)
-	xhover = (
+	missioncmds = (
 			'takeoff\n'
 			'go left\n'
 			'pause 2\n'
@@ -565,7 +506,7 @@ if __name__ == '__main__':
 			'pause 2\n'
 			'land'
 	)
-	xxhover = (
+	pitchroll = (
 			'go startmotors\n'
 			'pause 2\n'
 			'go liftoff\n'
@@ -586,7 +527,7 @@ if __name__ == '__main__':
 			'pause 1\n'
 			'land'
 	)
-	xxxhover = (
+	vertyaw = (
 			'go startmotors\n'
 			'pause 2\n'
 			'go liftoff\n'
@@ -603,13 +544,24 @@ if __name__ == '__main__':
 			'pause 1\n'
 			'go hold\n'
 			'pause 1\n'
-			'go land\n'
-			'go stopmotors2'
+			'go land'
+	)
+	stop = (
+			'go startmotors\n'
+			'pause 2\n'
+			'emergency'
 	)
 	hover = (
 			'go startmotors\n'
 			'pause 2\n'
-			'emergency'
+			'go liftoff\n'
+			'pause 10\n'
+			'land'
+	)
+	launch = (
+			'takeoff\n'
+			'up 100\n'
+			'land'
 	)
 	
 	# run a mission
@@ -648,6 +600,8 @@ if __name__ == '__main__':
 
 				scmd = f'rc {x} {y} {z} {w}'
 				drone.cmd.sendCommand(scmd)
+				if d == 'liftoff':
+					drone.state = 'airborne'
 			else:
 				drone.do(directive)
 
@@ -656,7 +610,7 @@ if __name__ == '__main__':
 	started = drone.prepareForTakeoff()
 	if started:
 		logging.info('start mission')
-		flyMission(hover, drone) 
+		flyMission(testvideo, drone) 
 		logging.info('mission complete')
 	drone.stop() 
 	drone.wait()
