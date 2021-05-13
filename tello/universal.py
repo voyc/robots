@@ -6,7 +6,7 @@ import datetime
 import os 
 import logging
 
-dirbase = 'home/john/sk8'
+dirbase = 'home/john/sk8/daily'
 dirday  = f'{datetime.datetime.now().strftime("%Y%m%d")}'
 dirtime = f'{datetime.datetime.now().strftime("%H%M%S")}'
 def makedir(form): 
@@ -14,8 +14,8 @@ def makedir(form):
 	os.makedirs(s, exist_ok=True)
 	return s
 
-max_mmo = 200 # maximum mm offset
-max_vel = 60 # maximum safe velocity (up to 100)
+max_mmo = 179 # maximum mm offset
+max_vel = 90 # maximum safe velocity (up to 100)
 
 def configureLogging():
 	# factory: 10 DEBUG, 20 INFO, 30 WARNING, 40 ERROR, 50 CRITICAL
@@ -67,9 +67,27 @@ def composeRcCommand(ovec): # compose tello rc command
 	# interpolate to safe velocity range
 	x = int((x/(max_mmo*2))*(max_vel*2))
 	y = int((y/(max_mmo*2))*(max_vel*2))
+	z = int((z/(max_mmo*2))*(max_vel*2))
+	w = int((w/(max_mmo*2))*(max_vel*2))
 
 	s = f'rc {x} {y} {z} {w}'
 	return s
+
+def unpack( sdata):
+	# data=b'pitch:-2;roll:-2;yaw:2;vgx:0;vgy:0;vgz:0;templ:62;temph:65;tof:6553;h:0;bat:42;baro:404.45;time:0;agx:-37.00;agy:48.00;agz:-1008.00;'
+	adata = sdata.split(';')      # array
+	ddata = {}                    # dict
+	for stat in adata:
+		if len(stat) <= 2: # last item is cr+lf
+			break
+		name,value = stat.split(':')
+		if name in ['ts','tsd','baro','agx','agy','agz']:
+			ddata[name] = float(value);
+		elif name in ['rc']:
+			ddata[name] = str(value);
+		else:
+			ddata[name] = int(value);
+	return ddata 
 
 if __name__ == '__main__':
 	framenum = 1

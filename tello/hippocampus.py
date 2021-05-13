@@ -16,6 +16,7 @@ import os
 import copy
 import colorsys
 import universal
+import re
 
 class Pt:
 	def __init__(self, x, y):
@@ -155,6 +156,17 @@ class Bbox:
 		self.h += (padding*2)
 		self.calc()
 
+	def enlarge(self, bbox):
+		if self.l > bbox.l:
+			self.l = bbox.l
+		if self.t < bbox.t:
+			self.t = bbox.t
+		if self.w < bbox.w:
+			self.w = bbox.w
+		if self.h < bbox.h:
+			self.h = bbox.h
+		self.calc()
+
 	def __str__(self):
 		return f'({self.l},{self.t},{self.w},{self.h})'
 
@@ -286,7 +298,6 @@ class Hippocampus:
 		self.process_frame_nth = 1 #6 # fps is normally 33, we process 5 per second
 		self.save_post_nth = 1
 		self.save_train_nth = 1
-		self.save_frame_nth = 1
 
 		self.spot_radius = 8     # spot is 16 mm diameter
 		self.spot_offset = 46    # spot center is 46 mm forward of pad center
@@ -299,7 +310,7 @@ class Hippocampus:
 		self.obj_settings = [ # class code      hue      sat      val     canny
 		              ( self.clsCone,   0,  8,  42,100,  35,100,  82,127 ),
 		              ( self.clsPadl,  52,106,  42,100,  41, 96,  82,127 ),
-		              ( self.clsPadr, 283,320,  24, 76,  30, 85,  82,127 ),
+		              ( self.clsPadr, 258,335,  24, 76,  30, 85,  82,127 ),
 		              ( self.clsSpot, 283,360,  46,100,  40,100,  82,127 )
 		]
 		self.magenta_settings = ( 10, 270,330,  50,100,  50,100,  82,127 ) # bright color swatch
@@ -445,37 +456,20 @@ class Hippocampus:
 		# trackbar settings are 360,100,100; convert to 0 to 1
 		a = np.array(settings) / np.array(self.barmax)
 		cls,hl,hu,sl,su,vl,vu,_,_ = a
-		#cls,hl,hu,sl,su,vl,vu,_,_ = settings
-		#hl /= self.barmax['hue_min']  # 0 to 360 degrees
-		#hu /= self.barmax['hue_max']
-		#sl /= self.barmax['sat_min']  # 0 to 100 pct
-		#su /= self.barmax['sat_max']
-		#vl /= self.barmax['val_min']  # 0 to 100 pct
-		#vu /= self.barmax['val_max']
 
 		# colorsys values are all 0.0 to 1.0
 		rl,gl,bl = colorsys.hsv_to_rgb(hl,sl,vl)
 		ru,gu,bu = colorsys.hsv_to_rgb(hu,su,vu)
 
 		# RBG and BGR valus are 0 to 255; convert from 0 to 1
-		rl *= 255
-		ru *= 255
-		gl *= 255
-		gu *= 255
-		bl *= 255
-		bu *= 255
+		rl,ru,gl,gu,bl,bu = np.array([rl,ru,gl,gu,bl,bu]) * 255
 		colormin = bl,gl,rl
 		colormax = bu,gu,ru
 
-		# BGR values for hue only
+		# again for hue only
 		hrl,hgl,hbl = colorsys.hsv_to_rgb(hl,1.0,1.0)
 		hru,hgu,hbu = colorsys.hsv_to_rgb(hu,1.0,1.0)
-		hrl *= 255
-		hru *= 255
-		hgl *= 255
-		hgu *= 255
-		hbl *= 255
-		hbu *= 255
+		hrl,hru,hgl,hgu,hbl,hbu = np.array([hrl,hru,hgl,hgu,hbl,hbu]) * 255
 		huemin = hbl,hgl,hrl
 		huemax = hbu,hgu,hru
 
@@ -651,10 +645,10 @@ class Hippocampus:
 		if self.isDebugging():
 			imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = self.debugImages
 			imgHsv= cv.cvtColor( imgHsv, cv.COLOR_HSV2BGR)
-			#imgTuple = ([imgPost,self.imgColor,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap,imgFinal])
+			imgTuple = ([imgPost,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgFinal])
 			#imgTuple = ([imgPost,self.imgColor,imgMasked],[imgMap,imgFinal,imgCanny])
-			imgTuple = ([imgPost,imgMask,imgMasked],[imgMap,imgFinal,imgCanny])
-		stack = self.stackImages(1.0,imgTuple)
+			#imgTuple = ([imgPost,imgMask,imgMasked],[imgMap,imgFinal,imgCanny])
+		stack = self.stackImages(0.7,imgTuple)
 
 		# show
 		cv.imshow('Image Processing', stack)
@@ -709,7 +703,7 @@ class Hippocampus:
 		imgMask = cv.inRange(imgHsv,lower,upper) # choose pixels by hsv threshholds
 		imgMasked = cv.bitwise_and(img,img, mask=imgMask)
 	
-		imgBlur = cv.GaussianBlur(imgMasked, (7, 7), 1)
+		imgBlur = cv.GaussianBlur(imgMasked, (17, 17), 1)  # started at (7,7);  the bigger kernel size pulls together the pieces of padr
 		imgGray = cv.cvtColor(imgBlur, cv.COLOR_BGR2GRAY)
 	
 		# canny: edge detection.  Canny recommends hi:lo ratio around 2:1 or 3:1.
@@ -749,7 +743,6 @@ class Hippocampus:
 
 		self.post('num spot', len(spota))
 		if len(spota) <= 0:
-			logging.warning('missing spot')
 			return False
 
 		# if multiples, choose the one with the largest radius 
@@ -775,7 +768,7 @@ class Hippocampus:
 
 		# conversion factor pxl per mm
 		pxlpermm = bbox.radius / self.spot_radius
-		self.post('spot pxlpermm', pxlpermm)
+		#self.post('spot pxlpermm', pxlpermm)
 
 		spot = Spot(bbox,pxlpermm) # units=pxl
 		return spot
@@ -791,16 +784,20 @@ class Hippocampus:
 
 		# ideally we have one and only one
 		o = False
+		halfmax = False
 		if len(a) >= 1:
 			o = a[0]
+			halfmax = copy.deepcopy(a[0])
 		else:
 			logging.debug(f'missing half {clsname}')
 
 		# if multiples, choose the one with the largest radius 
+		# or combine them all into one big one
 		if len(a) > 1:
 			for obj in a:
 				if obj.bbox.radius > o.bbox.radius:
 					o = obj
+				halfmax.bbox.enlarge(obj.bbox)
 
 			# go back and scrub objects list
 			for obj in objects:
@@ -815,11 +812,22 @@ class Hippocampus:
 			half.bbox.w *= self.frameWidth 
 			half.bbox.h *= self.frameHeight 
 			half.bbox.calc()
-		return half
+
+		# i have not tested halfmax
+		# instead I increased the kernel size of the Gaussian Blur
+		if halfmax:
+			halfmax.bbox.l *= self.frameWidth
+			halfmax.bbox.t *= self.frameHeight
+			halfmax.bbox.w *= self.frameWidth 
+			halfmax.bbox.h *= self.frameHeight 
+			halfmax.bbox.calc()
+		return half, halfmax
 
 	def findPad(self, objects):
-		padl = self.findHalf(objects, self.clsPadl)
-		padr = self.findHalf(objects, self.clsPadr)
+		padl, padlmax = self.findHalf(objects, self.clsPadl)
+		padr, padrmax = self.findHalf(objects, self.clsPadr)
+
+		#padr = padrmax
 
 		# padr and padl are expected to intersect (unless perfectly straight up)
 		if padl and padr and not padl.bbox.intersects( padr.bbox):
@@ -827,11 +835,11 @@ class Hippocampus:
 
 		if padl and not padr:
 			padr = copy.deepcopy(padl)
-			padr.bbox.l += (padr.bbox.w * 2)
+			padr.bbox.l += (padr.bbox.w)
 			padr.bbox.calc()
 		if padr and not padl:
 			padl = copy.deepcopy(padr)
-			padl.bbox.l -= (padl.bbox.w * 2)
+			padl.bbox.l -= (padl.bbox.w)
 			padl.bbox.calc()
 
 		pad = Pad(padl, padr)
@@ -860,6 +868,8 @@ class Hippocampus:
 		else:
 			pad.state = 'missing' # no pad, no spot
 		self.post('pad state', pad.state)
+
+		pad.state = 'pad'  # temporarily - no spot
 
 		# calc conversion factor 
 		if pad.state == 'pad':
@@ -891,7 +901,8 @@ class Hippocampus:
 				spot.bbox.h /= self.pxlpermm
 				spot.bbox.calc()
 
-				pad.calc()
+			pad.calc()
+
 			if pad.state == 'spot':
 				pad.center.x = spot.bbox.center.x
 				pad.center.y = spot.bbox.center.y # + self.spot_offset
@@ -1004,11 +1015,11 @@ class Hippocampus:
 
 	def buildMap(self,objects):
 		pad = self.findPad(objects)
-		if not pad:
-			return False
-
-		cones = self.findCones(objects)
-		arena = self.findArena(cones)
+		cones = False
+		arena = False
+		if pad.state != 'missing':
+			cones = self.findCones(objects)
+			arena = self.findArena(cones)
 		map = Map(pad, cones, arena)
 		return map
 	
@@ -1044,17 +1055,37 @@ class Hippocampus:
 		if not self.frameMap:
 			return ovec,rccmd
 
+		self.post('pxlpermm',self.pxlpermm)
 		if teldata:
 			agl = teldata['agl'] if teldata else 0
-			perspot = self.frameMap.spot.pxlpermm
-			perpad = self.frameMap.pad.pxlpermm
+			perspot = 0 #self.frameMap.spot.pxlpermm
+			perpad = 0 #self.frameMap.pad.pxlpermm
+			perpad = self.pxlpermm
 			logging.debug(f'pxlpermm:{self.pxlpermm} spot:{perspot}, pad:{perpad}, agl:{agl}')
+			self.post('agl', agl)
 
 		# first time, save base  ??? periodically make new base
 		#if True: #not self.baseMap:
 		if self.pxlpermm > 0.0:
 				
-			pxlpermm_at_1_meter = 0.7300079591720976
+			# why is pad center below and to the right of the two halves
+			#      only when there is no spot?
+			
+			# if padr is fragmented in the shadow of padl, try combining all instead of taking the biggest
+			#     goal is same area between padr and padl
+			#     padl and padr should be adjacent, overlapping, and have the same area
+
+			# create function for pxlpermm to agl
+			#     be cautious of the 640px across, because of the angle of the lens
+			# Take triangulation into account when trying to size objects on the ground
+			#     Note the difference between objects directly under the aircraft,
+			#     and objects out on the perimeter.
+			pxlpermm_at_20_mm    = 24.61  # shows 26mm across, 640/26, parked
+			pxlpermm_at_20_mm2   =  4.60  # currently calculated
+			pxlpermm_pad_visible =  2.19  # agl ?
+			pxlpermm_at_1_meter  =  0.70  # mm across?
+			pxlpermm_at_2_meter  =  0.30  # mm across?
+
 			self.baseMap = copy.deepcopy(self.frameMap)
 			self.baseMap.pad.purpose = 'home'
 			
@@ -1072,8 +1103,13 @@ class Hippocampus:
 			# assume stable agl and no yaw, so angle and radius refers to drift
 			# in this case, drawing basemap over framemap results only in offset, not rotation or scale
 			
-			ovec = np.array(self.frameMap.pad.center.tuple()) - np.array(self.baseMap.pad.center.tuple())
-			diffx,diffy = ovec
+			# compare frameMap to baseMap, current position to desired position
+			diffx,diffy = np.array(self.frameMap.pad.center.tuple()) - np.array(self.baseMap.pad.center.tuple())
+
+			#diffagl agl in mm, calculated as function of pxlpermm, also proportional to home radius
+
+			#diffangle, angle, comparison of base to home
+
 			ovec = (diffx, diffy, 0, 0)
 
 		# compare pad angle and radius between basemap and framemap
@@ -1099,28 +1135,77 @@ if __name__ == '__main__':
 	logging.debug('')
 	logging.debug('')
 
-	dirframe = '/home/john/sk8/bench/frame'
-	framenum = 1
+	# sim with frames only
+	#dir = '/home/john/sk8/bench/testcase'        # 1-5
+	#dir = '/home/john/sk8/bench/20210511-113944' # 201
+	#dir = '/home/john/sk8/bench/20210511-115238' # 206
+
+	# sim with mission log
+	#dir = '/home/john/sk8/daily/20210512/095147'  # manual stand to two meters
+	#dir = '/home/john/sk8/daily/20210512/143128' # on the ground with tape measure
+	dir = '/home/john/sk8/daily/20210512/161543'  # 5 steps of 200 mm each
+# 199 200mm  2.2525 pxlpermm
+# 282 400mm  1.3460 pxlpermm
+# 362 600mm  0.8928 pxlpermm
+# 416 800mm  0.7071 pxlpermm
+# 527 1000mm 0.6389 pxlpermm
+	dir = '/home/john/sk8/daily/20210512/212141'  # 30,50,100,120,140,160,180,200 mm
+#            dot is 16mm diameter
+#   1  30mm  837-256=
+# 173  50mm  814-488=
+# 278 100mm  745-489=
+# 373 120mm  747-615=
+# 409 140mm  750-635=
+# 514 160mm  793-691=
+# 584 180mm  792-699=
+# 648 200mm  735-655=
+	dir = '/home/john/sk8/daily/20210512/224139'  # 150, 200 mm agl
+#  94 1500mm  
+# 328 2000mm        
+	
+	dirframe = f'{dir}/frame'
+	filelog  = f'{dir}/log/mission.log'
+	missiondata = None
+	try:	
+		fh = open(filelog)
+		missiondata = fh.readlines()
+		lastline = len(missiondata)
+	except:
+		pass
 
 	hippocampus = Hippocampus(ui=True, saveTrain=False)
 	hippocampus.start()
-
+	framenum = 1
+	dline = None
 	while True:
+		# read one line from the mission log, optional
+		#if fh:
+		#	line = fh.readline()
+		#	m = re.search( r';fn:(.*?);', line)
+		#	framenum = m.group(1)
+		if missiondata:
+			sline = missiondata[framenum-1]	
+			dline = universal.unpack(sline)
+
+		# read the frame
 		fname = f'{dirframe}/{framenum}.jpg'
 		frame = cv.imread( fname, cv.IMREAD_UNCHANGED)
 		if frame is None:
 			logging.error(f'file not found: {fname}')
 			break;
 
-		ovec = hippocampus.processFrame(frame, framenum, None)
+		# process the frame
+		ovec = hippocampus.processFrame(frame, framenum, dline)
 
 		# kill switch
 		k = cv.waitKey(1)  # in milliseconds, must be integer
 		if k & 0xFF == ord('n'):
-			framenum += 1
+			if framenum < lastline:
+				framenum += 1
 			continue
 		elif k & 0xFF == ord('p'):
-			framenum -= 1
+			if framenum > 1:
+				framenum -= 1
 			continue
 		elif k & 0xFF == ord('r'):
 			continue

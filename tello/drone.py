@@ -22,11 +22,11 @@ safe_battery = 20  # percent of full charge
 min_agl = 20  # mm, camera above the ground 
 
 use_rc = True   # rc command vs mission commands
-use_hippocampus = False 
-use_ui = True
-save_frame = True
+use_hippocampus = True  
+use_ui = True        # screen driven by hippocampus, kill switch handled by main here
+save_frame = True    # frame and training data is saved by hippocampus
 save_train = False 
-save_mission = True
+save_mission = True  # mission datat is saved by drone
 
 # three ports, three sockets.  firewall must be open to these ports.
 telemetry_port = 8890   # UDP server socket to repeatedly send a string of telemetry data
@@ -100,7 +100,7 @@ class Telemetry(threading.Thread):
 				break
 
 			sdata = data.strip().decode('utf-8')
-			ddata = self.unpack(sdata)
+			ddata = universal.unpack(sdata)
 			agl = self.calcAgl(ddata)
 			ddata['agl'] = agl
 			ddata['n'] = count
@@ -120,20 +120,6 @@ class Telemetry(threading.Thread):
 		sdata = copy.deepcopy(self.sdata)
 		self.lock.release()
 		return (ddata,sdata)
-
-	def unpack(self, sdata):
-		# data=b'pitch:-2;roll:-2;yaw:2;vgx:0;vgy:0;vgz:0;templ:62;temph:65;tof:6553;h:0;bat:42;baro:404.45;time:0;agx:-37.00;agy:48.00;agz:-1008.00;'
-		adata = sdata.split(';')      # array
-		ddata = {}                    # dict
-		for stat in adata:
-			if len(stat) <= 2: # last item is cr+lf
-				break
-			name,value = stat.split(':')
-			if name in ['baro','agx','agy','agz']:
-				ddata[name] = float(value);
-			else:
-				ddata[name] = int(value);
-		return ddata 
 
 	def calcAgl(self, data):
 		# calc AGL per the barometer reading 
@@ -206,14 +192,14 @@ class Video(threading.Thread):
 				ovec,rccmd = self.hippocampus.processFrame(frame, framenum, ddata)
 
 				# stop immediatly if lost
-				if rccmd == 'land':
-					self.drone.cmd.do('land')
-					self.state == 'stop'
-					break;
+				#if rccmd == 'land':
+				#	self.drone.cmd.do('land')
+				#	self.state == 'stop'
+				#	break;
 
 				# fly
-				if self.drone.state == 'airborne' and ovec:
-					self.drone.cmd.sendCommand(rccmd)
+				#if self.drone.state == 'airborne' and ovec:
+				#	self.drone.cmd.sendCommand(rccmd)
 
 				# save mission data
 				if save_mission:
