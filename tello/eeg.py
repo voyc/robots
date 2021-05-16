@@ -1,19 +1,12 @@
-'''
-eeg.py - class Eeg - probe into internals for human observer
-'''
+''' eeg.py - class Eeg - probe into internals for human observer '''
 import cv2 as cv
 import numpy as np
-#from datetime import datetime
-#import time
-#import logging
-#import os
-#import copy
-#import colorsys
-#import re
 import universal as uni
 from sk8math import *
 import hippo2
 import visualcortex as vc
+import frontalcortex as fc
+import neck as nek
 
 def drawPolygon(img, ptarray, factor=1, color=(255,0,0), linewidth=1):	
 	a = np.multiply(ptarray,factor)
@@ -23,7 +16,13 @@ def drawPolygon(img, ptarray, factor=1, color=(255,0,0), linewidth=1):
 		cv.line(img, tuple(a[i]), tuple(a[j]), color, linewidth)
 
 class Eeg:
-	def __init__(self, ui=True, save_mission=False):
+	def __init__(self, visualcortex=None, hippocampus=None, frontalcortex=None, neck=None):
+		self.visualcortex = visualcortex
+		self.hippocampus = hippocampus
+		self.frontalcortex = frontalcortex
+		self.neck = neck
+		self.state = 'on' # off or on
+
 		self.cone_radius = 40    # cone diameter is 8 cm
 		self.debugPad = True 
 		self.pad_radius = 70     # pad is 14 cm square
@@ -36,6 +35,22 @@ class Eeg:
 		self.clsPadr = 2
 		self.clsSpot = 3
 		self.clsdebug = self.clsCone
+
+	def one(self):
+		img, debugImages = self.visualcortex.probeDebugImages()
+		baseMap, frameMap = self.hippocampus.probeMaps()
+		posts = self.hippocampus.probePostData()
+		vector = self.frontalcortex.probeVector()
+		rccmd = self.neck.probeRcCmd()
+		ui = self.drawUI(img, frameMap, baseMap, debugImages)
+		self.showUI(ui)
+		self.readKillSwitch()
+
+	def showUI(self,ui):
+		cv.imshow('Image Processing', ui)
+
+	def readKillSwitch(self):
+		cv.waitKey(0)
 
 	#	# settings
 	#	self.debugPad = True 
@@ -390,30 +405,56 @@ class Eeg:
 			imgTuple = ([imgPost,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgFinal])
 			imgTuple = ([imgMasked,imgMask,imgBlur],[imgCanny,imgDilate,imgFinal])
 		stack = self.stackImages(0.5,imgTuple)
-
-		# show
-		cv.imshow('Image Processing', stack)
-		cv.waitKey(0)
+		return stack
 
 if __name__ == '__main__':
+	# wakeup, connect circuits
+	visualcortex = vc.VisualCortex()
+	hippocampus = hippo2.Hippocampus()
+	hippocampus.start()
+	frontalcortex = fc.FrontalCortex()
+	neck = nek.Neck()
+	eeg = Eeg(visualcortex=visualcortex, hippocampus=hippocampus, frontalcortex=frontalcortex, neck=neck)
+
+	# start frame processing circuit
+
+	# eyes receive frame from camera socket
 	fname = '/home/john/sk8/bench/testcase/frame/6.jpg'
 	frame = cv.imread( fname, cv.IMREAD_UNCHANGED)
 	if frame is None:
 		logging.error(f'file not found: {fname}')
 		quit()
 
-	visualcortex = vc.VisualCortex()
+	# visualcortex receive frame, write object list
 	objs = visualcortex.detectObjects(frame)
 	print(*objs, sep='\n')
+
+	# ears read telemetry string, write to cerebrum
 	
-	hippocampus = hippo2.Hippocampus()
-	hippocampus.start()
+	# cerebrum unpacks telemetry string to dict, writes telemetry data
+	
+	# hippocampus reads frame, reads telemetry, builds maps, 
+	# saves memory, writes basemap with current location and orientation
 	mapp = hippocampus.buildMap(objs)	
 	#hippocampus.processFrame(objs,1,None)
 	hippocampus.stop()
-
 	print(mapp)
-	print(*objs, sep='\n')
-	
-	eeg = Eeg()
-	eeg.drawUI(frame, mapp, debugImages=visualcortex.debugImages)
+	print(*objs, sep='\n')  # objects list has been scrubbed
+
+	# orientation with previous map
+	# both should have 1 pad, incl one spot
+	# make vector between current and previous, this represents current location of tello on basemap
+	# basemap is at a specific scale (agl)
+	# current location of tello is at a different scale (agl)
+
+	# frontal cortex reads basemap, plots desired location, writes vector		
+	# make vector between current location and desired location
+
+	# neck reads vector, composes rc cmd, writes to cmd socket
+
+	# eeg reads debug imgs from visualcortex,
+	# reads stats posted by hippocampus	
+	# writes display to screen
+	# waits for keypress
+	# sends command to sim loop, or fly loop
+	eeg.one()

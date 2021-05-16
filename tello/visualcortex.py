@@ -44,6 +44,7 @@ class VisualCortex:
 
 		self.imgWid = 0
 		self.imgHt = 0
+		self.debugImages = []
 
 		#self.magenta_settings = ( 10, 270,330,  50,100,  50,100,  82,127 ) # bright color swatch
 		#self.navy_settings    = ( 11, 181,352,   3, 58,   0, 33,  82,127 ) # tape, dark
@@ -98,7 +99,6 @@ class VisualCortex:
 #		self.ovec = False  # orienting vector
 #		self.imgPrep = False
 #		self.posts = {}
-#		self.debugImages = []
 #		self.timesave = time.time()
 #	
 #		# aircraft altitude is measured in multiple ways
@@ -118,6 +118,7 @@ class VisualCortex:
 #		# the pxlpermm value implies an agl
 
 	def detectObjects(self,img):
+		self.img = img
 		if self.use_neural_net:
 			pass
 		else:
@@ -231,6 +232,9 @@ class VisualCortex:
 			obj = DetectedObject(cls, bbox)
 			objects.append(obj)
 		return
+
+	def probeDebugImages(self):
+		return self.img, self.debugImages
 
 if __name__ == '__main__':
 	fname = '/home/john/sk8/bench/testcase/frame/6.jpg'

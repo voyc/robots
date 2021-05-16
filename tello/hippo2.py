@@ -571,6 +571,12 @@ class Hippocampus:
 		self.posts[key] = value
 		s = f'{key}={value}'
 		logging.debug(s)
+	
+	def probeMaps(self):
+		return self.baseMap, self.frameMap
+
+	def probePostData(self):
+		return self.posts
 
 if __name__ == '__main__':
 	fname = '/home/john/sk8/bench/testcase/frame/6.jpg'
