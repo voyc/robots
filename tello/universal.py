@@ -6,25 +6,35 @@ import datetime
 import os 
 import logging
 
-dirbase = 'home/john/sk8/daily'
-dirday  = f'{datetime.datetime.now().strftime("%Y%m%d")}'
-dirtime = f'{datetime.datetime.now().strftime("%H%M%S")}'
-def makedir(form): 
-	s = f'/{dirbase}/{dirday}/{dirtime}/{form}'
+dirhome = '/home/john/sk8'
+sday   = f'{datetime.datetime.now().strftime("%Y%m%d")}'
+stime  = f'{datetime.datetime.now().strftime("%H%M%S")}'
+dirbase = False
+dirmode = 'fly'
+
+def makedir(form=''): 
+	if not dirbase:
+		print('programmer error - logging not configured')
+		return
+	form = f'/{form}' if form else ''
+	s = f'{dirbase}/{sday}/{stime}/{form}'
+	if not form:
+		s = s[:len(s)-1]  # truncate extra slash
 	os.makedirs(s, exist_ok=True)
 	return s
 
-max_mmo = 179 # maximum mm offset
-max_vel = 90 # maximum safe velocity (up to 100)
+def configureLogging(mode='fly'):
+	global dirmode, dirbase
+	dirmode = mode if mode else 'fly' # mode == "fly" or "sim"
+	dirbase = f'{dirhome}/{dirmode}'
 
-def configureLogging():
 	# factory: 10 DEBUG, 20 INFO, 30 WARNING, 40 ERROR, 50 CRITICAL
 	logging.MISSION = 15
 	logging.DEBUG = 17
 
 	debug_format = '%(asctime)s %(levelno)s %(module)s %(message)s' 
-	debug_fname = f"{makedir('log')}/debug.log"
-	mission_fname = f"{makedir('log')}/mission.log"
+	debug_fname = f"{makedir()}/debug.log"
+	mission_fname = f"{makedir()}/mission.log"
 
 	# root log level
 	logger = logging.getLogger('')
@@ -42,7 +52,7 @@ def configureLogging():
 	logger.addHandler(debug_handler)
 
 	# log 3: mission
-	mission_handler = logging.FileHandler(mission_fname)
+	mission_handler = logging.FileHandler(mission_fname, delay=True)
 	class MissionFilter(logging.Filter):
 		def filter(self, record):
 			return record.levelno == logging.MISSION
@@ -52,6 +62,9 @@ def configureLogging():
 
 	logging.info('logging configured')
 
+# is called from both Drone.Cmd and Hippocampus
+max_mmo = 179 # maximum mm offset
+max_vel = 90 # maximum safe velocity (up to 100)
 def composeRcCommand(ovec): # compose tello rc command
 	x,y,z,w = ovec # input orientation vector in mm, diff between frameMap and baseMap
 
@@ -88,6 +101,8 @@ def unpack( sdata):
 		else:
 			ddata[name] = int(value);
 	return ddata 
+
+def soTrue(n, nth): return (n % nth)==0 if nth else False  # nth: 0=none, 1=all, n=every nth
 
 if __name__ == '__main__':
 	framenum = 1

@@ -1,0 +1,26 @@
+
+tello
+	damiafuentes
+	murtaza
+	tello3.py
+	readme_dgitellopy.txt
+
+tools
+	agl2.ods
+	agl.ods
+	hover.py (empty)
+	hyper.py
+	regress.py
+	instaslide.py
+	temp.py
+	tellomission.py
+
+sk8
+	hippocampus.py
+	sk8math.py
+	wifi.py
+	universal.py
+	eeg.py
+	hippo2.py
+	visualcortex.py
+	drone.py

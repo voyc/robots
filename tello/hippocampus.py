@@ -1,113 +1,26 @@
 '''
-hippocamapus.py - class Hippocampus - object detection by color and contour using computer vision
-
-Public methods:
-	#processFrame(img,framenum,telemetry)
-		detectObjects - visual cortex, pareital lobe, occipital lobe, Brodmann area
-		buildMap - hippocampus, retrosplenial cortex
-	drawUI()
+hippocamapus.py - class Hippocampus
+	spatial analysis, object detection, mapping, orientation
 '''
-
 import cv2 as cv
 import numpy as np
 from datetime import datetime
+import time
 import logging
 import os
 import copy
 import colorsys
-import universal
 import re
+import universal as uni
+from sk8math import *
+import visualcortex
 
-class Pt:
-	def __init__(self, x, y):
-		self.x = x
-		self.y = y
-
-	def tuple(self):
-		return (int(self.x),int(self.y))
-	
-	def __str__(self):
-		return f'({self.x},{self.y})'
-
-def averageTwoPoints(pt1, pt2):
-	data = [pt1.tuple(), pt2.tuple()]
-	average = [sum(x)/len(x) for x in zip(*data)]
-	xc,yc = average
-
-	#x2= pt2.x
-	#y2= pt2.y
-	#xc = pt1.x + ((x2 - pt1.x) / 2)
-	#yc = pt1.y + ((y2 - pt1.y) / 2)
-	return Pt(xc,yc)
-
-def triangulateTwoPoints(ptleft, ptright):
-	# length of hypotenuse
-	lenx = abs(ptright.x - ptleft.x)
-	leny = abs(ptright.y - ptleft.y)
-	hypotenuse = np.sqrt(lenx**2 + leny**2)
-
-	# point of right angle
-	ptr = Pt(ptleft.x, ptright.y)
-
-	quadrant = quadrantPoints(ptleft,ptright)
-
-	# angle of the hypotenuse to the vertical axis
-	# see https://www.geogebra.org/classic/h6pgbftp  # sketch of quadrant upper left
-	if quadrant == 'upper right' or quadrant == 'lower left':
-		oa = leny/lenx if (lenx != 0) else 0 # tangent of angle = opposite over adjacent 
-	else:
-		oa = lenx/leny if (leny != 0) else 0 # tangent of angle = opposite over adjacent 
-	radians = np.arctan(oa)
-	degrs = np.degrees(radians)
-
-	if quadrant == 'lower right':
-		degrs += 90
-	elif quadrant == 'lower left':
-		degrs += 180
-	elif quadrant == 'upper left':
-		degrs += 270
-	return degrs, hypotenuse, ptr
-	
-def quadrantAngle(angle):
-	# return the quadrant of a given angle
-	quadrant = ''
-	if angle >= 0 and angle < 90:
-		quadrant = 'upper right'
-	elif angle >= 90 and angle < 180:
-		quadrant = 'lower right'
-	elif angle >= 180 and angle < 270:
-		quadrant = 'lower left'
-	elif angle >= 270 and angle <= 360:
-		quadrant = 'upper left'
-	return quadrant
-
-def quadrantPoints(ptleft, ptright):
-	# return the quadrant of an angle given two points
-	quadrant = ''
-	if ptleft.x < ptright.x and ptleft.y < ptright.y:
-		quadrant = 'upper right'
-	elif ptleft.x < ptright.x and ptleft.y > ptright.y:
-		quadrant = 'upper left'
-	elif ptleft.x > ptright.x and ptleft.y < ptright.y:
-		quadrant = 'lower right'
-	elif ptleft.x > ptright.x and ptleft.y > ptright.y:
-		quadrant = 'lower left'
-	return quadrant
-
-def calcLine(c,r,a):
-	# return the two endpoints of a line, given centerpoint, radius, and angle
-	x,y = c
-	lenh = r # length of hypotenuse
-	angle = np.radians(a)
-	                                   # soh cah toa
-	leno = round(np.sin(angle) * lenh) # opposite: sine(angle = opposite/hypotenuse)
-	lena = round(np.cos(angle) * lenh) # adjacent: cos(angle = adjacent/hypotenuse)
-
-	x1 = x + leno
-	y1 = y - lena
-	x2 = x - leno
-	y2 = y + lena
-	return (x1,y1), (x2,y2) 
+# calc agl from pxlpermm
+agl_k = 1143
+def aglFromPxpmm(pxlpermm):
+	if pxlpermm <=0:
+		return 0
+	return int(agl_k/pxlpermm)  # hyperbola equation y=k/x
 
 def drawPolygon(img, ptarray, factor=1, color=(255,0,0), linewidth=1):	
 	a = np.multiply(ptarray,factor)
@@ -116,65 +29,6 @@ def drawPolygon(img, ptarray, factor=1, color=(255,0,0), linewidth=1):
 		j = i+1 if i < len(a)-1 else 0
 		cv.line(img, tuple(a[i]), tuple(a[j]), color, linewidth)
 
-class Bbox:
-	# bbox is defined by an l-t point and a w-h vector, this is what NN data uses
-	# redefined with b,r, center, diameter, radius
-	def __init__(self, l,t,w,h):
-		self.l = l
-		self.t = t
-		self.w = w
-		self.h = h
-		self.calc()
-
-	def calc(self):
-		# bottom right is a point
-		# center is a point
-		self.r = self.l + self.w
-		self.b = self.t + self.h
-		self.center = Pt(self.l+round(self.w/2,6), self.t+round(self.h/2,6))
-		self.diameter = (self.w+self.h)/2
-		self.radius = self.diameter/2
-
-	def intersects(self, box2):
-		if ((self.l > box2.l and self.l < box2.r) or (self.r > box2.l and self.r < box2.r)) \
-		and ((self.t > box2.t and self.t < box2.b) or (self.b > box2.t and self.b < box2.b)): 
-			return True
-		else:
-			return False
-
-	def touchesEdge(self, frameWidth, frameHeight):
-		touches = False
-		if self.l <= 1 or self.r >= frameWidth-2 \
-		or self.t <= 1 or self.b >= frameHeight-2: 
-			touches = True
-		return touches
-
-	def expand(self, padding):
-		self.l -= padding
-		self.t -= padding
-		self.w += (padding*2)
-		self.h += (padding*2)
-		self.calc()
-
-	def enlarge(self, bbox):
-		if self.l > bbox.l:
-			self.l = bbox.l
-		if self.t < bbox.t:
-			self.t = bbox.t
-		if self.w < bbox.w:
-			self.w = bbox.w
-		if self.h < bbox.h:
-			self.h = bbox.h
-		self.calc()
-
-	def __str__(self):
-		return f'({self.l},{self.t},{self.w},{self.h})'
-
-class DetectedObject:
-	def __init__(self, cls, bbox, inputunits=False):
-		self.cls = cls
-		self.bbox = bbox
-		
 class Spot:
 	def __init__(self, bbox, pxlpermm):
 		self.bbox = bbox
@@ -207,6 +61,7 @@ class Pad:
 			self.center = Pt(0,0)
 			self.angle = 0
 			self.radius = 0
+		self.diameter = self.radius * 2
 		# [angle, radius]  = similar to a vector in that it indicates direction and distance
 		# [leny, lenx]  = a slope, rise over run
 		# [lenx, leny] = a vector, [2,4] means move 2 mm to the left and 4 mm up
@@ -214,52 +69,7 @@ class Pad:
 class Arena:
 	def __init__(self,bbox):
 		self.bbox = bbox
-'''
-rise straight up until the pad is in view
-copy pad to home
-continue to rise until first cone spotted
-when the pad and one cone are in view:
-	copy pad to home
-	save distance and angle between home and cone
-(note: we can theoretically assume the drone does not rotate, and therefore, 
-		one cone is enough to plot the home location)
-continue to rise, now centered on the cone
-when the second cone is found
-	now you can begin to move the pad, 
-	because with two cones, you can triangulate the home position
-when the third cone is found
-	make the final map
-even though we are going straight up, we need to navigate to hover
 
-beginner project:
-	from takeoff position, find pad, cones, rotated arena
-	navigate to hover:
-		each frame should be identical
-		assume the drone position is dead center in the frame
-		with each frame
-			build a frame map
-			compare to mission map
-			orient the frame map, by angle and distance
-			convert angle and distance to a tello command 
-			execute the command
-
-orientation for beginners
-	assume the drone does not yaw
-	let all objects be stationary and in-view in every frame
-		this allows you to use arena center and angle only to compare frame to frame
-
-an orientation is a vector: distance and angle
-
-arena is a (center, wh, angle), can be drawn as rectangle or elipse
-
-goal 1: hover over pad
-goal 2: hover over arena
-goal 3: fly around the perimeter - more difficult orientation?
-goal 4: perfect landing on pad (add dot if necessary)
-
-cheat: use two cones as starting gate, or four
-
-'''
 class Map:
 	def __init__(self, pad, cones, arena, home=False):
 		self.pad = pad
@@ -268,9 +78,9 @@ class Map:
 		self.home = home 
 
 class Hippocampus:
-	def __init__(self, ui=True, saveTrain=False):
+	def __init__(self, ui=True, save_mission=False):
 		self.ui = ui
-		self.saveTrain = saveTrain
+		self.save_mission = save_mission
 
 		# object classification codes
 		self.clsNone = -1
@@ -286,8 +96,8 @@ class Hippocampus:
 		self.dialog_width = 480
 		self.dialog_height = 480
 
-		self.frameWidth  = 640   # 960
-		self.frameHeight = 480   # 720
+		self.frameWidth  = 960
+		self.frameHeight = 720
 		self.frameDepth  = 3
 
 		self.datalineheight = 22
@@ -295,9 +105,8 @@ class Hippocampus:
 
 		self.useNeuralNet = False
 
-		self.process_frame_nth = 1 #6 # fps is normally 33, we process 5 per second
-		self.save_post_nth = 1
-		self.save_train_nth = 1
+		self.frame_nth = 1
+		self.post_nth = 0
 
 		self.spot_radius = 8     # spot is 16 mm diameter
 		self.spot_offset = 46    # spot center is 46 mm forward of pad center
@@ -333,6 +142,7 @@ class Hippocampus:
 		self.imgPrep = False
 		self.posts = {}
 		self.debugImages = []
+		self.timesave = time.time()
 	
 		# aircraft altitude is measured in multiple ways
 		#    agl - above ground level
@@ -394,7 +204,7 @@ class Hippocampus:
 			cv.putText(imgPost, s, pt, cv.FONT_HERSHEY_SIMPLEX,.7,(0,0,0), 1)
 			linenum += 1
 			ssave += s + ';'
-		if self.framenum % self.save_post_nth == 0:
+		if uni.soTrue(self.framenum, self.post_nth):
 			logging.debug(ssave)
 	
 	def openSettings(self):
@@ -603,10 +413,9 @@ class Hippocampus:
 			cv.circle(img,(x,y),r,color,1)
 
 	def drawUI(self):
-		
 		if not self.ui:
 			return
-		if self.framenum % self.process_frame_nth:
+		if not uni.soTrue(self.framenum, self.frame_nth):
 			return
 
 		img = self.imgPrep
@@ -643,97 +452,97 @@ class Hippocampus:
 		#imgTuple = ([imgMap,imgPost,imgFinal],)
 		imgTuple = ([imgPost,imgFinal],)
 		if self.isDebugging():
-			imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = self.debugImages
+			imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = self.visualcortex.debugImages
 			imgHsv= cv.cvtColor( imgHsv, cv.COLOR_HSV2BGR)
 			imgTuple = ([imgPost,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgFinal])
 			#imgTuple = ([imgPost,self.imgColor,imgMasked],[imgMap,imgFinal,imgCanny])
 			#imgTuple = ([imgPost,imgMask,imgMasked],[imgMap,imgFinal,imgCanny])
-		stack = self.stackImages(0.7,imgTuple)
+		stack = self.stackImages(0.5,imgTuple)
 
 		# show
 		cv.imshow('Image Processing', stack)
 
-	#
-	# end UI section, begin image processing section
-	#
-
-	def detectObjectsNN(self,img):
-		pass
-
-	def detectObjectsCV(self,img):
-		objects = []
-		self.detectContours(img, self.obj_settings[self.clsCone], objects)
-		self.detectContours(img, self.obj_settings[self.clsPadl], objects)
-		self.detectContours(img, self.obj_settings[self.clsPadr], objects)
-		self.detectContours(img, self.obj_settings[self.clsSpot], objects)
-		return objects
-
-	def detectContours(self,img,settings,objects):
-		# draw a one-pixel black border around the whole image
-		#	when the drone is on the pad, 
-		#	each halfpad object extends past the image boundary on three sides, 
-		#	and findContours detects only the remaining edge as an object
-		cv.rectangle(img, (0,0), (self.frameWidth-1,self.frameHeight-1), (0,0,0), 1)
-
-		# mask based on hsv ranges
-		# settings are 0 to 360,100,100
-
-		# opencv values are 0 to 179,255,255
-		# trackbar settings are 360,100,100
-		#hl = settings['hue_min'] / 2  # 0 to 360 degrees
-		#hu = settings['hue_max'] / 2
-		#sl = int((settings['sat_min'] / self.barmax['sat_min']) * 255)  # 0 to 100 pct
-		#su = int((settings['sat_max'] / self.barmax['sat_max']) * 255)
-		#vl = int((settings['val_min'] / self.barmax['val_min']) * 255)  # 0 to 100 pct
-		#vu = int((settings['val_max'] / self.barmax['val_max']) * 255)
-
-		cls,hl,hu,sl,su,vl,vu,cl,cu = settings
-		hl = int(hl / 2)
-		hu = int(hu / 2)
-		sl = int((sl / self.barmax[3]) * 255)  # 0 to 100 pct
-		su = int((su / self.barmax[4]) * 255)
-		vl = int((vl / self.barmax[5]) * 255)  # 0 to 100 pct
-		vu = int((vu / self.barmax[6]) * 255)
-
-		#lower = np.array([(settings['hue_min']/2),settings['sat_min'],settings['val_min']])
-		#upper = np.array([(settings['hue_max']/2),settings['sat_max'],settings['val_max']])
-		lower = np.array([hl,sl,vl])
-		upper = np.array([hu,su,vu])
-		imgHsv = cv.cvtColor(img,cv.COLOR_BGR2HSV)
-		imgMask = cv.inRange(imgHsv,lower,upper) # choose pixels by hsv threshholds
-		imgMasked = cv.bitwise_and(img,img, mask=imgMask)
-	
-		imgBlur = cv.GaussianBlur(imgMasked, (17, 17), 1)  # started at (7,7);  the bigger kernel size pulls together the pieces of padr
-		imgGray = cv.cvtColor(imgBlur, cv.COLOR_BGR2GRAY)
-	
-		# canny: edge detection.  Canny recommends hi:lo ratio around 2:1 or 3:1.
-		imgCanny = cv.Canny(imgGray, cl, cu)
-	
-		# dilate: thicken the line
-		kernel = np.ones((5, 5))
-		imgDilate = cv.dilate(imgCanny, kernel, iterations=1)
-
-		# get a data array of polygons, one contour boundary for each object
-		contours, _ = cv.findContours(imgDilate, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
-		if self.clsdebug == cls:
-			self.debugImages = [imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate]
-
-		# get bounding box for each contour
-		for contour in contours:
-			area = cv.contourArea(contour)
-			perimeter = cv.arcLength(contour, True)
-			polygon = cv.approxPolyDP(contour, 0.02 * perimeter, True)
-			l,t,w,h = cv.boundingRect(polygon)
-
-			tl = round(l/self.frameWidth, 6)
-			tt = round(t/self.frameHeight, 6)
-			tw = round(w/self.frameWidth, 6)
-			th = round(h/self.frameHeight, 6)
-
-			bbox = Bbox(tl,tt,tw,th)
-			obj = DetectedObject(cls, bbox)
-			objects.append(obj)
-		return
+#	#
+#	# end UI section, begin image processing section
+#	#
+#
+#	def detectObjectsNN(self,img):
+#		pass
+#
+#	def detectObjectsCV(self,img):
+#		objects = []
+#		self.detectContours(img, self.obj_settings[self.clsCone], objects)
+#		self.detectContours(img, self.obj_settings[self.clsPadl], objects)
+#		self.detectContours(img, self.obj_settings[self.clsPadr], objects)
+#		self.detectContours(img, self.obj_settings[self.clsSpot], objects)
+#		return objects
+#
+#	def detectContours(self,img,settings,objects):
+#		# draw a one-pixel black border around the whole image
+#		#	when the drone is on the pad, 
+#		#	each halfpad object extends past the image boundary on three sides, 
+#		#	and findContours detects only the remaining edge as an object
+#		cv.rectangle(img, (0,0), (self.frameWidth-1,self.frameHeight-1), (0,0,0), 1)
+#
+#		# mask based on hsv ranges
+#		# settings are 0 to 360,100,100
+#
+#		# opencv values are 0 to 179,255,255
+#		# trackbar settings are 360,100,100
+#		#hl = settings['hue_min'] / 2  # 0 to 360 degrees
+#		#hu = settings['hue_max'] / 2
+#		#sl = int((settings['sat_min'] / self.barmax['sat_min']) * 255)  # 0 to 100 pct
+#		#su = int((settings['sat_max'] / self.barmax['sat_max']) * 255)
+#		#vl = int((settings['val_min'] / self.barmax['val_min']) * 255)  # 0 to 100 pct
+#		#vu = int((settings['val_max'] / self.barmax['val_max']) * 255)
+#
+#		cls,hl,hu,sl,su,vl,vu,cl,cu = settings
+#		hl = int(hl / 2)
+#		hu = int(hu / 2)
+#		sl = int((sl / self.barmax[3]) * 255)  # 0 to 100 pct
+#		su = int((su / self.barmax[4]) * 255)
+#		vl = int((vl / self.barmax[5]) * 255)  # 0 to 100 pct
+#		vu = int((vu / self.barmax[6]) * 255)
+#
+#		#lower = np.array([(settings['hue_min']/2),settings['sat_min'],settings['val_min']])
+#		#upper = np.array([(settings['hue_max']/2),settings['sat_max'],settings['val_max']])
+#		lower = np.array([hl,sl,vl])
+#		upper = np.array([hu,su,vu])
+#		imgHsv = cv.cvtColor(img,cv.COLOR_BGR2HSV)
+#		imgMask = cv.inRange(imgHsv,lower,upper) # choose pixels by hsv threshholds
+#		imgMasked = cv.bitwise_and(img,img, mask=imgMask)
+#	
+#		imgBlur = cv.GaussianBlur(imgMasked, (17, 17), 1)  # started at (7,7);  the bigger kernel size pulls together the pieces of padr
+#		imgGray = cv.cvtColor(imgBlur, cv.COLOR_BGR2GRAY)
+#	
+#		# canny: edge detection.  Canny recommends hi:lo ratio around 2:1 or 3:1.
+#		imgCanny = cv.Canny(imgGray, cl, cu)
+#	
+#		# dilate: thicken the line
+#		kernel = np.ones((5, 5))
+#		imgDilate = cv.dilate(imgCanny, kernel, iterations=1)
+#
+#		# get a data array of polygons, one contour boundary for each object
+#		contours, _ = cv.findContours(imgDilate, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
+#		if self.clsdebug == cls:
+#			self.debugImages = [imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate]
+#
+#		# get bounding box for each contour
+#		for contour in contours:
+#			area = cv.contourArea(contour)
+#			perimeter = cv.arcLength(contour, True)
+#			polygon = cv.approxPolyDP(contour, 0.02 * perimeter, True)
+#			l,t,w,h = cv.boundingRect(polygon)
+#
+#			tl = round(l/self.frameWidth, 6)
+#			tt = round(t/self.frameHeight, 6)
+#			tw = round(w/self.frameWidth, 6)
+#			th = round(h/self.frameHeight, 6)
+#
+#			bbox = Bbox(tl,tt,tw,th)
+#			obj = DetectedObject(cls, bbox)
+#			objects.append(obj)
+#		return
 
 	def findSpot(self, objects, pad):
 		spota = []
@@ -768,7 +577,8 @@ class Hippocampus:
 
 		# conversion factor pxl per mm
 		pxlpermm = bbox.radius / self.spot_radius
-		#self.post('spot pxlpermm', pxlpermm)
+		self.post('spot pxl diam', bbox.diameter)
+		self.post('spot pxlpermm', pxlpermm)
 
 		spot = Spot(bbox,pxlpermm) # units=pxl
 		return spot
@@ -858,27 +668,31 @@ class Hippocampus:
 		spot = self.findSpot(objects, pad)
 		pad.spot = spot
 
+		# calc conversion factor
+		pad.calc()
+		pad.pxlpermm = pad.radius / self.pad_radius
+		self.post('pad pxl diam', pad.diameter)
+		self.post('pad pxlpermm', pad.pxlpermm)
+
 		# using pad or spot
 		if pad.half_state == 'complete':
 			pad.state = 'pad'
 		elif spot:
 			pad.state = 'spot'
-		elif pad.half_state == 'partial':
-			pad.state = 'pad'
+		#elif pad.half_state == 'partial':
+		#	pad.state = 'pad'
 		else:
 			pad.state = 'missing' # no pad, no spot
-		self.post('pad state', pad.state)
 
-		pad.state = 'pad'  # temporarily - no spot
-
-		# calc conversion factor 
+		# choose pad or spot
 		if pad.state == 'pad':
-			pad.calc()
-			self.pxlpermm = pad.radius / self.pad_radius
+			self.pxlpermm = pad.pxlpermm
 		elif pad.state == 'spot':
 			self.pxlpermm = spot.pxlpermm
 		if self.pxlpermm == 0.0:		
 			pad.state = 'missing'
+		self.post('pad state', pad.state)
+		self.post('final pxlpermm', self.pxlpermm)
 
 		# convert to mm, calc radius
 		if pad.state != 'missing':
@@ -983,35 +797,29 @@ class Hippocampus:
 		arena  = Arena(bbox)
 		return arena
 
-	def matchMap(data):
-		pass
-	
-	def saveTrainingData(self,img,objects):
-		if self.saveTrain and self.framenum % self.save_train_nth == 0:
-			ht = 0
-			fname = f'{self.outdir}/sk8_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}_ht_{ht}'
-			txtname = f'{fname}.txt'
-			f = open(txtname, 'a')
+	def saveTrain(self,img,objects):
+		ht = 0
+		fname = f'{self.dirtrain}/{self.framenum}.txt'
+		f = open(fname, 'a')
 
-			for obj in objects:
-				f.write(f"{obj.cls} {obj.bbox.t} {obj.bbox.l} {obj.bbox.w} {obj.bbox.h}\n")
-			f.close()
+		for obj in objects:
+			f.write(f"{obj.cls} {obj.bbox.t} {obj.bbox.l} {obj.bbox.w} {obj.bbox.h}\n")
+		f.close()
 
 	def start(self):
 		logging.info('hippocampus starting')
 		if self.ui:
 			self.openUI()
 			logging.info('UI opened')
+		if self.save_mission:
+			self.dirframe = uni.makedir('frame')
+			self.dirtrain = uni.makedir('train')
 
+		self.visualcortex = visualcortex.VisualCortex()
+ 
 	def stop(self):
 		logging.info('hippocampus stopping')
 		self.closeUI()
-
-	def detectObjects(self,img):
-		if self.useNeuralNet:
-			return self.detectObjectsNN(img)
-		else:
-			return self.detectObjectsCV(img)
 
 	def buildMap(self,objects):
 		pad = self.findPad(objects)
@@ -1028,18 +836,12 @@ class Hippocampus:
 		ovec = False
 		rccmd = 'rc 0 0 0 0'
 
-		if self.framenum % self.process_frame_nth: 
+		if not uni.soTrue(self.framenum, self.frame_nth):
 			return ovec,rccmd
 
 		self.post('input frame num', framenum)
 		self.post('frame num', self.framenum)
 
-		# reduce dimensions from 960x720 to 640x480
-		img = cv.resize(img, (self.frameWidth, self.frameHeight))
-
-		# flip vertically to correct for mirror
-		img = cv.flip(img, 0) # 0:vertically
-		
 		self.imgPrep = img # save for use by drawUI
 
 		# get settings from trackbars
@@ -1047,7 +849,8 @@ class Hippocampus:
 			self.readSettings()
 
 		# detect objects - unit: percent of frame
-		self.objects = self.detectObjects(img)
+		#self.objects = self.detectObjects(img)
+		self.objects = self.visualcortex.detectObjects(img)
 		self.post('objects found',len(self.objects))
 
 		# build map
@@ -1057,12 +860,12 @@ class Hippocampus:
 
 		self.post('pxlpermm',self.pxlpermm)
 		if teldata:
-			agl = teldata['agl'] if teldata else 0
-			perspot = 0 #self.frameMap.spot.pxlpermm
-			perpad = 0 #self.frameMap.pad.pxlpermm
-			perpad = self.pxlpermm
-			logging.debug(f'pxlpermm:{self.pxlpermm} spot:{perspot}, pad:{perpad}, agl:{agl}')
-			self.post('agl', agl)
+			aglin = teldata['agl']
+			self.post('agl input', aglin)
+
+		# calc agl
+		self.agl = aglFromPxpmm(self.pxlpermm)
+		self.post('agl', self.agl)
 
 		# first time, save base  ??? periodically make new base
 		#if True: #not self.baseMap:
@@ -1117,63 +920,67 @@ class Hippocampus:
 		# rotate basemap and draw on top of frame image
 		# rotate framemap and frameimg and draw underneath basemap
 
-		# save image and objects for mission debriefing and neural net training
-		self.saveTrainingData(img, self.objects)
-
 		if ovec:
-			rccmd = universal.composeRcCommand(ovec)
+			rccmd = uni.composeRcCommand(ovec)
 			self.post('nav cmd', rccmd)
+
+		# save mission parameters - frame, train, mission - done in mode fly, not sim
+		if self.save_mission:
+			fname = f"{uni.makedir('frame')}/{framenum}.jpg"
+			cv.imwrite(fname,self.imgPrep)
+			self.saveTrain(img, self.objects)
+			self.logMission('sdata', rccmd)
 
 		# display through portal to human observer
 		self.drawUI()
 
 		return ovec,rccmd
 
+	# the hippocampus does all the memory, the drone has no memory
+	def logMission(self, sdata, rccmd):
+		# missing sdata, rccmd, agl, ddata['agl'] ; diff between framenum and self.framenum
+		ts = time.time()
+		tsd = ts - self.timesave
+		src = rccmd.replace(' ','.')
+		prefix = f"rc:{src};ts:{ts};tsd:{tsd};fn:{self.framenum};agl:{self.agl};"
+		self.timesave = ts
+		logging.log(logging.MISSION, prefix + sdata)
+
 if __name__ == '__main__':
 	# run a drone simulator
-	universal.configureLogging()
+	uni.configureLogging('sim')
 	logging.debug('')
 	logging.debug('')
 
 	# sim with frames only
-	#dir = '/home/john/sk8/bench/testcase'        # 1-5
-	#dir = '/home/john/sk8/bench/20210511-113944' # 201
-	#dir = '/home/john/sk8/bench/20210511-115238' # 206
+	dir = '/home/john/sk8/bench/testcase'        # 1-5
+	dir = '/home/john/sk8/bench/20210511-113944' # start at 201
+	dir = '/home/john/sk8/bench/20210511-115238' # start at 206
+	dir = '/home/john/sk8/bench/aglcalc'         # 15 frames by agl in mm
 
 	# sim with mission log
-	#dir = '/home/john/sk8/daily/20210512/095147'  # manual stand to two meters
-	#dir = '/home/john/sk8/daily/20210512/143128' # on the ground with tape measure
-	dir = '/home/john/sk8/daily/20210512/161543'  # 5 steps of 200 mm each
-# 199 200mm  2.2525 pxlpermm
-# 282 400mm  1.3460 pxlpermm
-# 362 600mm  0.8928 pxlpermm
-# 416 800mm  0.7071 pxlpermm
-# 527 1000mm 0.6389 pxlpermm
-	dir = '/home/john/sk8/daily/20210512/212141'  # 30,50,100,120,140,160,180,200 mm
-#            dot is 16mm diameter
-#   1  30mm  837-256=
-# 173  50mm  814-488=
-# 278 100mm  745-489=
-# 373 120mm  747-615=
-# 409 140mm  750-635=
-# 514 160mm  793-691=
-# 584 180mm  792-699=
-# 648 200mm  735-655=
-	dir = '/home/john/sk8/daily/20210512/224139'  # 150, 200 mm agl
-#  94 1500mm  
-# 328 2000mm        
+	dir = '/home/john/sk8/fly/20210512/095147'  # manual stand to two meters
+	dir = '/home/john/sk8/fly/20210512/143128' # on the ground with tape measure
+	dir = '/home/john/sk8/fly/20210512/161543'  # 5 steps of 200 mm each
+	dir = '/home/john/sk8/fly/20210512/212141'  # 30,50,100,120,140,160,180,200 mm
+	dir = '/home/john/sk8/fly/20210512/224139'  # 150, 200 mm agl
 	
+	dir = '/home/john/sk8/fly/20210514/172116'  # agl calc
+
+	# input simulator data
 	dirframe = f'{dir}/frame'
-	filelog  = f'{dir}/log/mission.log'
+	missiondatainput  = f'{dir}/mission.log'
 	missiondata = None
 	try:	
-		fh = open(filelog)
+		fh = open(missiondatainput)
 		missiondata = fh.readlines()
 		lastline = len(missiondata)
+		logging.info('mission log found')
 	except:
-		pass
+		logging.info('mission log not found')
 
-	hippocampus = Hippocampus(ui=True, saveTrain=False)
+	# start as simulator
+	hippocampus = Hippocampus(ui=True, save_mission=False)
 	hippocampus.start()
 	framenum = 1
 	dline = None
@@ -1185,7 +992,7 @@ if __name__ == '__main__':
 		#	framenum = m.group(1)
 		if missiondata:
 			sline = missiondata[framenum-1]	
-			dline = universal.unpack(sline)
+			dline = uni.unpack(sline)
 
 		# read the frame
 		fname = f'{dirframe}/{framenum}.jpg'
@@ -1209,6 +1016,9 @@ if __name__ == '__main__':
 			continue
 		elif k & 0xFF == ord('r'):
 			continue
+		elif k & 0xFF == ord('s'):
+			self.saveTrain()
+			continue
 		elif k & 0xFF == ord('0'):
 			hippocampus.reopenUI(0)
 			continue
@@ -1227,53 +1037,133 @@ if __name__ == '__main__':
 	hippocampus.stop()
 
 '''
+class Hippocampus
+	Public methods:
+		start()
+		processFrame(img,framenum,telemetry)
+			detectObjects - visual cortex, pareital lobe, occipital lobe, Brodmann area
+			buildMap - hippocampus, retrosplenial cortex
+		drawUI()
+		stop()
+
+	four items are saved to disk
+		1. frames, already flipped for mirror, no resize
+		2. training file, detected objects, must match frame
+		3. mission log, logging level 17 only
+		4. debug log, logging all levels
+
+		Notes on data saving: 
+			the Hippocampus is the only object to access the disk (except for debug log)
+			see universal.py for folder and filename settings
+			console log does NOT display levels debug and mission.
+			frames and mission log can be used to rerun a mission in the simulator.
+			when flying the drone, we save frames and mission log
+				when flying the simulator, we do not
+			training files:
+				saved automaically during flight
+				can optionally be rewritten during sim
+				can be rewritten one frame at a time on-demand during sim
+
 todo
 
 1. benchmark flight(s), manual
-	a. drift to all four quadrants
-	b. ground to 2 meters
+	a. ground to 2 meters
+	b. drift to all four quadrants
 	c. rotation to four quadrants
-
-2. incorporate land cmd
+	d. test cases
+		angle of pad, 4 quadrants
+		on the ground
+		missing left
+		missing right
+		missing cones
+		missing left, right, cones
 
 2. execute rc command, to hover over pad
 
-e. mirror calibration
+3. mirror calibration
 
-future:
-	home position: as inverted copy of initial pad, in fixed position to arena 
-	sk8 position: pad surrounded by oval.
+4. write liftoff and land maneuvers
 
-temporary:
-	pad position, fixed
+5. calculate and execute a course, after mastering hover
 
-basemap: centered, angled, and framed on arena, plus home
-	fit arena to rotated rect
+6. remove pad and use basemap with cones alone
+	- rotate basemap for best shape arena
+	- orient each frame to the basemap
+	- orient each frame to the basemap, even when the frame shows only a portion of the basemap
 
-x superimpose map onto frame, frameMap matches frame by definition
+7. orientation
+	three overlays: map, frame, sk8
+		1. map - "basemap" centered and angled on arena, plus home
+		2. frame - momentary position of tello, "base" has radius of tello as virtual pad
+		3. pad - momentary position of sk8, often obscurred, temporarily fixed
+	todo:	
+		- rotate arena and enlarge to base map
+		- add home to base map
+		- superimpose map onto frame, frameMap matches frame by definition
+		- underimpose frame under basemap
+			- match frame to portion of map
+	dead reckoning
+		when pad and arena is lost
+		go with previous calculations
 
-underimpose frame under basemap
-	match frame to map  (3 cones, 2 cones, whatever, which line up?)
-
-convert Pt to tuple
+8. matrix math
 	use tuple for point and list for vector
 	use np.array() for matrix math among points and vectors
-	all points are 2D, except for the drone position, which is 3D
-		the 4th D could be yaw angle
+	all points and vectors are 4D, ? the only point in the air is the tello
+	a point on the ground can have a yaw angle, z is always 0
 
-test cases
-	angle of pad, 4 quadrants
-	on the ground
-	missing left
-	missing right
-	missing cones
-	missing left, right, cones
+9. save video
+	x all memory saving in Hippocampus, none in Drone
+	saveTrain on-demand, in Sim
+	snap Frame to bench on-demand, in Sim
+	x keep nth option, superior to true/false
+	x filename: folder by day, folder by mission, frame number, jpgs only
+	mission clock, elapsed time between frames
+	file-modified timestamp, does it match mission clock?
+	x save flipped image, no resizing
+	when resizing is stopped, recalc agl factor, change hyperbola k
+	x change all saved frames
+	rerun sim all test cases, rewrite training and mission logs
+	
 
-dead reckoning
-	when pad and arena is lost
-	go with previous calculations
+10. fix rc compose to use body coordinates instead of ground coordinates
 
-are we airborne?  do we use takeoff?
+11. photo angle correction
 
-when the drone is on the pad, how is the radius calculated?
+12. write Prefrontal
+
+class Prefrontal:
+	def getCourseVector()
+	two instances, one for drone, one for skate	
+	queue of maneuvers
+	default hover method between requests
+	maneuvers:
+		hover
+		perimeter
+		calibrate
+		home, proceed to
+		pad, proceed to
+		lower until pad no longer visible
+		land
+	if flight-time exceeded
+		which brain part does this?
+		same as battery check
+		maybe build the main loop into a method somewhere
+
+Brain parts
+	Hippocampus
+		spatial orientation and cartography
+		enabled by memory: remembers where you have been by building a map
+	Prefrontal
+		navigation
+		plans a route forward
+		based on the map provided by the Hippocampus
+
+The final vector passed to RC, is composed of two vectors:
+	hippocampus: drift correction
+	prefrontal: course correction	
+
+This article compares Hippocampus and Frontal Cortex.
+https://www.sciencenewsforstudents.org/article/two-brain-areas-team-make-mental-maps 
+
 '''

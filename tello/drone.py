@@ -1,5 +1,5 @@
 ''' 
-drone.py - class Drone, drive the Tello drone.  see documentation below. 
+drone.py - class Drone, drive the Tello drone
 '''
 import socket
 import time
@@ -23,10 +23,8 @@ min_agl = 20  # mm, camera above the ground
 
 use_rc = True   # rc command vs mission commands
 use_hippocampus = True  
-use_ui = True        # screen driven by hippocampus, kill switch handled by main here
-save_frame = True    # frame and training data is saved by hippocampus
-save_train = False 
-save_mission = True  # mission datat is saved by drone
+use_ui = False    # screen driven by hippocampus, kill switch handled by main here
+save_train = True  # pass to Hippocampus
 
 # three ports, three sockets.  firewall must be open to these ports.
 telemetry_port = 8890   # UDP server socket to repeatedly send a string of telemetry data
@@ -55,25 +53,23 @@ class Telemetry(threading.Thread):
 		threading.Thread.__init__(self)
 		self.baro_base = 0
 		self.lock = threading.Lock()
-		self.data = {
-			'n':253253,       # custom stat, count of data received 
-			'agl':310,        # custom stat, differential baro
-			'pitch':-2,
-			'roll':-2,
-			'yaw':2,
-			'vgx':0,
-			'vgy':0,
-			'vgz':0,
-			'templ':62,
-			'temph':65,
-			'tof':6553,       # height in cm, time of flight, typical range 10 to 56
-			'h':0,            # height in cm, always 0
-			'bat':42,
-			'baro':404.45,    # height in cm, range 322.41 to 323.34 or 321.53 to 322.11
-			'time':0,
-			'agx':-37.00,
-			'agy':48.00,
-			'agz':-1008.00
+		self.data = {             # source: Tello SDK 2.0 User Guide, online PDF
+			'pitch':-2,       # degree of attitude pitch
+			'roll':-2,        # degree of attitude roll
+			'yaw':2,          # degree of attitude yaw
+			'vgx':0,          # the speed of the x axis
+			'vgy':0,          # the speed of the y axis
+			'vgz':0,          # the speed of the x axis
+			'templ':62,       # the lowest temperature in degree Celsius
+			'temph':65,       # the highest temperature in degree Celsius
+			'tof':6553,       # time of flight distance in cm (typical range 10 to 56)
+			'h':0,            # the height in cm (always 0)
+			'bat':42,         # the percentage of the current battery level
+			'baro':404.45,    # the barometer measurement in cm (range 321.41 to 323.34)
+			'time':0,         # the amount of time the motor has been used
+			'agx':-37.00,     # the acceleration of the x axis
+			'agy':48.00,      # the acceleration of the y axis
+			'agz':-1008.00    # the acceleration of the z axis
 		}
 
 	def open(self):
@@ -156,9 +152,6 @@ class Video(threading.Thread):
 		self.state = 'open'
 		logging.info(f'video capture started, elapsed={time.time()-timestart}')
 
-		# create mission frames folder
-		self.dirframe = universal.makedir('frame')
-
 	def stop(self):
 		self.state = 'stop'
 	
@@ -181,6 +174,9 @@ class Video(threading.Thread):
 				logging.error('Cannot receive frame.  Stream end?. Exiting.')
 				self.state == 'crash'
 				break
+			
+			# flip frame vertically to reverse effect of mirror
+			frame = cv.flip(frame,0)
 
 			# get telemetry
 			ddata, sdata = self.drone.telemetry.get()
@@ -200,20 +196,6 @@ class Video(threading.Thread):
 				# fly
 				#if self.drone.state == 'airborne' and ovec:
 				#	self.drone.cmd.sendCommand(rccmd)
-
-				# save mission data
-				if save_mission:
-					ts = time.time()
-					tsd = ts - timeprev
-					src = rccmd.replace(' ','.')
-					prefix = f"rc:{src};ts:{ts};tsd:{tsd};n:{ddata['n']};fn:{framenum};agl:{ddata['agl']};"
-					timeprev = ts
-					logging.log(logging.MISSION, prefix + sdata)
-
-			# save frame
-			if save_frame:
-				fname = f'{self.dirframe}/{framenum}.jpg'
-				cv.imwrite(fname,frame)
 
 			# set frame, framenum, and ovec for use by other threads
 			self.lock.acquire()
@@ -476,7 +458,7 @@ if __name__ == '__main__':
 			'land'
 	)
 	testvideo = (
-			'pause 20'
+			'pause 60'
 	)
 	missioncmds = (
 			'takeoff\n'
@@ -601,122 +583,100 @@ if __name__ == '__main__':
 	drone.stop() 
 	drone.wait()
 '''
-rename eyes.py, class Eyes, really?
-	Video = eyes, visual cortex
-	Telemetry = sensory nervous system other than vision
-	Cmd = motor nervous system, controlling the eye muscles
-
-commands described in Tello SDK User Guide, online PDF, 1.0 or 2.0
-	our Tello has SDK 1.3, includes "rc", but not "sdk?"
-
 mentors:
 	github, damiafuentes/djitellopy/tello.py
+	github, murtazahassan/
 
-class Drone embeds three singleton objects, one each for the three Tello sockets:
-	Telemetry - public method get() shares the latest telemetry data object
-	Video - public method get() shares the latest frame
-	Cmd - public method sendCommand(cmd)  shares access to Tello commands
+class Drone 
+	embeds three singleton objects, one each for the three Tello sockets:
+		Telemetry -
+			sensory nervous system other than vision
+			thread, client socket
+			transmits telemetry record 5 times per second
+			public method get() shares the latest telemetry data object
+		Video -
+			eyes, visual cortex
+			thread, client socket
+			transmits video stream at 40 fps
+			public method get() shares the latest frame
+		Cmd -
+			motor nervous system, controlling the eye muscles, head and neck
+			no thread, server socket
+			public method sendCommand(cmd)  shares access to Tello commands
+	also embeds:
+		Wifi - to connect to the Tello hub 
+		Hippocampus - spatial analysis, mapping, orientation, incl object detection
 
-class Drone also embeds Wifi, to connect to the Tello hub 
+	the __main__ function is a simulator, repeating missions flown by Drone
 
-
-embeds Hippocampus - should probably be separate, along with Cortex
-main flies missions
-
-for effectiveness of Tello Vision Positioning System (VPS):
-	lights on
-	AC off
-	blanket on floor
-
-Tello LED codes, see User Guide:
-	red,grn,yel   blink alternating   startup diagnostics, 10 seconds
-	yellow        blink quickly       wifi ready, not connected, signal lost
-	green         blink slowly        wifi connected
-	
-	green         blink double        VPS on
-	yellow        blink slowly        VPS off
-	
-	red           blink slowly        low battery
-	red           blink quickly       critically low battery
-	red           solid               critical error
-	
-	blue          solid               charging complete
-	blue          blink slowly        charging
-	blue          blink quickly       charging error
+	data saving:
+		frames, already flipped for mirror, no resize
+		training file, detected objects, must match frame
+		mission log, logging level 17 only
+		debug log, logging all levels
+		Note: console log displays levels except debug and mission.
+		Note: frames and mission log can be used to rerun a mission in the simulator.
 
 todo:
+	rename eyes.py, class Eyes, really?
 
-save video
-	on demand, snap command, for testing mirror calibration
-	by nth, instead of true/false
-	every frame, with or without data
-	filename: folder by day, folder by mission, frame number, jpgs only
-		mission clock, elapsed time between frames
-		file-modified timestamp, does it match mission clock?
-
-mirror calibration, do command, like pause or hover or follow
-
-
-navigator (new):
-	thread
-	queue of requests
-	default hover method between requests
-	one Navigator class: two instances, one for drone, one for skate	
-
-hippocampus.buildMap:
-	thread
-	mirror correction
-	photo angle correction
-
-tello rc command, based on multiple vectors:
-	hippocampus:
-		drift correction
-	navigator:
-		course correction	
-
-cmd:
-	wait for video started before ready state
-		
-video:
-	avoid "Circular buffer overrun" error
+	video: avoid "Circular buffer overrun" error
 		see: https://stackoverflow.com/questions/35338478/buffering-while-converting-stream-to-frames-with-ffmpegj
 
-navigator states = 'hover', 'home', 'perimeter', 'calibrate'
-if flight-time exceeded   # which thread does this?  navigator?
-	self.state = 'home'
-	proceed to pad
-	lower until pad no longer visible
-	land
+about the Tello drone
+	mfg by DJI and Ryze, both in Shenghen
+	
+	commands described in Tello SDK User Guide, online PDF, 1.0 or 2.0
+		our Tello has SDK 1.3, includes "rc", but not "sdk?"
+	
+	for effectiveness of Tello Vision Positioning System (VPS):
+		bright, soft, indirect sunlight
+		AC and fan off, no wind
+		blanket on floor, non-shiny surface
+	
+	Tello LED codes, see User Guide:
+		red,grn,yel   blink alternating   startup diagnostics, 10 seconds
+		yellow        blink quickly       wifi ready, not connected, signal lost
+		green         blink slowly        wifi connected
+		
+		green         blink double        VPS on
+		yellow        blink slowly        VPS off
+		
+		red           blink slowly        low battery
+		red           blink quickly       critically low battery
+		red           solid               critical error
+		
+		blue          solid               charging complete
+		blue          blink slowly        charging
+		blue          blink quickly       charging error
 
-using the Tello rc command is virtual sticks mode or virtual joysticks
-DJI has a flight controller sdk for more advanced aircraft
-this describes different modes for using virtual joysticks
+	virtual radio control via two joysticks, four axes:
+		"rc x,y,z,w"
+			where each each parameter is a percentage of full velocity, forward or reverse
+			0 means zero velocity, ie. hold current position
+		x is roll,     -100 is full left velocity,     +100 is full right velocity
+		y is pitch,    -100 is full back velocity,     +100 is full forward velocity
+		z is vertical, -100 is full down velocity,     +100 is full up velocity
+		w is yaw,      -100 is full CCW spin velocity, +100 is full CW spin velocity
 
-I have to assume these are the defaults
-
-setRollPitchControlMode(RollPitchControlMode.VELOCITY);
-setYawControlMode(YawControlMode.ANGULAR_VELOCITY);
-setVerticalControlMode(VerticalControlMode.VELOCITY);
-setRollPitchCoordinateSystem(FlightCoordinateSystem.BODY);
-
-coordinate system is body or ground
-if ground, x,y are relative to the ground, regardless of the yaw position
-if body, x,y are relative to the body, constantly changing as the yaw position changes
-
-defaults
-coordinate system: body
-vertical control mode: velocity
-roll pitch controll mode: velocity
-yaw control mode: angular velocity
-
-rc x,y,z,w
-
-x is roll, -100 is full left velocity, +100 is full right velocity
-y is pitch, -100 is full back velocity, +100 is full forward velocity
-z is vertical, -100 is full down velocity, +100 is full up velocity
-w is yaw, -100 is full CCW spin velocity, +100 is full CW spin velocity
-
-numbers are a percentage of full velocity
-
+	The Tello coordinate system is "ground".  See below for explanation.
+	
+about DJI Flight Controllers (FC) in general:
+	One way to fly is called "virtual sticks mode" or "virtual joysticks".
+	DJI has a flight controller SDK. (I don't think it's available for Tello.)
+		It describes different modes for using virtual joysticks.
+	
+	joysticks can be used in different ways 	
+		with different FC settings to satisfy pilot preference
+	
+	the defaults are usually:
+		setRollPitchControlMode( RollPitchControlMode.VELOCITY);
+		setYawControlMode( YawControlMode.ANGULAR_VELOCITY);
+		setVerticalControlMode( VerticalControlMode.VELOCITY);
+		setRollPitchCoordinateSystem( FlightCoordinateSystem.BODY);
+	
+	coordinate system is body or ground
+		if ground, x,y are relative to the ground, regardless of the yaw position
+		if body, x,y are relative to the body, constantly changing as the yaw position changes
 '''
 
