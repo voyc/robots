@@ -44,7 +44,7 @@ class Eeg:
 		rccmd = self.neck.probeRcCmd()
 		ui = self.drawUI(img, frameMap, baseMap, debugImages)
 		self.showUI(ui)
-		self.readKillSwitch()
+		#self.readKillSwitch()
 		#self.waitForUser()
 
 	def showUI(self,ui):
