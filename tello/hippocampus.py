@@ -1,7 +1,4 @@
-'''
-hippocamapus.py - class Hippocampus
-	spatial analysis, object detection, mapping, orientation
-'''
+''' hippocamapus.py - class Hippocampus - spatial analysis, mapping, orientation '''
 import cv2 as cv
 import numpy as np
 from datetime import datetime
@@ -13,21 +10,14 @@ import colorsys
 import re
 import universal as uni
 from sk8math import *
-import visualcortex
+import visualcortex as vc
 
 # calc agl from pxlpermm
-agl_k = 1143
+agl_k = 529
 def aglFromPxpmm(pxlpermm):
 	if pxlpermm <=0:
 		return 0
 	return int(agl_k/pxlpermm)  # hyperbola equation y=k/x
-
-def drawPolygon(img, ptarray, factor=1, color=(255,0,0), linewidth=1):	
-	a = np.multiply(ptarray,factor)
-	a = a.astype(int)
-	for i in range(0,len(a)):
-		j = i+1 if i < len(a)-1 else 0
-		cv.line(img, tuple(a[i]), tuple(a[j]), color, linewidth)
 
 class Spot:
 	def __init__(self, bbox, pxlpermm):
@@ -65,6 +55,7 @@ class Pad:
 		# [angle, radius]  = similar to a vector in that it indicates direction and distance
 		# [leny, lenx]  = a slope, rise over run
 		# [lenx, leny] = a vector, [2,4] means move 2 mm to the left and 4 mm up
+		self.bbox = self.getBbox()
 
 class Arena:
 	def __init__(self,bbox):
@@ -76,9 +67,19 @@ class Map:
 		self.cones = cones
 		self.arena = arena
 		self.home = home 
+		self.state = 'new'
+		self.pxlpermm = 0
+		self.agl = 0
+
+	def __str__(self):
+		s = f'pad: {self.pad.bbox}'
+		s += f'\nspot: {self.pad.spot.bbox}'
+		s += f'\ncones: {len(self.cones)}'
+		s += f'\nstate: {self.state}, pxlpermm: {self.pxlpermm}, agl: {self.agl}'
+		return s
 
 class Hippocampus:
-	def __init__(self, ui=True, save_mission=False):
+	def __init__(self, ui=False, save_mission=False):
 		self.ui = ui
 		self.save_mission = save_mission
 
@@ -160,396 +161,12 @@ class Hippocampus:
 		self.pxlpermm = 0 # computed by the size of the pad, in pixels vs mm
 		# the pxlpermm value implies an agl
 
-	def reopenUI(self, cls):
-		# read values from trackbars and print to log
-		#settings = self.readSettings()
-		#print(settings)
-
-		# close the debug dialog window
-		self.closeDebugDialog()
-
-		# set new debugging class code
-		self.clsdebug = cls
-
-		# open a new debug dialog window
-		self.openSettings()
-
-	def isDebugging(self):
-		return self.clsdebug > self.clsNone
-
-	def openUI(self):
-		if self.ui and self.isDebugging():
-			self.openSettings()
-
-	def closeDebugDialog(self):
-		if self.ui and self.isDebugging():
-			name = self.clsname[self.clsdebug]
-			cv.destroyWindow(name)
-	
-	def closeUI(self):
-		cv.destroyAllWindows()
-
-	def post(self,key,value):
-		self.posts[key] = value
-		s = f'{key}={value}'
-		logging.debug(s)
-	
-	def drawPosts(self,imgPost):
-		linenum = 1
-		ssave = ''
-		for k in self.posts.keys():
-			v = self.posts[k]
-			s = f'{k}={v}'
-			pt = (self.datalinemargin, self.datalineheight * linenum)
-			cv.putText(imgPost, s, pt, cv.FONT_HERSHEY_SIMPLEX,.7,(0,0,0), 1)
-			linenum += 1
-			ssave += s + ';'
-		if uni.soTrue(self.framenum, self.post_nth):
-			logging.debug(ssave)
-	
-	def openSettings(self):
-		# callback on track movement
-		def on_trackbar(val):
-			#jsettings = self.readSettings()
-			#self.obj_settings[self.clsdebug] = settings
-			return
-
-		# open the dialog
-		if self.ui and self.isDebugging():
-			name = self.clsname[self.clsdebug]
-			cv.namedWindow(name) # default WINDOW_AUTOSIZE, manual resizeable
-			cv.resizeWindow( name,self.dialog_width, self.dialog_height)   # ignored with WINDOW_AUTOSIZE
-
-			# create the trackbars
-			settings = self.obj_settings[self.clsdebug]
-			#for setting in settings:
-			#	if setting != 'cls':
-			#		cv.createTrackbar(setting, name, settings[setting], self.barmax[setting], on_trackbar)
-			for n in range(1,9):
-				barname = self.barnames[n]
-				value = settings[n]
-				maxvalue = self.barmax[n]
-				cv.createTrackbar(barname, name, value, maxvalue, on_trackbar)
-	
-	def readSettings(self):
-		# read the settings from the trackbars
-		settings = self.obj_settings[self.clsdebug]
-		windowname = self.clsname[self.clsdebug]
-		#for setting in settings:
-		#	if setting != 'cls':
-		#		settings[setting] = cv.getTrackbarPos(setting, name)
-		newset = [settings[0]]
-		for n in range(1,9):
-			barname = self.barnames[n]
-			value = cv.getTrackbarPos(barname, windowname)
-			newset.append(value)
-		settings = tuple(newset)
-
-		# create the color image for visualizing threshhold hsv values
-		imgColor = self.createColorImage(settings)
-
-		# show the color image within the dialog window
-		cv.imshow(windowname, imgColor)
-		self.obj_settings[self.clsdebug] = settings
-		return settings
-
-	def createColorImage(self, settings):
-		# hsv, see https://alloyui.com/examples/color-picker/hsv.html
-
-		# h = 6 primary colors, each with a 60 degree range, 6*60=360
-		#     primary     red  yellow  green  cyan  blue  magenta  red
-		#     hue degrees   0      60    120   180   240      300  359  360
-		#     hue inRange   0      30     60    90   120      150  179  180
-		# s = saturation as pct,        0=white, 100=pure color, at zero => gray scale
-		# v = value "intensity" as pct, 0=black, 100=pure color, takes precedence over sat
-
-		# trackbar settings are 360,100,100; convert to 0 to 1
-		a = np.array(settings) / np.array(self.barmax)
-		cls,hl,hu,sl,su,vl,vu,_,_ = a
-
-		# colorsys values are all 0.0 to 1.0
-		rl,gl,bl = colorsys.hsv_to_rgb(hl,sl,vl)
-		ru,gu,bu = colorsys.hsv_to_rgb(hu,su,vu)
-
-		# RBG and BGR valus are 0 to 255; convert from 0 to 1
-		rl,ru,gl,gu,bl,bu = np.array([rl,ru,gl,gu,bl,bu]) * 255
-		colormin = bl,gl,rl
-		colormax = bu,gu,ru
-
-		# again for hue only
-		hrl,hgl,hbl = colorsys.hsv_to_rgb(hl,1.0,1.0)
-		hru,hgu,hbu = colorsys.hsv_to_rgb(hu,1.0,1.0)
-		hrl,hru,hgl,hgu,hbl,hbu = np.array([hrl,hru,hgl,hgu,hbl,hbu]) * 255
-		huemin = hbl,hgl,hrl
-		huemax = hbu,hgu,hru
-
-		# an image is an array of numbers, depth 3, opencv uses BGR
-		color_image_width = 200
-		color_image_height = 100
-		imgColor = np.zeros((color_image_height, color_image_width, 3), np.uint8) # blank image
-
-		# divide images into four quadrants, top row is hue range, bottom row is hsv range
-		for y in range(0, int(color_image_height/2)):
-			for x in range(0, int(color_image_width/2)):
-				imgColor[y,x] = huemin
-			for x in range(int(color_image_width/2), color_image_width):
-				imgColor[y,x] = huemax
-		for y in range(int(color_image_height/2), color_image_height):
-			for x in range(0, int(color_image_width/2)):
-				imgColor[y,x] = colormin
-			for x in range(int(color_image_width/2), color_image_width):
-				imgColor[y,x] = colormax
-		return imgColor
-	
-	def stackImages(self,scale,imgArray):
-		# imgArray is a tuple of lists
-		rows = len(imgArray)     # number of lists in the tuple
-		cols = len(imgArray[0])  # number of images in the first list
-
-		height,width,depth = imgArray[0][0].shape
-
-		for x in range ( 0, rows):
-			for y in range(0, cols):
-				# scale images down to fit on screen
-				imgArray[x][y] = cv.resize(imgArray[x][y], (0, 0), None, scale, scale)
-
-				# imshow() requires BGR, so convert grayscale images to BGR
-				if len(imgArray[x][y].shape) == 2: 
-					imgArray[x][y]= cv.cvtColor( imgArray[x][y], cv.COLOR_GRAY2BGR)
-
-		imageBlank = np.zeros((height, width, 3), np.uint8)  # shouldn't this be scaled?
-		hor = [imageBlank]*rows  # initialize a blank image space
-		for x in range(0, rows):
-			hor[x] = np.hstack(imgArray[x])
-		ver = np.vstack(hor)
-
-		return ver
-	
-	def drawMap(self, map, img):
-		pad = map.pad if map.pad else False
-		spot = map.pad.spot if map.pad.spot else False
-		cones = map.cones if map.cones else False
-		arena = map.arena if map.arena else False
-
-		# draw arena
-		if arena:
-			l = int(round(arena.bbox.l * self.pxlpermm))
-			t = int(round(arena.bbox.t * self.pxlpermm))
-			r = int(round(arena.bbox.r * self.pxlpermm))
-			b = int(round(arena.bbox.b * self.pxlpermm))
-			cv.rectangle(img, (l,t), (r,b), (127,0,0), 1)
-	
-		# draw cones
-		if cones:
-			r = int(round(self.cone_radius * self.pxlpermm))
-			for cone in cones:
-				#x = int(round(arena.bbox.center.x + (obj.bbox.center.x * self.frameWidth)))
-				#y = int(round(arena.bbox.center.y + (obj.bbox.center.y * self.frameHeight)))
-				x = int(round(cone.bbox.center.x * self.pxlpermm))
-				y = int(round(cone.bbox.center.y * self.pxlpermm))
-				cv.circle(img,(x,y),r,(0,0,255),1)
-	
-		# draw pad
-		if pad:
-			if pad.purpose == 'frame':
-				if self.debugPad: # draw the halves
-					if pad.padl:
-						l = int(round(pad.padl.bbox.l * self.pxlpermm))
-						t = int(round(pad.padl.bbox.t * self.pxlpermm))
-						r = int(round(pad.padl.bbox.r * self.pxlpermm))
-						b = int(round(pad.padl.bbox.b * self.pxlpermm))
-						cv.rectangle(img, (l,t), (r,b), (0,255,255), 1) # BGR yellow, left
-
-					if pad.padr:
-						l = int(round(pad.padr.bbox.l * self.pxlpermm))
-						t = int(round(pad.padr.bbox.t * self.pxlpermm))
-						r = int(round(pad.padr.bbox.r * self.pxlpermm)) -1
-						b = int(round(pad.padr.bbox.b * self.pxlpermm)) -1
-						cv.rectangle(img, (l,t), (r,b), (255,0,255), 1) # BGR purple, right
-				
-					if pad.padl and pad.padr:
-						drawPolygon(img, [pad.padl.bbox.center.tuple(), pad.padr.bbox.center.tuple(), pad.pt3.tuple()], self.pxlpermm)
-				
-				color = (0,0,0)
-				#  outer perimeter
-				r = round(self.pad_radius * self.pxlpermm)
-				x = round(pad.center.x * self.pxlpermm)
-				y = round(pad.center.y * self.pxlpermm)
-				cv.circle(img,(x,y),r,color,1)
-
-				# axis with arrow
-				pt1, pt2 = calcLine((x,y), r, pad.angle)
-				cv.line(img,pt1,pt2,color,1)  # center axis
-				cv.circle(img,pt1,3,color,3)   # arrow pointing forward
-
-			elif pad.purpose == 'home':
-				# draw props
-				r = round(self.pad_radius * self.pxlpermm)
-				x = round(pad.center.x * self.pxlpermm)
-				y = round(pad.center.y * self.pxlpermm)
-				color = (255,128,128)
-				radius_prop = .3 * r
-				radius_xframe = .7 * r
-				pta = []
-				for a in [45,135,225,315]:
-					ra = np.radians(a)
-					xx = x + int(radius_xframe * np.cos(ra))
-					xy = y + int(radius_xframe * np.sin(ra))
-					pta.append((xx,xy))
-					cv.circle(img,(xx,xy),int(radius_prop), color,2)
-
-				# draw x-frame
-				cv.line(img,pta[0],pta[2],color,4)  # center axis
-				cv.line(img,pta[1],pta[3],color,4)  # center axis
-				
-				# draw drone body
-				#cv.rectangle(img, (l,t), (r,b), (127,0,0), 1)
-
-		if spot:
-			color = (255,255,255)
-			r = round(spot.bbox.radius * self.pxlpermm)
-			x = round(spot.bbox.center.x * self.pxlpermm)
-			y = round(spot.bbox.center.y * self.pxlpermm)
-			cv.circle(img,(x,y),r,color,1)
-
-	def drawUI(self):
-		if not self.ui:
-			return
-		if not uni.soTrue(self.framenum, self.frame_nth):
-			return
-
-		img = self.imgPrep
-
-		# create empty map
-		imgMap = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
-		imgMap.fill(255)  # made white
-	
-		# create final as copy of original
-		imgFinal = img.copy()
-
-		# draw maps
-		if self.frameMap:
-			self.drawMap(self.frameMap, imgMap)
-			self.drawMap(self.frameMap, imgFinal)
-		if self.baseMap:
-			self.drawMap(self.baseMap, imgMap)
-			self.drawMap(self.baseMap, imgFinal)
-
-		# draw ovec
-		if self.frameMap and self.baseMap:
-			ptFrame = tuple(np.int0(np.array(self.frameMap.pad.center.tuple()) * self.pxlpermm))
-			ptBase = tuple(np.int0(np.array(self.baseMap.pad.center.tuple()) * self.pxlpermm))
-			color = (0,0,255)
-			cv.line(imgMap,ptFrame,ptBase,color,3)  # ovec line between pads
-			cv.line(imgFinal,ptFrame,ptBase,color,3)  # ovec line between pads
-
-		# draw internal data calculations posted by programmer
-		imgPost = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
-		imgPost.fill(255)
-		self.drawPosts(imgPost)
-	
-		# stack all images into one
-		#imgTuple = ([imgMap,imgPost,imgFinal],)
-		imgTuple = ([imgPost,imgFinal],)
-		if self.isDebugging():
-			imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = self.visualcortex.debugImages
-			imgHsv= cv.cvtColor( imgHsv, cv.COLOR_HSV2BGR)
-			imgTuple = ([imgPost,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgFinal])
-			#imgTuple = ([imgPost,self.imgColor,imgMasked],[imgMap,imgFinal,imgCanny])
-			#imgTuple = ([imgPost,imgMask,imgMasked],[imgMap,imgFinal,imgCanny])
-		stack = self.stackImages(0.5,imgTuple)
-
-		# show
-		cv.imshow('Image Processing', stack)
-
-#	#
-#	# end UI section, begin image processing section
-#	#
-#
-#	def detectObjectsNN(self,img):
-#		pass
-#
-#	def detectObjectsCV(self,img):
-#		objects = []
-#		self.detectContours(img, self.obj_settings[self.clsCone], objects)
-#		self.detectContours(img, self.obj_settings[self.clsPadl], objects)
-#		self.detectContours(img, self.obj_settings[self.clsPadr], objects)
-#		self.detectContours(img, self.obj_settings[self.clsSpot], objects)
-#		return objects
-#
-#	def detectContours(self,img,settings,objects):
-#		# draw a one-pixel black border around the whole image
-#		#	when the drone is on the pad, 
-#		#	each halfpad object extends past the image boundary on three sides, 
-#		#	and findContours detects only the remaining edge as an object
-#		cv.rectangle(img, (0,0), (self.frameWidth-1,self.frameHeight-1), (0,0,0), 1)
-#
-#		# mask based on hsv ranges
-#		# settings are 0 to 360,100,100
-#
-#		# opencv values are 0 to 179,255,255
-#		# trackbar settings are 360,100,100
-#		#hl = settings['hue_min'] / 2  # 0 to 360 degrees
-#		#hu = settings['hue_max'] / 2
-#		#sl = int((settings['sat_min'] / self.barmax['sat_min']) * 255)  # 0 to 100 pct
-#		#su = int((settings['sat_max'] / self.barmax['sat_max']) * 255)
-#		#vl = int((settings['val_min'] / self.barmax['val_min']) * 255)  # 0 to 100 pct
-#		#vu = int((settings['val_max'] / self.barmax['val_max']) * 255)
-#
-#		cls,hl,hu,sl,su,vl,vu,cl,cu = settings
-#		hl = int(hl / 2)
-#		hu = int(hu / 2)
-#		sl = int((sl / self.barmax[3]) * 255)  # 0 to 100 pct
-#		su = int((su / self.barmax[4]) * 255)
-#		vl = int((vl / self.barmax[5]) * 255)  # 0 to 100 pct
-#		vu = int((vu / self.barmax[6]) * 255)
-#
-#		#lower = np.array([(settings['hue_min']/2),settings['sat_min'],settings['val_min']])
-#		#upper = np.array([(settings['hue_max']/2),settings['sat_max'],settings['val_max']])
-#		lower = np.array([hl,sl,vl])
-#		upper = np.array([hu,su,vu])
-#		imgHsv = cv.cvtColor(img,cv.COLOR_BGR2HSV)
-#		imgMask = cv.inRange(imgHsv,lower,upper) # choose pixels by hsv threshholds
-#		imgMasked = cv.bitwise_and(img,img, mask=imgMask)
-#	
-#		imgBlur = cv.GaussianBlur(imgMasked, (17, 17), 1)  # started at (7,7);  the bigger kernel size pulls together the pieces of padr
-#		imgGray = cv.cvtColor(imgBlur, cv.COLOR_BGR2GRAY)
-#	
-#		# canny: edge detection.  Canny recommends hi:lo ratio around 2:1 or 3:1.
-#		imgCanny = cv.Canny(imgGray, cl, cu)
-#	
-#		# dilate: thicken the line
-#		kernel = np.ones((5, 5))
-#		imgDilate = cv.dilate(imgCanny, kernel, iterations=1)
-#
-#		# get a data array of polygons, one contour boundary for each object
-#		contours, _ = cv.findContours(imgDilate, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
-#		if self.clsdebug == cls:
-#			self.debugImages = [imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate]
-#
-#		# get bounding box for each contour
-#		for contour in contours:
-#			area = cv.contourArea(contour)
-#			perimeter = cv.arcLength(contour, True)
-#			polygon = cv.approxPolyDP(contour, 0.02 * perimeter, True)
-#			l,t,w,h = cv.boundingRect(polygon)
-#
-#			tl = round(l/self.frameWidth, 6)
-#			tt = round(t/self.frameHeight, 6)
-#			tw = round(w/self.frameWidth, 6)
-#			th = round(h/self.frameHeight, 6)
-#
-#			bbox = Bbox(tl,tt,tw,th)
-#			obj = DetectedObject(cls, bbox)
-#			objects.append(obj)
-#		return
-
 	def findSpot(self, objects, pad):
+		# make a separate list of spots
 		spota = []
 		for obj in objects:
 			if obj.cls == self.clsSpot:
 				spota.append(obj)
-
 		self.post('num spot', len(spota))
 		if len(spota) <= 0:
 			return False
@@ -563,8 +180,8 @@ class Hippocampus:
 				objspot = obj
 
 		# go back and scrub objects list
-		for obj in objects:
-			if obj.cls == self.clsSpot and obj is not objspot:
+		for obj in spota:
+			if obj is not objspot:
 				objects.remove(obj)
 
 		# from pct to pxl
@@ -723,41 +340,45 @@ class Hippocampus:
 		return pad
 
 	def findCones(self, objects):
-		# choose only correctly sized objects, scrub object list
-		cones = []
-
-		radmin = self.cone_radius - (self.cone_radius_range*self.cone_radius)
-		radmax = self.cone_radius + (self.cone_radius_range*self.cone_radius)
-
-		numconeobjs = 0
+		# make a separate list of cones
+		conea = []
 		for obj in objects:
 			if obj.cls == self.clsCone:
-				numconeobjs += 1
+				conea.append(obj)
+		self.post('cones found', len(conea))
 
-				# from pct to pxl
-				cone = copy.deepcopy(obj)
-				cone.bbox.l *= self.frameWidth
-				cone.bbox.t *= self.frameHeight
-				cone.bbox.w *= self.frameWidth 
-				cone.bbox.h *= self.frameHeight 
+		# choose only correctly sized objects
+		radmin = self.cone_radius - (self.cone_radius_range*self.cone_radius)
+		radmax = self.cone_radius + (self.cone_radius_range*self.cone_radius)
+		cones = []
+		for obj in conea:
+			# from pct to pxl
+			cone = copy.deepcopy(obj)  # original object stays in unit pct
+			cone.bbox.l *= self.frameWidth
+			cone.bbox.t *= self.frameHeight
+			cone.bbox.w *= self.frameWidth 
+			cone.bbox.h *= self.frameHeight 
 
-				# from pxl to mm
-				cone.bbox.l /= self.pxlpermm
-				cone.bbox.t /= self.pxlpermm
-				cone.bbox.w /= self.pxlpermm
-				cone.bbox.h /= self.pxlpermm
-				cone.bbox.calc()
-				if cone.bbox.radius > radmin and cone.bbox.radius < radmax:
-					cones.append(cone)
-				#else:
-				#	objects.remove(obj)
-
-		self.post('cones found', numconeobjs)
+			# from pxl to mm
+			cone.bbox.l /= self.pxlpermm
+			cone.bbox.t /= self.pxlpermm
+			cone.bbox.w /= self.pxlpermm
+			cone.bbox.h /= self.pxlpermm
+			cone.bbox.calc()
+			if cone.bbox.radius > radmin and cone.bbox.radius < radmax:
+				cones.append(cone)
+			else:
+				obj.cls = self.clsNone
 		self.post('cones accepted', len(cones))
+
+		# go back and scrub objects list
+		for obj in conea:
+			if obj.cls == self.clsNone:
+				objects.remove(obj)
+
 		if len(cones) <= 0:
 			cones = False
 		return cones
-		
 
 	def findArenaRot(self, cones):
 		pta = []
@@ -809,17 +430,18 @@ class Hippocampus:
 	def start(self):
 		logging.info('hippocampus starting')
 		if self.ui:
-			self.openUI()
+#			self.openUI()
 			logging.info('UI opened')
 		if self.save_mission:
 			self.dirframe = uni.makedir('frame')
 			self.dirtrain = uni.makedir('train')
 
-		self.visualcortex = visualcortex.VisualCortex()
+		#self.visualcortex = visualcortex.VisualCortex()
  
 	def stop(self):
 		logging.info('hippocampus stopping')
-		self.closeUI()
+		if self.ui:
+			self.closeUI()
 
 	def buildMap(self,objects):
 		pad = self.findPad(objects)
@@ -831,7 +453,7 @@ class Hippocampus:
 		map = Map(pad, cones, arena)
 		return map
 	
-	def processFrame(self,img, framenum, teldata):
+	def processFrame(self, img, framenum, objs, teldata=None):
 		self.framenum += 1
 		ovec = False
 		rccmd = 'rc 0 0 0 0'
@@ -847,6 +469,7 @@ class Hippocampus:
 		# get settings from trackbars
 		if self.ui:
 			self.readSettings()
+			pass
 
 		# detect objects - unit: percent of frame
 		#self.objects = self.detectObjects(img)
@@ -932,7 +555,8 @@ class Hippocampus:
 			self.logMission('sdata', rccmd)
 
 		# display through portal to human observer
-		self.drawUI()
+		if self.ui:
+			portal.drawUI()
 
 		return ovec,rccmd
 
@@ -946,224 +570,35 @@ class Hippocampus:
 		self.timesave = ts
 		logging.log(logging.MISSION, prefix + sdata)
 
-if __name__ == '__main__':
-	# run a drone simulator
-	uni.configureLogging('sim')
-	logging.debug('')
-	logging.debug('')
-
-	# sim with frames only
-	dir = '/home/john/sk8/bench/testcase'        # 1-5
-	dir = '/home/john/sk8/bench/20210511-113944' # start at 201
-	dir = '/home/john/sk8/bench/20210511-115238' # start at 206
-	dir = '/home/john/sk8/bench/aglcalc'         # 15 frames by agl in mm
-
-	# sim with mission log
-	dir = '/home/john/sk8/fly/20210512/095147'  # manual stand to two meters
-	dir = '/home/john/sk8/fly/20210512/143128' # on the ground with tape measure
-	dir = '/home/john/sk8/fly/20210512/161543'  # 5 steps of 200 mm each
-	dir = '/home/john/sk8/fly/20210512/212141'  # 30,50,100,120,140,160,180,200 mm
-	dir = '/home/john/sk8/fly/20210512/224139'  # 150, 200 mm agl
+	def post(self,key,value):
+		self.posts[key] = value
+		s = f'{key}={value}'
+		logging.debug(s)
 	
-	dir = '/home/john/sk8/fly/20210514/172116'  # agl calc
+	def probeMaps(self):
+		return self.baseMap, self.frameMap
 
-	# input simulator data
-	dirframe = f'{dir}/frame'
-	missiondatainput  = f'{dir}/mission.log'
-	missiondata = None
-	try:	
-		fh = open(missiondatainput)
-		missiondata = fh.readlines()
-		lastline = len(missiondata)
-		logging.info('mission log found')
-	except:
-		logging.info('mission log not found')
+	def probePostData(self):
+		return self.posts
 
-	# start as simulator
-	hippocampus = Hippocampus(ui=True, save_mission=False)
+if __name__ == '__main__':
+	fname = '/home/john/sk8/bench/testcase/frame/6.jpg'
+	frame = cv.imread( fname, cv.IMREAD_UNCHANGED)
+	if frame is None:
+		logging.error(f'file not found: {fname}')
+		quit()
+
+	visualcortex = vc.VisualCortex()
+	objs = visualcortex.detectObjects(frame)
+	print(*objs, sep='\n')
+	
+	hippocampus = Hippocampus()
 	hippocampus.start()
-	framenum = 1
-	dline = None
-	while True:
-		# read one line from the mission log, optional
-		#if fh:
-		#	line = fh.readline()
-		#	m = re.search( r';fn:(.*?);', line)
-		#	framenum = m.group(1)
-		if missiondata:
-			sline = missiondata[framenum-1]	
-			dline = uni.unpack(sline)
-
-		# read the frame
-		fname = f'{dirframe}/{framenum}.jpg'
-		frame = cv.imread( fname, cv.IMREAD_UNCHANGED)
-		if frame is None:
-			logging.error(f'file not found: {fname}')
-			break;
-
-		# process the frame
-		ovec = hippocampus.processFrame(frame, framenum, dline)
-
-		# kill switch
-		k = cv.waitKey(1)  # in milliseconds, must be integer
-		if k & 0xFF == ord('n'):
-			if framenum < lastline:
-				framenum += 1
-			continue
-		elif k & 0xFF == ord('p'):
-			if framenum > 1:
-				framenum -= 1
-			continue
-		elif k & 0xFF == ord('r'):
-			continue
-		elif k & 0xFF == ord('s'):
-			self.saveTrain()
-			continue
-		elif k & 0xFF == ord('0'):
-			hippocampus.reopenUI(0)
-			continue
-		elif k & 0xFF == ord('1'):
-			hippocampus.reopenUI(1)
-			continue
-		elif k & 0xFF == ord('2'):
-			hippocampus.reopenUI(2)
-			continue
-		elif k & 0xFF == ord('3'):
-			hippocampus.reopenUI(3)
-			continue
-		elif k & 0xFF == ord('q'):
-			break;
-
+	mapp = hippocampus.buildMap(objs)	
+	#hippocampus.processFrame(objs,1,None)
 	hippocampus.stop()
 
-'''
-class Hippocampus
-	Public methods:
-		start()
-		processFrame(img,framenum,telemetry)
-			detectObjects - visual cortex, pareital lobe, occipital lobe, Brodmann area
-			buildMap - hippocampus, retrosplenial cortex
-		drawUI()
-		stop()
 
-	four items are saved to disk
-		1. frames, already flipped for mirror, no resize
-		2. training file, detected objects, must match frame
-		3. mission log, logging level 17 only
-		4. debug log, logging all levels
-
-		Notes on data saving: 
-			the Hippocampus is the only object to access the disk (except for debug log)
-			see universal.py for folder and filename settings
-			console log does NOT display levels debug and mission.
-			frames and mission log can be used to rerun a mission in the simulator.
-			when flying the drone, we save frames and mission log
-				when flying the simulator, we do not
-			training files:
-				saved automaically during flight
-				can optionally be rewritten during sim
-				can be rewritten one frame at a time on-demand during sim
-
-todo
-
-1. benchmark flight(s), manual
-	a. ground to 2 meters
-	b. drift to all four quadrants
-	c. rotation to four quadrants
-	d. test cases
-		angle of pad, 4 quadrants
-		on the ground
-		missing left
-		missing right
-		missing cones
-		missing left, right, cones
-
-2. execute rc command, to hover over pad
-
-3. mirror calibration
-
-4. write liftoff and land maneuvers
-
-5. calculate and execute a course, after mastering hover
-
-6. remove pad and use basemap with cones alone
-	- rotate basemap for best shape arena
-	- orient each frame to the basemap
-	- orient each frame to the basemap, even when the frame shows only a portion of the basemap
-
-7. orientation
-	three overlays: map, frame, sk8
-		1. map - "basemap" centered and angled on arena, plus home
-		2. frame - momentary position of tello, "base" has radius of tello as virtual pad
-		3. pad - momentary position of sk8, often obscurred, temporarily fixed
-	todo:	
-		- rotate arena and enlarge to base map
-		- add home to base map
-		- superimpose map onto frame, frameMap matches frame by definition
-		- underimpose frame under basemap
-			- match frame to portion of map
-	dead reckoning
-		when pad and arena is lost
-		go with previous calculations
-
-8. matrix math
-	use tuple for point and list for vector
-	use np.array() for matrix math among points and vectors
-	all points and vectors are 4D, ? the only point in the air is the tello
-	a point on the ground can have a yaw angle, z is always 0
-
-9. save video
-	x all memory saving in Hippocampus, none in Drone
-	saveTrain on-demand, in Sim
-	snap Frame to bench on-demand, in Sim
-	x keep nth option, superior to true/false
-	x filename: folder by day, folder by mission, frame number, jpgs only
-	mission clock, elapsed time between frames
-	file-modified timestamp, does it match mission clock?
-	x save flipped image, no resizing
-	when resizing is stopped, recalc agl factor, change hyperbola k
-	x change all saved frames
-	rerun sim all test cases, rewrite training and mission logs
+	print(mapp)
+	print(*objs, sep='\n')
 	
-
-10. fix rc compose to use body coordinates instead of ground coordinates
-
-11. photo angle correction
-
-12. write Prefrontal
-
-class Prefrontal:
-	def getCourseVector()
-	two instances, one for drone, one for skate	
-	queue of maneuvers
-	default hover method between requests
-	maneuvers:
-		hover
-		perimeter
-		calibrate
-		home, proceed to
-		pad, proceed to
-		lower until pad no longer visible
-		land
-	if flight-time exceeded
-		which brain part does this?
-		same as battery check
-		maybe build the main loop into a method somewhere
-
-Brain parts
-	Hippocampus
-		spatial orientation and cartography
-		enabled by memory: remembers where you have been by building a map
-	Prefrontal
-		navigation
-		plans a route forward
-		based on the map provided by the Hippocampus
-
-The final vector passed to RC, is composed of two vectors:
-	hippocampus: drift correction
-	prefrontal: course correction	
-
-This article compares Hippocampus and Frontal Cortex.
-https://www.sciencenewsforstudents.org/article/two-brain-areas-team-make-mental-maps 
-
-'''

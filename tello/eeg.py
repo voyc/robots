@@ -3,7 +3,7 @@ import cv2 as cv
 import numpy as np
 import universal as uni
 from sk8math import *
-import hippo2
+import hippocampus as hc
 import visualcortex as vc
 import frontalcortex as fc
 import neck as nek
@@ -36,7 +36,7 @@ class Eeg:
 		self.clsSpot = 3
 		self.clsdebug = self.clsCone
 
-	def one(self):
+	def scan(self):
 		img, debugImages = self.visualcortex.probeDebugImages()
 		baseMap, frameMap = self.hippocampus.probeMaps()
 		posts = self.hippocampus.probePostData()
@@ -45,6 +45,7 @@ class Eeg:
 		ui = self.drawUI(img, frameMap, baseMap, debugImages)
 		self.showUI(ui)
 		self.readKillSwitch()
+		#self.waitForUser()
 
 	def showUI(self,ui):
 		cv.imshow('Image Processing', ui)
@@ -410,51 +411,36 @@ class Eeg:
 if __name__ == '__main__':
 	# wakeup, connect circuits
 	visualcortex = vc.VisualCortex()
-	hippocampus = hippo2.Hippocampus()
+	hippocampus = hc.Hippocampus()
 	hippocampus.start()
 	frontalcortex = fc.FrontalCortex()
 	neck = nek.Neck()
 	eeg = Eeg(visualcortex=visualcortex, hippocampus=hippocampus, frontalcortex=frontalcortex, neck=neck)
 
-	# start frame processing circuit
+	# start sensory-motor circuit
 
 	# eyes receive frame from camera socket
+
 	fname = '/home/john/sk8/bench/testcase/frame/6.jpg'
 	frame = cv.imread( fname, cv.IMREAD_UNCHANGED)
 	if frame is None:
 		logging.error(f'file not found: {fname}')
 		quit()
 
-	# visualcortex receive frame, write object list
+	# frame sent to visual cortex for edge detection
+
 	objs = visualcortex.detectObjects(frame)
 	print(*objs, sep='\n')
 
-	# ears read telemetry string, write to cerebrum
+	# ears (cerebrum) receive telemetry data from sensors 
 	
-	# cerebrum unpacks telemetry string to dict, writes telemetry data
-	
-	# hippocampus reads frame, reads telemetry, builds maps, 
-	# saves memory, writes basemap with current location and orientation
+	# frame and telemetry data are sent to hippocampus for spatial orientation
 	mapp = hippocampus.buildMap(objs)	
-	#hippocampus.processFrame(objs,1,None)
 	hippocampus.stop()
 	print(mapp)
 	print(*objs, sep='\n')  # objects list has been scrubbed
 
-	# orientation with previous map
-	# both should have 1 pad, incl one spot
-	# make vector between current and previous, this represents current location of tello on basemap
-	# basemap is at a specific scale (agl)
-	# current location of tello is at a different scale (agl)
+	# test display of a single frame
+	eeg.scan()
+	# for more detailed testing of a stream of frames, see sim.py
 
-	# frontal cortex reads basemap, plots desired location, writes vector		
-	# make vector between current location and desired location
-
-	# neck reads vector, composes rc cmd, writes to cmd socket
-
-	# eeg reads debug imgs from visualcortex,
-	# reads stats posted by hippocampus	
-	# writes display to screen
-	# waits for keypress
-	# sends command to sim loop, or fly loop
-	eeg.one()
