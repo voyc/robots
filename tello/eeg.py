@@ -1,6 +1,8 @@
 ''' eeg.py - class Eeg - probe into internals for human observer '''
 import cv2 as cv
 import numpy as np
+import colorsys
+import logging
 import universal as uni
 from sk8math import *
 import hippocampus as hc
@@ -16,6 +18,14 @@ def drawPolygon(img, ptarray, factor=1, color=(255,0,0), linewidth=1):
 		cv.line(img, tuple(a[i]), tuple(a[j]), color, linewidth)
 
 class Eeg:
+	stack_scale     = 0.5
+	post_fontscale  = 1.2
+	post_lineheight = 35
+	post_margin     = 7
+	dialog_width    = 480
+	dialog_height   = 480
+	legit_keypress  = ['n','p','r','s','q']
+
 	def __init__(self, visualcortex=None, hippocampus=None, frontalcortex=None, neck=None):
 		self.visualcortex = visualcortex
 		self.hippocampus = hippocampus
@@ -26,200 +36,119 @@ class Eeg:
 		self.cone_radius = 40    # cone diameter is 8 cm
 		self.debugPad = True 
 		self.pad_radius = 70     # pad is 14 cm square
-		self.posts = {}
 
-		# object classification codes
-		self.clsNone = -1
-		self.clsCone = 0
-		self.clsPadl = 1
-		self.clsPadr = 2
-		self.clsSpot = 3
-		self.clsdebug = self.clsCone
+		self.clsname = [ 'cone','padl','padr','spot' ]
+		self.barnames = ( 'cls',  'hue_min', 'hue_max', 'sat_min', 'sat_max', 'val_min', 'val_max', 'canny_lo', 'canny_hi')
+		self.barmax           = ( 18, 360,360, 100,100, 100,100, 255,255 )
+
+		self.trackbar_changed = False
 
 	def scan(self):
-		img, debugImages = self.visualcortex.probeDebugImages()
+		print('scan')
+		self.detect = self.visualcortex.probeEdgeDetection()
 		baseMap, frameMap = self.hippocampus.probeMaps()
 		posts = self.hippocampus.probePostData()
 		vector = self.frontalcortex.probeVector()
 		rccmd = self.neck.probeRcCmd()
-		ui = self.drawUI(img, frameMap, baseMap, debugImages)
-		self.showUI(ui)
-		#self.readKillSwitch()
-		#self.waitForUser()
 
-	def showUI(self,ui):
-		cv.imshow('Image Processing', ui)
+		stack = self.drawUI(self.detect.img, frameMap, baseMap, self.detect.images, posts)
 
-	def readKillSwitch(self):
-		cv.waitKey(0)
+		cv.imshow('Image Processing', stack)  # open the image processing window
 
-	#	# settings
-	#	self.debugPad = True 
+		self.openSettings()  # open the threshholds trackbar dialog
 
-	#	self.dialog_width = 480
-	#	self.dialog_height = 480
+		k = self.readKeyboard()
+		return k
 
-	#	self.frameWidth  = 960
-	#	self.frameHeight = 720
-	#	self.frameDepth  = 3
-
-	#	self.datalineheight = 22
-	#	self.datalinemargin = 5
-
-	#	self.useNeuralNet = False
-
-	#	self.frame_nth = 1
-	#	self.post_nth = 0
-
-	#	self.spot_radius = 8     # spot is 16 mm diameter
-	#	self.spot_offset = 46    # spot center is 46 mm forward of pad center
-	#	self.cone_radius = 40    # cone diameter is 8 cm
-	#	self.cone_radius_range = 0.40
-	#	self.arena_padding = 80  # turning radius. keep sk8 in the arena.
-	#	self.arena_margin = 40
-	#	
-	#	self.obj_settings = [ # class code      hue      sat      val     canny
-	#	              ( self.clsCone,   0,  8,  42,100,  35,100,  82,127 ),
-	#	              ( self.clsPadl,  52,106,  42,100,  41, 96,  82,127 ),
-	#	              ( self.clsPadr, 258,335,  24, 76,  30, 85,  82,127 ),
-	#	              ( self.clsSpot, 283,360,  46,100,  40,100,  82,127 )
-	#	]
-	#	self.magenta_settings = ( 10, 270,330,  50,100,  50,100,  82,127 ) # bright color swatch
-	#	self.navy_settings    = ( 11, 181,352,   3, 58,   0, 33,  82,127 ) # tape, dark
-	#	self.pumpkin_settings = ( 12,   3, 36,  80,100,  55, 86,  82,127 ) # tape, bright
-	#	self.yellow_settings  = ( 13,  52, 76,  45, 93,  56, 82,  82,127 ) # tape, bright
-	#	self.purple_settings  = ( 14, 244,360,  32, 52,  35, 82,  82,127 ) # tape, medium dark
-	#	self.coral_settings   = ( 15, 321,360,  54,100,  48, 81,  82,127 ) # tape, bright but like cone
-	#	self.ocean_settings   = ( 16, 184,260,  27, 69,  24, 50,  82,127 ) # tape, dark
-	#	self.forest_settings  = ( 17,  60,181,  14,100,   2, 32,  82,127 ) # tape, dark
-	#	self.barmax           = ( 18, 360,360, 100,100, 100,100, 255,255 )
-	#	self.barnames = ( 'cls',  'hue_min', 'hue_max', 'sat_min', 'sat_max', 'val_min', 'val_max', 'canny_lo', 'canny_hi')
-	#	self.clsname = [ 'cone','padl','padr','spot' ]
-
-	#	# variables
-	#	self.framenum = 0        # tello    nexus     pixel->prepd
-	#	self.frameMap = False
-	#	self.baseMap = False
-	#	self.ovec = False  # orienting vector
-	#	self.imgPrep = False
-	#	self.posts = {}
-	#	self.debugImages = []
-	#	self.timesave = time.time()
-	#
-	#	# aircraft altitude is measured in multiple ways
-	#	#    agl - above ground level
-	#	#    msl - mean sea level, based on 19-year averages
-	#	#    barometric pressure, varies depending on the weather
-
-	#	# baro reported by the tello is assumed to be MSL in meters to two decimal places
-	#	#    a typical value before flying is 322.32
-	#	#    the elevation of Chiang Mai is 310 meters
-
-	#	# before takeoff, the camera is 20mm above the pad
-
-	#	# all of our internal calculations are in mm
-
-	#	self.pxlpermm = 0 # computed by the size of the pad, in pixels vs mm
-	#	# the pxlpermm value implies an agl
-
-	#def reopenUI(self, cls):
-	#	# read values from trackbars and print to log
-	#	#settings = self.readSettings()
-	#	#print(settings)
-
-	#	# close the debug dialog window
-	#	self.closeDebugDialog()
-
-	#	# set new debugging class code
-	#	self.clsdebug = cls
-
-	#	# open a new debug dialog window
-	#	self.openSettings()
-
-	def isDebugging(self):
-		return self.clsdebug > self.clsNone
-
-	def openUI(self):
-		if self.ui and self.isDebugging():
-			self.openSettings()
-
-	def closeDebugDialog(self):
-		if self.ui and self.isDebugging():
-			name = self.clsname[self.clsdebug]
-			cv.destroyWindow(name)
-	
-	def closeUI(self):
-		cv.destroyAllWindows()
-
-	def drawPosts(self,imgPost):
-		linenum = 1
-		ssave = ''
-		for k in self.posts.keys():
-			v = self.posts[k]
-			s = f'{k}={v}'
-			pt = (self.datalinemargin, self.datalineheight * linenum)
-			cv.putText(imgPost, s, pt, cv.FONT_HERSHEY_SIMPLEX,.7,(0,0,0), 1)
-			linenum += 1
-			ssave += s + ';'
-	
 	def openSettings(self):
+		print('openSettings')
 		# callback on track movement
 		def on_trackbar(val):
-			#jsettings = self.readSettings()
-			#self.obj_settings[self.clsdebug] = settings
+			threshholds = self.readSettings()
+			self.detect.threshholds[self.detect.clsfocus] = threshholds
+			self.trackbar_changed = True
 			return
 
 		# open the dialog
-		if self.ui and self.isDebugging():
-			name = self.clsname[self.clsdebug]
-			cv.namedWindow(name) # default WINDOW_AUTOSIZE, manual resizeable
-			cv.resizeWindow( name,self.dialog_width, self.dialog_height)   # ignored with WINDOW_AUTOSIZE
+		name = self.clsname[self.detect.clsfocus]
+		cv.namedWindow(name) # default WINDOW_AUTOSIZE, manual resizeable
+		cv.resizeWindow( name,self.dialog_width, self.dialog_height)   # ignored with WINDOW_AUTOSIZE
 
-			# create the trackbars
-			settings = self.obj_settings[self.clsdebug]
-			#for setting in settings:
-			#	if setting != 'cls':
-			#		cv.createTrackbar(setting, name, settings[setting], self.barmax[setting], on_trackbar)
-			for n in range(1,9):
-				barname = self.barnames[n]
-				value = settings[n]
-				maxvalue = self.barmax[n]
-				cv.createTrackbar(barname, name, value, maxvalue, on_trackbar)
+		# create the trackbars
+		threshholds = self.detect.threshholds[self.detect.clsfocus]
+		for n in range(1,9):
+			barname = self.barnames[n]
+			value = threshholds[n]
+			maxvalue = self.barmax[n]
+			cv.createTrackbar(barname, name, value, maxvalue, on_trackbar)
+
+		# create and show the color image for visualizing threshhold hsv values
+		imgColor = self.createColorImage(threshholds)
+		windowname = self.clsname[self.detect.clsfocus]
+		cv.imshow(windowname, imgColor)
+	
+	def readKeyboard(self):
+		print('readKeyboard')
+		while True:
+			if self.trackbar_changed:
+				self.trackbar_changed = False
+				ch = 'r'
+				break
+			k = cv.waitKey(1)  # in milliseconds, must be integer
+			ch = chr(k & 0xFF)  # see ord() and chr()
+			if ch >= '0' and ch <= '3':
+				self.switchClsFocus(int(ch))
+				ch = 'r'
+				break;
+			elif ch in self.legit_keypress:
+				break
+		return ch
+
+	def switchClsFocus(self, newfocus):
+		print('switchClsFocus')
+		name = self.clsname[self.detect.clsfocus]
+		cv.destroyWindow(name)
+		self.detect.clsfocus = newfocus
+		
+	def drawPosts(self,imgPost,posts):
+		linenum = 1
+		ssave = ''
+		for k in posts.keys():
+			v = posts[k]
+			s = f'{k}={v}'
+			pt = (Eeg.post_margin, Eeg.post_lineheight * linenum)
+			cv.putText(imgPost, s, pt, cv.FONT_HERSHEY_SIMPLEX,Eeg.post_fontscale,(0,0,0), 1)
+			linenum += 1
+			ssave += s + ';'
 	
 	def readSettings(self):
-		# read the settings from the trackbars
-		settings = self.obj_settings[self.clsdebug]
-		windowname = self.clsname[self.clsdebug]
-		#for setting in settings:
+		print('readSettings')
+		# read the threshholds from the trackbars
+		threshholds = self.detect.threshholds[self.detect.clsfocus]
+		windowname = self.clsname[self.detect.clsfocus]
+		#for setting in threshholds:
 		#	if setting != 'cls':
-		#		settings[setting] = cv.getTrackbarPos(setting, name)
-		newset = [settings[0]]
+		#		threshholds[setting] = cv.getTrackbarPos(setting, name)
+		newset = [threshholds[0]]
 		for n in range(1,9):
 			barname = self.barnames[n]
 			value = cv.getTrackbarPos(barname, windowname)
 			newset.append(value)
-		settings = tuple(newset)
+		threshholds = tuple(newset)
 
 		# create the color image for visualizing threshhold hsv values
-		imgColor = self.createColorImage(settings)
+		imgColor = self.createColorImage(threshholds)
 
 		# show the color image within the dialog window
 		cv.imshow(windowname, imgColor)
-		self.obj_settings[self.clsdebug] = settings
-		return settings
+		self.detect.threshholds[self.detect.clsfocus] = threshholds
+		return threshholds
 
-	def createColorImage(self, settings):
-		# hsv, see https://alloyui.com/examples/color-picker/hsv.html
+	def createColorImage(self, threshholds):
+		print('createColorImage')
 
-		# h = 6 primary colors, each with a 60 degree range, 6*60=360
-		#     primary     red  yellow  green  cyan  blue  magenta  red
-		#     hue degrees   0      60    120   180   240      300  359  360
-		#     hue inRange   0      30     60    90   120      150  179  180
-		# s = saturation as pct,        0=white, 100=pure color, at zero => gray scale
-		# v = value "intensity" as pct, 0=black, 100=pure color, takes precedence over sat
-
-		# trackbar settings are 360,100,100; convert to 0 to 1
-		a = np.array(settings) / np.array(self.barmax)
+		# trackbar threshholds are 360,100,100; convert to 0 to 1
+		a = np.array(threshholds) / np.array(self.barmax)
 		cls,hl,hu,sl,su,vl,vu,_,_ = a
 
 		# colorsys values are all 0.0 to 1.0
@@ -281,8 +210,9 @@ class Eeg:
 		return ver
 	
 	def drawMap(self, bmap, img):
+		print('drawMap')
 		pad = bmap.pad if bmap.pad else False
-		spot = bmap.pad.spot if bmap.pad.spot else False
+		spot = bmap.spot if bmap.spot else False
 		cones = bmap.cones if bmap.cones else False
 		arena = bmap.arena if bmap.arena else False
 
@@ -359,7 +289,6 @@ class Eeg:
 				
 				# draw drone body
 				#cv.rectangle(img, (l,t), (r,b), (127,0,0), 1)
-
 		if spot:
 			color = (255,255,255)
 			r = round(spot.bbox.radius * bmap.pxlpermm)
@@ -367,7 +296,8 @@ class Eeg:
 			y = round(spot.bbox.center.y * bmap.pxlpermm)
 			cv.circle(img,(x,y),r,color,1)
 
-	def drawUI(self, img, frameMap, baseMap=False, debugImages=None):
+	def drawUI(self, img, frameMap, baseMap=False, debugImages=None, posts=None):
+		print('drawUI')
 		# create empty image for the map
 		self.frameHeight,self.frameWidth,self.frameDepth = img.shape
 		imgMap = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
@@ -395,17 +325,16 @@ class Eeg:
 		# draw internal data calculations posted by programmer
 		imgPost = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
 		imgPost.fill(255)
-		self.drawPosts(imgPost)
+		self.drawPosts(imgPost,posts)
 	
 		# stack all images into one
 		#imgTuple = ([imgMap,imgPost,imgFinal],)
 		imgTuple = ([imgPost,imgFinal],)
-		if self.isDebugging():
-			imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = debugImages
-			imgHsv= cv.cvtColor( imgHsv, cv.COLOR_HSV2BGR)
-			imgTuple = ([imgPost,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgFinal])
-			imgTuple = ([imgMasked,imgMask,imgBlur],[imgCanny,imgDilate,imgFinal])
-		stack = self.stackImages(0.5,imgTuple)
+		imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = debugImages
+		imgHsv= cv.cvtColor( imgHsv, cv.COLOR_HSV2BGR)
+		imgTuple = ([imgPost,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgFinal])
+		imgTuple = ([imgPost,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgMap,imgFinal])
+		stack = self.stackImages(Eeg.stack_scale,imgTuple)
 		return stack
 
 if __name__ == '__main__':
@@ -444,3 +373,14 @@ if __name__ == '__main__':
 	eeg.scan()
 	# for more detailed testing of a stream of frames, see sim.py
 
+'''
+hsv
+see https://alloyui.com/examples/color-picker/hsv.html
+
+h = 6 primary colors, each with a 60 degree range, 6*60=360
+    primary     red  yellow  green  cyan  blue  magenta  red
+    hue degrees   0      60    120   180   240      300  359  360
+    hue inRange   0      30     60    90   120      150  179  180
+s = saturation as pct,        0=white, 100=pure color, at zero => gray scale
+v = value "intensity" as pct, 0=black, 100=pure color, takes precedence over sat
+'''

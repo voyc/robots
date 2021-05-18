@@ -21,17 +21,20 @@ def wakeup():
 	hippocampus.start()
 	frontalcortex = fc.FrontalCortex()
 	neck = nek.Neck()
-	eeg = eg.Eeg(visualcortex=visualcortex, hippocampus=hippocampus, frontalcortex=frontalcortex, neck=neck)
 
-def action():
+	eeg = eg.Eeg(visualcortex=visualcortex, hippocampus=hippocampus, frontalcortex=frontalcortex, neck=neck)
+	#eeg.openUI()
+
+def act():
 	missiondata,framenum,lastframe,dirframe = openeyes()
 	while True:
 		frame = vision(missiondata,framenum,lastframe,dirframe)
 		if frame is None:
 			break
-		sensoryMotorCircuit(frame,framenum)
-		killed,framenum = checkKillSwitch(framenum,lastframe)
-		print(killed,framenum)
+		print('sensoryMotorCircuit')
+		keypress = sensoryMotorCircuit(frame,framenum)
+
+		killed,framenum = handleKeypress(keypress,framenum,lastframe)
 		if killed:
 			break
 
@@ -46,10 +49,11 @@ def sensoryMotorCircuit(frame,framenum):
 	# ears (cerebrum) receive telemetry data from sensors 
 	
 	# frame and telemetry data are sent to hippocampus for spatial orientation
-	mapp = hippocampus.buildMap(objs)	
+	hippocampus.buildMap(objs,framenum)	
 
 	# display
-	eeg.scan()
+	keypress = eeg.scan()
+	return keypress
 
 def openeyes():
 	# sim with frames only
@@ -84,7 +88,6 @@ def openeyes():
 	return missiondata,framenum,lastframe,dirframe
 
 def vision(missiondata,framenum,lastframe,dirframe):
-	print(f'in vision {framenum}')
 	# read one line from the mission log, optional
 	if missiondata:
 		sline = missiondata[framenum-1]	
@@ -97,33 +100,25 @@ def vision(missiondata,framenum,lastframe,dirframe):
 		logging.error(f'file not found: {fname}')
 	return frame
 
-def checkKillSwitch(framenum,lastframe):
+def handleKeypress(keypress,framenum,lastframe):
 	kill = False
-	k = cv.waitKey(0)  # in milliseconds, must be integer
-	if k & 0xFF == ord('n'):
-		if framenum < lastframe:
-			framenum += 1
-	elif k & 0xFF == ord('p'):
-		if framenum > 1:
-			framenum -= 1
-	elif k & 0xFF == ord('r'):
+	newframe = framenum
+	if keypress == 'n' and framenum < lastframe:
+		newframe += 1
+	elif keypress == 'p' and framenum > 1:
+		newframe -= 1
+	elif keypress == 'r':
 		pass
-	elif k & 0xFF == ord('s'):
+	elif keypress == 's':
 		self.saveTrain()
-	elif k & 0xFF == ord('0'):
-		hippocampus.reopenUI(0)
-	elif k & 0xFF == ord('1'):
-		hippocampus.reopenUI(1)
-	elif k & 0xFF == ord('2'):
-		hippocampus.reopenUI(2)
-	elif k & 0xFF == ord('3'):
-		hippocampus.reopenUI(3)
-	elif k & 0xFF == ord('q'):
+	elif keypress == 'q':
 		kill = True
-	return kill,framenum
+	elif keypress in ['0','1','2','3']:
+		visualcortex.switchFocus(int)
+	return kill,newframe
 
 if __name__ == '__main__':
 	wakeup()
-	action()
+	act()
 	sleep()
 

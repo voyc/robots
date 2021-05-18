@@ -1,6 +1,4 @@
-'''
-sk8math.py - math and geometry functions
-'''
+''' sk8math.py - math and geometry functions '''
 import numpy as np
 
 class Pt:
@@ -119,6 +117,13 @@ class Bbox:
 		self.center = Pt(self.l+round(self.w/2,6), self.t+round(self.h/2,6))
 		self.diameter = (self.w+self.h)/2
 		self.radius = self.diameter/2
+
+	def tomm(self,pxlpermm):
+		self.l /= pxlpermm
+		self.t /= pxlpermm
+		self.w /= pxlpermm
+		self.h /= pxlpermm
+		self.calc()
 
 	def intersects(self, box2):
 		if ((self.l > box2.l and self.l < box2.r) or (self.r > box2.l and self.r < box2.r)) \
