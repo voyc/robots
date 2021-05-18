@@ -31,9 +31,8 @@ def act():
 		frame = vision(missiondata,framenum,lastframe,dirframe)
 		if frame is None:
 			break
-		print('sensoryMotorCircuit')
-		keypress = sensoryMotorCircuit(frame,framenum)
 
+		keypress = sensoryMotorCircuit(frame,framenum)
 		killed,framenum = handleKeypress(keypress,framenum,lastframe)
 		if killed:
 			break

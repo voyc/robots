@@ -5,6 +5,7 @@ import colorsys
 import logging
 import universal as uni
 from sk8math import *
+from sk8map import *
 import hippocampus as hc
 import visualcortex as vc
 import frontalcortex as fc
@@ -18,6 +19,7 @@ def drawPolygon(img, ptarray, factor=1, color=(255,0,0), linewidth=1):
 		cv.line(img, tuple(a[i]), tuple(a[j]), color, linewidth)
 
 class Eeg:
+	# constants
 	stack_scale     = 0.5
 	post_fontscale  = 1.2
 	post_lineheight = 35
@@ -25,26 +27,22 @@ class Eeg:
 	dialog_width    = 480
 	dialog_height   = 480
 	legit_keypress  = ['n','p','r','s','q']
+	clsname         = [ 'cone','padl','padr','spot' ]
+	barnames        = ( 'cls',  'hue_min', 'hue_max', 'sat_min', 'sat_max', 'val_min', 'val_max', 'canny_lo', 'canny_hi')
+	barmax          = ( 18, 360,360, 100,100, 100,100, 255,255 )
+	draw_pad_halves = False
 
 	def __init__(self, visualcortex=None, hippocampus=None, frontalcortex=None, neck=None):
+		# probed objects
 		self.visualcortex = visualcortex
 		self.hippocampus = hippocampus
 		self.frontalcortex = frontalcortex
 		self.neck = neck
-		self.state = 'on' # off or on
 
-		self.cone_radius = 40    # cone diameter is 8 cm
-		self.debugPad = True 
-		self.pad_radius = 70     # pad is 14 cm square
-
-		self.clsname = [ 'cone','padl','padr','spot' ]
-		self.barnames = ( 'cls',  'hue_min', 'hue_max', 'sat_min', 'sat_max', 'val_min', 'val_max', 'canny_lo', 'canny_hi')
-		self.barmax           = ( 18, 360,360, 100,100, 100,100, 255,255 )
-
+		# variables
 		self.trackbar_changed = False
 
 	def scan(self):
-		print('scan')
 		self.detect = self.visualcortex.probeEdgeDetection()
 		baseMap, frameMap = self.hippocampus.probeMaps()
 		posts = self.hippocampus.probePostData()
@@ -52,7 +50,6 @@ class Eeg:
 		rccmd = self.neck.probeRcCmd()
 
 		stack = self.drawUI(self.detect.img, frameMap, baseMap, self.detect.images, posts)
-
 		cv.imshow('Image Processing', stack)  # open the image processing window
 
 		self.openSettings()  # open the threshholds trackbar dialog
@@ -61,7 +58,6 @@ class Eeg:
 		return k
 
 	def openSettings(self):
-		print('openSettings')
 		# callback on track movement
 		def on_trackbar(val):
 			threshholds = self.readSettings()
@@ -88,7 +84,6 @@ class Eeg:
 		cv.imshow(windowname, imgColor)
 	
 	def readKeyboard(self):
-		print('readKeyboard')
 		while True:
 			if self.trackbar_changed:
 				self.trackbar_changed = False
@@ -105,7 +100,6 @@ class Eeg:
 		return ch
 
 	def switchClsFocus(self, newfocus):
-		print('switchClsFocus')
 		name = self.clsname[self.detect.clsfocus]
 		cv.destroyWindow(name)
 		self.detect.clsfocus = newfocus
@@ -122,13 +116,9 @@ class Eeg:
 			ssave += s + ';'
 	
 	def readSettings(self):
-		print('readSettings')
 		# read the threshholds from the trackbars
 		threshholds = self.detect.threshholds[self.detect.clsfocus]
 		windowname = self.clsname[self.detect.clsfocus]
-		#for setting in threshholds:
-		#	if setting != 'cls':
-		#		threshholds[setting] = cv.getTrackbarPos(setting, name)
 		newset = [threshholds[0]]
 		for n in range(1,9):
 			barname = self.barnames[n]
@@ -145,7 +135,6 @@ class Eeg:
 		return threshholds
 
 	def createColorImage(self, threshholds):
-		print('createColorImage')
 
 		# trackbar threshholds are 360,100,100; convert to 0 to 1
 		a = np.array(threshholds) / np.array(self.barmax)
@@ -210,7 +199,6 @@ class Eeg:
 		return ver
 	
 	def drawMap(self, bmap, img):
-		print('drawMap')
 		pad = bmap.pad if bmap.pad else False
 		spot = bmap.spot if bmap.spot else False
 		cones = bmap.cones if bmap.cones else False
@@ -226,7 +214,7 @@ class Eeg:
 	
 		# draw cones
 		if cones:
-			r = int(round(self.cone_radius * bmap.pxlpermm))
+			r = int(round(Cone.radius * bmap.pxlpermm))
 			for cone in cones:
 				#x = int(round(arena.bbox.center.x + (obj.bbox.center.x * self.frameWidth)))
 				#y = int(round(arena.bbox.center.y + (obj.bbox.center.y * self.frameHeight)))
@@ -237,7 +225,7 @@ class Eeg:
 		# draw pad
 		if pad:
 			if pad.purpose == 'frame':
-				if self.debugPad: # draw the halves
+				if self.draw_pad_halves:
 					if pad.padl:
 						l = int(round(pad.padl.bbox.l * bmap.pxlpermm))
 						t = int(round(pad.padl.bbox.t * bmap.pxlpermm))
@@ -257,7 +245,7 @@ class Eeg:
 				
 				color = (0,0,0)
 				#  outer perimeter
-				r = round(self.pad_radius * bmap.pxlpermm)
+				r = round(Pad.mm_radius * bmap.pxlpermm)
 				x = round(pad.center.x * bmap.pxlpermm)
 				y = round(pad.center.y * bmap.pxlpermm)
 				cv.circle(img,(x,y),r,color,1)
@@ -269,7 +257,7 @@ class Eeg:
 
 			elif pad.purpose == 'home':
 				# draw props
-				r = round(self.pad_radius * bmap.pxlpermm)
+				r = round(Pad.mm_radius * bmap.pxlpermm)
 				x = round(pad.center.x * bmap.pxlpermm)
 				y = round(pad.center.y * bmap.pxlpermm)
 				color = (255,128,128)
@@ -297,7 +285,6 @@ class Eeg:
 			cv.circle(img,(x,y),r,color,1)
 
 	def drawUI(self, img, frameMap, baseMap=False, debugImages=None, posts=None):
-		print('drawUI')
 		# create empty image for the map
 		self.frameHeight,self.frameWidth,self.frameDepth = img.shape
 		imgMap = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
@@ -328,12 +315,12 @@ class Eeg:
 		self.drawPosts(imgPost,posts)
 	
 		# stack all images into one
-		#imgTuple = ([imgMap,imgPost,imgFinal],)
-		imgTuple = ([imgPost,imgFinal],)
 		imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = debugImages
 		imgHsv= cv.cvtColor( imgHsv, cv.COLOR_HSV2BGR)
+		imgTuple = ([imgPost,imgFinal],)
+		imgTuple = ([imgMap,imgPost,imgFinal],)
 		imgTuple = ([imgPost,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgFinal])
-		imgTuple = ([imgPost,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgMap,imgFinal])
+		imgTuple = ([imgMasked,imgBlur,imgCanny],[imgPost,imgMap,imgFinal])
 		stack = self.stackImages(Eeg.stack_scale,imgTuple)
 		return stack
 
@@ -364,7 +351,7 @@ if __name__ == '__main__':
 	# ears (cerebrum) receive telemetry data from sensors 
 	
 	# frame and telemetry data are sent to hippocampus for spatial orientation
-	mapp = hippocampus.buildMap(objs)	
+	mapp = hippocampus.buildMap(objs,1)	
 	hippocampus.stop()
 	print(mapp)
 	print(*objs, sep='\n')  # objects list has been scrubbed

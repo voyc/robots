@@ -93,6 +93,9 @@ class Cone:
 		self.center = center
 
 class Arena:
+	padding = 80
+	margin = 40
+
 	def __init__(self,bbox):
 		self.bbox = bbox
 

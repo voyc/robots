@@ -2,14 +2,7 @@
 
 import cv2 as cv
 import numpy as np
-#from datetime import datetime
-#import time
-#import logging
-#import os
-#import copy
-#import colorsys
-#import re
-#import universal
+import universal as uni
 import sk8math
 
 class Edge:
@@ -21,25 +14,17 @@ class Edge:
 		return f'{self.cls}: {self.bbox}'
 
 class Detect:
-	# object classification codes
-	clsNone = -1
-	clsCone = 0
-	clsPadl = 1
-	clsPadr = 2
-	clsSpot = 3
-
-	# obj_settings -> edge_threshholds
 	threshhold_defaults = [ 
-		# class      hue      sat      val     canny
-		( clsCone,   0,  8,  42,100,  35,100,  82,127 ),
-		( clsPadl,  52,106,  42,100,  41, 96,  82,127 ),
-		( clsPadr, 258,335,  24, 76,  30, 85,  82,127 ),
-		( clsSpot, 283,360,  46,100,  40,100,  82,127 )
+		# class          hue      sat      val     canny
+		( uni.clsCone,   0,  8,  42,100,  35,100,  82,127 ),
+		( uni.clsPadl,  52,106,  42,100,  41, 96,  82,127 ),
+		( uni.clsPadr, 258,335,  24, 76,  30, 85,  82,127 ),
+		( uni.clsSpot, 283,360,  46,100,  40,100,  82,127 )
 	]
 
 	def __init__(self):
 		self.img = False
-		self.clsfocus = self.clsSpot
+		self.clsfocus = uni.clsSpot
 		self.threshholds = self.threshhold_defaults 
 		self.images = []
 

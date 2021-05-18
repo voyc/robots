@@ -6,6 +6,12 @@ import datetime
 import os 
 import logging
 
+clsNone = -1
+clsCone = 0
+clsPadl = 1
+clsPadr = 2
+clsSpot = 3
+
 dirhome = '/home/john/sk8'
 sday   = f'{datetime.datetime.now().strftime("%Y%m%d")}'
 stime  = f'{datetime.datetime.now().strftime("%H%M%S")}'

@@ -13,93 +13,23 @@ from sk8math import *
 import sk8map
 
 class Hippocampus:
-	def __init__(self, ui=False, save_mission=False):
-		self.ui = ui
+	def __init__(self, save_mission=False):
 		self.save_mission = save_mission
-
-		# object classification codes
-		self.clsNone = -1
-		self.clsCone = 0
-		self.clsPadl = 1
-		self.clsPadr = 2
-		self.clsSpot = 3
-
-		# settings
-		self.clsdebug = self.clsCone
-		self.debugPad = True 
-
-		self.dialog_width = 480
-		self.dialog_height = 480
-
 		self.frameWidth  = 960
 		self.frameHeight = 720
-		self.frameDepth  = 3
 
-		self.datalineheight = 22
-		self.datalinemargin = 5
-
-		self.useNeuralNet = False
-
-		self.frame_nth = 1
-		self.post_nth = 0
-
-		self.spot_radius = 8     # spot is 16 mm diameter
-		self.spot_offset = 46    # spot center is 46 mm forward of pad center
-		self.pad_radius = 70     # pad is 14 cm square
-		self.cone_radius = 40    # cone diameter is 8 cm
-		self.cone_radius_range = 0.40
-		self.arena_padding = 80  # turning radius. keep sk8 in the arena.
-		self.arena_margin = 40
-		
-		self.obj_settings = [ # class code      hue      sat      val     canny
-		              ( self.clsCone,   0,  8,  42,100,  35,100,  82,127 ),
-		              ( self.clsPadl,  52,106,  42,100,  41, 96,  82,127 ),
-		              ( self.clsPadr, 258,335,  24, 76,  30, 85,  82,127 ),
-		              ( self.clsSpot, 283,360,  46,100,  40,100,  82,127 )
-		]
-		self.magenta_settings = ( 10, 270,330,  50,100,  50,100,  82,127 ) # bright color swatch
-		self.navy_settings    = ( 11, 181,352,   3, 58,   0, 33,  82,127 ) # tape, dark
-		self.pumpkin_settings = ( 12,   3, 36,  80,100,  55, 86,  82,127 ) # tape, bright
-		self.yellow_settings  = ( 13,  52, 76,  45, 93,  56, 82,  82,127 ) # tape, bright
-		self.purple_settings  = ( 14, 244,360,  32, 52,  35, 82,  82,127 ) # tape, medium dark
-		self.coral_settings   = ( 15, 321,360,  54,100,  48, 81,  82,127 ) # tape, bright but like cone
-		self.ocean_settings   = ( 16, 184,260,  27, 69,  24, 50,  82,127 ) # tape, dark
-		self.forest_settings  = ( 17,  60,181,  14,100,   2, 32,  82,127 ) # tape, dark
-		self.barmax           = ( 18, 360,360, 100,100, 100,100, 255,255 )
-		self.barnames = ( 'cls',  'hue_min', 'hue_max', 'sat_min', 'sat_max', 'val_min', 'val_max', 'canny_lo', 'canny_hi')
-		self.clsname = [ 'cone','padl','padr','spot' ]
-
-		# variables
-		self.framenum = 0        # tello    nexus     pixel->prepd
+#		self.framenum = 0
 		self.frameMap = False
 		self.baseMap = False
-		self.ovec = False  # orienting vector
-		self.imgPrep = False
+#		self.ovec = False  # orienting vector
 		self.posts = {}
-		self.debugImages = []
 		self.timesave = time.time()
-	
-		# aircraft altitude is measured in multiple ways
-		#    agl - above ground level
-		#    msl - mean sea level, based on 19-year averages
-		#    barometric pressure, varies depending on the weather
-
-		# baro reported by the tello is assumed to be MSL in meters to two decimal places
-		#    a typical value before flying is 322.32
-		#    the elevation of Chiang Mai is 310 meters
-
-		# before takeoff, the camera is 20mm above the pad
-
-		# all of our internal calculations are in mm
-
-		self.pxlpermm = 0 # computed by the size of the pad, in pixels vs mm
-		# the pxlpermm value implies an agl
 
 	def findSpot(self, objects):
 		# make a separate list of spots
 		spota = []
 		for obj in objects:
-			if obj.cls == self.clsSpot:
+			if obj.cls == uni.clsSpot:
 				spota.append(obj)
 		self.post('num spot', len(spota))
 		if len(spota) <= 0:
@@ -130,7 +60,7 @@ class Hippocampus:
 		return spot
 
 	def findHalf(self, objects, cls):
-		clsname = 'left' if cls == self.clsPadl else 'right' # for posts
+		clsname = 'left' if cls == uni.clsPadl else 'right' # for posts
 
 		# make separate lists of halfs
 		a = []
@@ -182,8 +112,8 @@ class Hippocampus:
 
 	def findPad(self, objects):
 		# find the two halfs
-		padl, padlmax = self.findHalf(objects, self.clsPadl)
-		padr, padrmax = self.findHalf(objects, self.clsPadr)
+		padl, padlmax = self.findHalf(objects, uni.clsPadl)
+		padr, padrmax = self.findHalf(objects, uni.clsPadr)
 
 		# the two halfs are expected to intersect (unless perfectly straight up)
 		if padl and padr and not padl.bbox.intersects( padr.bbox):
@@ -222,13 +152,13 @@ class Hippocampus:
 		# make a separate list of cones
 		conea = []
 		for obj in objects:
-			if obj.cls == self.clsCone:
+			if obj.cls == uni.clsCone:
 				conea.append(obj)
 		self.post('cones found', len(conea))
 
 		# choose only correctly sized objects
-		radmin = self.cone_radius - (self.cone_radius_range*self.cone_radius)
-		radmax = self.cone_radius + (self.cone_radius_range*self.cone_radius)
+		radmin = sk8map.Cone.radius - (sk8map.Cone.radius_range*sk8map.Cone.radius)
+		radmax = sk8map.Cone.radius + (sk8map.Cone.radius_range*sk8map.Cone.radius)
 		cones = []
 		for obj in conea:
 			# from pct to pxl
@@ -243,12 +173,12 @@ class Hippocampus:
 			if cone.bbox.radius > radmin and cone.bbox.radius < radmax:
 				cones.append(cone)
 			else:
-				obj.cls = self.clsNone
+				obj.cls = uni.clsNone
 		self.post('cones accepted', len(cones))
 
 		# go back and scrub objects list
 		for obj in conea:
-			if obj.cls == self.clsNone:
+			if obj.cls == uni.clsNone:
 				objects.remove(obj)
 
 		#if len(cones) <= 0:
@@ -289,7 +219,7 @@ class Hippocampus:
 				b = y
 
 		bbox = Bbox(l,t,r-l,b-t)
-		bbox.expand(self.arena_padding)
+		bbox.expand(sk8map.Arena.padding)
 		arena  = sk8map.Arena(bbox)
 		return arena
 
@@ -304,20 +234,12 @@ class Hippocampus:
 
 	def start(self):
 		logging.info('hippocampus starting')
-		if self.ui:
-#			self.openUI()
-			logging.info('UI opened')
 		if self.save_mission:
 			self.dirframe = uni.makedir('frame')
 			self.dirtrain = uni.makedir('train')
 
 		#self.visualcortex = visualcortex.VisualCortex()
  
-	def stop(self):
-		logging.info('hippocampus stopping')
-		if self.ui:
-			self.closeUI()
-
 	def buildMap(self,objects,framenum):
 		self.post('framenum',framenum)
 		spot = self.findSpot(objects)
@@ -344,112 +266,112 @@ class Hippocampus:
 		self.frameMap = fmap
 		return fmap
 	
-	def processFrame(self, img, framenum, objs, teldata=None):
-		self.framenum += 1
-		ovec = False
-		rccmd = 'rc 0 0 0 0'
-
-		if not uni.soTrue(self.framenum, self.frame_nth):
-			return ovec,rccmd
-
-		self.post('input frame num', framenum)
-		self.post('frame num', self.framenum)
-
-		self.imgPrep = img # save for use by drawUI
-
-		# get settings from trackbars
-		if self.ui:
-			self.readSettings()
-			pass
-
-		# detect objects - unit: percent of frame
-		#self.objects = self.detectObjects(img)
-		self.objects = self.visualcortex.detectObjects(img)
-		self.post('objects found',len(self.objects))
-
-		# build map
-		self.frameMap = self.buildMap(self.objects)
-		if not self.frameMap:
-			return ovec,rccmd
-
-		self.post('pxlpermm',self.pxlpermm)
-		if teldata:
-			aglin = teldata['agl']
-			self.post('agl input', aglin)
-
-		# calc agl
-		self.agl = aglFromPxpmm(self.pxlpermm)
-		self.post('agl', self.agl)
-
-		# first time, save base  ??? periodically make new base
-		#if True: #not self.baseMap:
-		if self.pxlpermm > 0.0:
-				
-			# why is pad center below and to the right of the two halves
-			#      only when there is no spot?
-			
-			# if padr is fragmented in the shadow of padl, try combining all instead of taking the biggest
-			#     goal is same area between padr and padl
-			#     padl and padr should be adjacent, overlapping, and have the same area
-
-			# create function for pxlpermm to agl
-			#     be cautious of the 640px across, because of the angle of the lens
-			# Take triangulation into account when trying to size objects on the ground
-			#     Note the difference between objects directly under the aircraft,
-			#     and objects out on the perimeter.
-			pxlpermm_at_20_mm    = 24.61  # shows 26mm across, 640/26, parked
-			pxlpermm_at_20_mm2   =  4.60  # currently calculated
-			pxlpermm_pad_visible =  2.19  # agl ?
-			pxlpermm_at_1_meter  =  0.70  # mm across?
-			pxlpermm_at_2_meter  =  0.30  # mm across?
-
-			self.baseMap = copy.deepcopy(self.frameMap)
-			self.baseMap.pad.purpose = 'home'
-			
-			# for hover on pad
-			# here, baseMap means desired position: dead center, straight up, 1 meter agl
-			x = (self.frameWidth/2) / self.pxlpermm
-			y = (self.frameHeight/2) / self.pxlpermm
-			self.baseMap.pad.center = Pt(x,y)
-			self.baseMap.pad.angle = 0 
-			self.baseMap.pad.radius = (self.frameHeight/2) / pxlpermm_at_1_meter
-
-			# orient frame to map
-			angle,radius,_ = triangulateTwoPoints( self.baseMap.pad.center, self.frameMap.pad.center)
-			# use this to navigate angle and radius, to counteract drift
-			# assume stable agl and no yaw, so angle and radius refers to drift
-			# in this case, drawing basemap over framemap results only in offset, not rotation or scale
-			
-			# compare frameMap to baseMap, current position to desired position
-			diffx,diffy = np.array(self.frameMap.pad.center.tuple()) - np.array(self.baseMap.pad.center.tuple())
-
-			#diffagl agl in mm, calculated as function of pxlpermm, also proportional to home radius
-
-			#diffangle, angle, comparison of base to home
-
-			ovec = (diffx, diffy, 0, 0)
-
-		# compare pad angle and radius between basemap and framemap
-		# use this to reorient frame to map
-		# rotate basemap and draw on top of frame image
-		# rotate framemap and frameimg and draw underneath basemap
-
-		if ovec:
-			rccmd = uni.composeRcCommand(ovec)
-			self.post('nav cmd', rccmd)
-
-		# save mission parameters - frame, train, mission - done in mode fly, not sim
-		if self.save_mission:
-			fname = f"{uni.makedir('frame')}/{framenum}.jpg"
-			cv.imwrite(fname,self.imgPrep)
-			self.saveTrain(img, self.objects)
-			self.logMission('sdata', rccmd)
-
-		# display through portal to human observer
-		if self.ui:
-			portal.drawUI()
-
-		return ovec,rccmd
+#	def processFrame(self, img, framenum, objs, teldata=None):
+#		self.framenum += 1
+#		ovec = False
+#		rccmd = 'rc 0 0 0 0'
+#
+#		if not uni.soTrue(self.framenum, self.frame_nth):
+#			return ovec,rccmd
+#
+#		self.post('input frame num', framenum)
+#		self.post('frame num', self.framenum)
+#
+#		self.imgPrep = img # save for use by drawUI
+#
+#		# get settings from trackbars
+#		if self.ui:
+#			self.readSettings()
+#			pass
+#
+#		# detect objects - unit: percent of frame
+#		#self.objects = self.detectObjects(img)
+#		self.objects = self.visualcortex.detectObjects(img)
+#		self.post('objects found',len(self.objects))
+#
+#		# build map
+#		self.frameMap = self.buildMap(self.objects)
+#		if not self.frameMap:
+#			return ovec,rccmd
+#
+#		self.post('pxlpermm',self.pxlpermm)
+#		if teldata:
+#			aglin = teldata['agl']
+#			self.post('agl input', aglin)
+#
+#		# calc agl
+#		self.agl = aglFromPxpmm(self.pxlpermm)
+#		self.post('agl', self.agl)
+#
+#		# first time, save base  ??? periodically make new base
+#		#if True: #not self.baseMap:
+#		if self.pxlpermm > 0.0:
+#				
+#			# why is pad center below and to the right of the two halves
+#			#      only when there is no spot?
+#			
+#			# if padr is fragmented in the shadow of padl, try combining all instead of taking the biggest
+#			#     goal is same area between padr and padl
+#			#     padl and padr should be adjacent, overlapping, and have the same area
+#
+#			# create function for pxlpermm to agl
+#			#     be cautious of the 640px across, because of the angle of the lens
+#			# Take triangulation into account when trying to size objects on the ground
+#			#     Note the difference between objects directly under the aircraft,
+#			#     and objects out on the perimeter.
+#			pxlpermm_at_20_mm    = 24.61  # shows 26mm across, 640/26, parked
+#			pxlpermm_at_20_mm2   =  4.60  # currently calculated
+#			pxlpermm_pad_visible =  2.19  # agl ?
+#			pxlpermm_at_1_meter  =  0.70  # mm across?
+#			pxlpermm_at_2_meter  =  0.30  # mm across?
+#
+#			self.baseMap = copy.deepcopy(self.frameMap)
+#			self.baseMap.pad.purpose = 'home'
+#			
+#			# for hover on pad
+#			# here, baseMap means desired position: dead center, straight up, 1 meter agl
+#			x = (self.frameWidth/2) / self.pxlpermm
+#			y = (self.frameHeight/2) / self.pxlpermm
+#			self.baseMap.pad.center = Pt(x,y)
+#			self.baseMap.pad.angle = 0 
+#			self.baseMap.pad.radius = (self.frameHeight/2) / pxlpermm_at_1_meter
+#
+#			# orient frame to map
+#			angle,radius,_ = triangulateTwoPoints( self.baseMap.pad.center, self.frameMap.pad.center)
+#			# use this to navigate angle and radius, to counteract drift
+#			# assume stable agl and no yaw, so angle and radius refers to drift
+#			# in this case, drawing basemap over framemap results only in offset, not rotation or scale
+#			
+#			# compare frameMap to baseMap, current position to desired position
+#			diffx,diffy = np.array(self.frameMap.pad.center.tuple()) - np.array(self.baseMap.pad.center.tuple())
+#
+#			#diffagl agl in mm, calculated as function of pxlpermm, also proportional to home radius
+#
+#			#diffangle, angle, comparison of base to home
+#
+#			ovec = (diffx, diffy, 0, 0)
+#
+#		# compare pad angle and radius between basemap and framemap
+#		# use this to reorient frame to map
+#		# rotate basemap and draw on top of frame image
+#		# rotate framemap and frameimg and draw underneath basemap
+#
+#		if ovec:
+#			rccmd = uni.composeRcCommand(ovec)
+#			self.post('nav cmd', rccmd)
+#
+#		# save mission parameters - frame, train, mission - done in mode fly, not sim
+#		if self.save_mission:
+#			fname = f"{uni.makedir('frame')}/{framenum}.jpg"
+#			cv.imwrite(fname,self.imgPrep)
+#			self.saveTrain(img, self.objects)
+#			self.logMission('sdata', rccmd)
+#
+#		# display through portal to human observer
+#		if self.ui:
+#			portal.drawUI()
+#
+#		return ovec,rccmd
 
 	# the hippocampus does all the memory, the drone has no memory
 	def logMission(self, sdata, rccmd):
@@ -486,11 +408,21 @@ if __name__ == '__main__':
 	
 	hippocampus = Hippocampus()
 	hippocampus.start()
-	mapp = hippocampus.buildMap(objs)	
-	#hippocampus.processFrame(objs,1,None)
-	hippocampus.stop()
-
-
+	mapp = hippocampus.buildMap(objs, 1)	
 	print(mapp)
 	print(*objs, sep='\n')
-	
+
+'''
+aircraft altitude is measured in multiple ways
+   agl - above ground level
+   msl - mean sea level, based on 19-year averages
+   barometric pressure, varies depending on the weather
+
+baro reported by the tello is assumed to be MSL in meters to two decimal places
+   a typical value before flying is 322.32
+   the elevation of Chiang Mai is 310 meters
+
+before takeoff, the camera is 20mm above the pad
+
+all of our internal calculations are in mm
+'''
