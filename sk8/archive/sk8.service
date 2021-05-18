@@ -1,0 +1,11 @@
+[Unit]
+Description=Skateboard monitor webservice.
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/sk8.sh
+#StandardOutput=fd:/var/log/skate/sk8.log
+
+[Install]
+WantedBy=multi-user.target
+
