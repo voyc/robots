@@ -13,17 +13,13 @@ from sk8math import *
 import sk8map
 
 class Hippocampus:
-	logpost_nth = 10
-
-	def __init__(self, save_mission=False):
-		self.save_mission = save_mission
+	def __init__(self):
 		self.frameWidth  = 960
 		self.frameHeight = 720
 
-#		self.framenum = 0
+		self.framenum = 0
 		self.frameMap = False
 		self.baseMap = False
-#		self.ovec = False  # orienting vector
 		self.posts = {}
 		self.timesave = time.time()
 
@@ -225,30 +221,18 @@ class Hippocampus:
 		arena  = sk8map.Arena(bbox)
 		return arena
 
-	def saveTrain(self,img,objects):
-		ht = 0
-		fname = f'{self.dirtrain}/{self.framenum}.txt'
-		f = open(fname, 'a')
-
-		for obj in objects:
-			f.write(f"{obj.cls} {obj.bbox.t} {obj.bbox.l} {obj.bbox.w} {obj.bbox.h}\n")
-		f.close()
-
-	def start(self):
-		logging.info('hippocampus starting')
-		if self.save_mission:
-			self.dirframe = uni.makedir('frame')
-			self.dirtrain = uni.makedir('train')
-
-		#self.visualcortex = visualcortex.VisualCortex()
- 
-	def buildMap(self,objects,framenum):
+	def buildMap(self,objects,framenum,frame=None):
+		self.objects = objects
+		self.framenum = framenum
+		self.frame = frame
 		self.post('framenum',framenum)
+
 		spot = self.findSpot(objects)
 		pad = self.findPad(objects)
 
 		# create map object
 		fmap = sk8map.Map(spot, pad)
+		self.frameMap = fmap
 		self.post('map state', fmap.state)
 		self.post('map pxlpermm', fmap.pxlpermm)
 		self.post('map agl', fmap.agl)
@@ -264,34 +248,11 @@ class Hippocampus:
 			fmap.pad.calc()
 			if fmap.spot:
 				fmap.spot.bbox.tomm(fmap.pxlpermm)
-
-		if uni.soTrue(framenum, self.logpost_nth):
-			self.logPosts()
-		self.frameMap = fmap
 		return fmap
-	
-	# the hippocampus does all the memory, the drone has no memory
-	def logMission(self, sdata, rccmd):
-		# missing sdata, rccmd, agl, ddata['agl'] ; diff between framenum and self.framenum
-		ts = time.time()
-		tsd = ts - self.timesave
-		src = rccmd.replace(' ','.')
-		prefix = f"rc:{src};ts:{ts};tsd:{tsd};fn:{self.framenum};agl:{self.agl};"
-		self.timesave = ts
-		logging.log(logging.MISSION, prefix + sdata)
 
 	def post(self,key,value):
 		self.posts[key] = value
-		s = f'{key}={value}'
 
-	def logPosts(self):
-		ssave = ''
-		for k in self.posts.keys():
-			v = self.posts[k]
-			s = f"{k.replace(' ','_')}={v}"
-			ssave += s + ';'
-		logging.debug(ssave)
-	
 	def probeMaps(self):
 		return self.baseMap, self.frameMap
 
@@ -311,7 +272,6 @@ if __name__ == '__main__':
 	logging.info(*objs, sep='\n')
 	
 	hippocampus = Hippocampus()
-	hippocampus.start()
 	mapp = hippocampus.buildMap(objs, 1)	
 	logging.info(mapp)
 	logging.info(*objs, sep='\n')

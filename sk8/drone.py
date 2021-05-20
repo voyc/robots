@@ -100,7 +100,6 @@ class Video(threading.Thread):
 		self.stream = False
 		self.state = 'init' # init, run, stop, crash
 		threading.Thread.__init__(self)
-		self.lock = threading.Lock()
 		self.framenum = 0
 		self.frame = False
 
@@ -310,10 +309,10 @@ class Drone:
 		return True
 
 	def wait(self):  # BLOCKING until sub threads stopped
-		if self.telemetry.is_alive():
-			self.telemetry.join()
-		if self.video.is_alive():
-			self.video.join()
+		logging.info('start join')
+		self.video.join()
+		self.telemetry.join()
+		logging.info('end join')
 
 	def stop(self):
 		if self.state == 'airborne':
@@ -484,20 +483,9 @@ if __name__ == '__main__':
 	drone.wait()
 '''
 todo:
-	pass a callback to Video::run()
-		execute SensoryMotorCircuit()
-		replace all run()
-		remove Hippocampus import
 	pass a callback to Telemetry::run()
 		send string to Cerebrum
 	
-	rename
-		Video -> Eyes
-		Telemetry -> Ears
-		Cmd -> Neck
-		Drone -> ?
-		drone.py -> ?
-
 	video: avoid "Circular buffer overrun" error
 		see: https://stackoverflow.com/questions/35338478/buffering-while-converting-stream-to-frames-with-ffmpegj
 --------

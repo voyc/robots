@@ -69,7 +69,7 @@ class Wifi:
 		return y
 
 	def get(self):
-		cmd = 'nmcli -f IN-USE,SSID dev wifi list | grep \*'
+		cmd = 'nmcli -f IN-USE,SSID dev wifi list | grep ^\*'
 		s = subprocess.check_output(cmd, shell=True)
 		y = str(s)[4:len(str(s))-4].strip()
 		return y
