@@ -13,6 +13,8 @@ from sk8math import *
 import sk8map
 
 class Hippocampus:
+	logpost_nth = 10
+
 	def __init__(self, save_mission=False):
 		self.save_mission = save_mission
 		self.frameWidth  = 960
@@ -76,7 +78,7 @@ class Hippocampus:
 			o = a[0]
 			halfmax = copy.deepcopy(a[0])
 		else:
-			logging.debug(f'missing half {clsname}')
+			pass #logging.debug(f'missing half {clsname}')
 
 		# if multiples, choose the one with the largest radius 
 		# or combine them all into one big one
@@ -117,7 +119,7 @@ class Hippocampus:
 
 		# the two halfs are expected to intersect (unless perfectly straight up)
 		if padl and padr and not padl.bbox.intersects( padr.bbox):
-			logging.debug('pad halves do not intersect')
+			pass #logging.debug('pad halves do not intersect')
 
 		# replicate missing half
 		if padl and not padr:
@@ -263,116 +265,11 @@ class Hippocampus:
 			if fmap.spot:
 				fmap.spot.bbox.tomm(fmap.pxlpermm)
 
+		if uni.soTrue(framenum, self.logpost_nth):
+			self.logPosts()
 		self.frameMap = fmap
 		return fmap
 	
-#	def processFrame(self, img, framenum, objs, teldata=None):
-#		self.framenum += 1
-#		ovec = False
-#		rccmd = 'rc 0 0 0 0'
-#
-#		if not uni.soTrue(self.framenum, self.frame_nth):
-#			return ovec,rccmd
-#
-#		self.post('input frame num', framenum)
-#		self.post('frame num', self.framenum)
-#
-#		self.imgPrep = img # save for use by drawUI
-#
-#		# get settings from trackbars
-#		if self.ui:
-#			self.readSettings()
-#			pass
-#
-#		# detect objects - unit: percent of frame
-#		#self.objects = self.detectObjects(img)
-#		self.objects = self.visualcortex.detectObjects(img)
-#		self.post('objects found',len(self.objects))
-#
-#		# build map
-#		self.frameMap = self.buildMap(self.objects)
-#		if not self.frameMap:
-#			return ovec,rccmd
-#
-#		self.post('pxlpermm',self.pxlpermm)
-#		if teldata:
-#			aglin = teldata['agl']
-#			self.post('agl input', aglin)
-#
-#		# calc agl
-#		self.agl = aglFromPxpmm(self.pxlpermm)
-#		self.post('agl', self.agl)
-#
-#		# first time, save base  ??? periodically make new base
-#		#if True: #not self.baseMap:
-#		if self.pxlpermm > 0.0:
-#				
-#			# why is pad center below and to the right of the two halves
-#			#      only when there is no spot?
-#			
-#			# if padr is fragmented in the shadow of padl, try combining all instead of taking the biggest
-#			#     goal is same area between padr and padl
-#			#     padl and padr should be adjacent, overlapping, and have the same area
-#
-#			# create function for pxlpermm to agl
-#			#     be cautious of the 640px across, because of the angle of the lens
-#			# Take triangulation into account when trying to size objects on the ground
-#			#     Note the difference between objects directly under the aircraft,
-#			#     and objects out on the perimeter.
-#			pxlpermm_at_20_mm    = 24.61  # shows 26mm across, 640/26, parked
-#			pxlpermm_at_20_mm2   =  4.60  # currently calculated
-#			pxlpermm_pad_visible =  2.19  # agl ?
-#			pxlpermm_at_1_meter  =  0.70  # mm across?
-#			pxlpermm_at_2_meter  =  0.30  # mm across?
-#
-#			self.baseMap = copy.deepcopy(self.frameMap)
-#			self.baseMap.pad.purpose = 'home'
-#			
-#			# for hover on pad
-#			# here, baseMap means desired position: dead center, straight up, 1 meter agl
-#			x = (self.frameWidth/2) / self.pxlpermm
-#			y = (self.frameHeight/2) / self.pxlpermm
-#			self.baseMap.pad.center = Pt(x,y)
-#			self.baseMap.pad.angle = 0 
-#			self.baseMap.pad.radius = (self.frameHeight/2) / pxlpermm_at_1_meter
-#
-#			# orient frame to map
-#			angle,radius,_ = triangulateTwoPoints( self.baseMap.pad.center, self.frameMap.pad.center)
-#			# use this to navigate angle and radius, to counteract drift
-#			# assume stable agl and no yaw, so angle and radius refers to drift
-#			# in this case, drawing basemap over framemap results only in offset, not rotation or scale
-#			
-#			# compare frameMap to baseMap, current position to desired position
-#			diffx,diffy = np.array(self.frameMap.pad.center.tuple()) - np.array(self.baseMap.pad.center.tuple())
-#
-#			#diffagl agl in mm, calculated as function of pxlpermm, also proportional to home radius
-#
-#			#diffangle, angle, comparison of base to home
-#
-#			ovec = (diffx, diffy, 0, 0)
-#
-#		# compare pad angle and radius between basemap and framemap
-#		# use this to reorient frame to map
-#		# rotate basemap and draw on top of frame image
-#		# rotate framemap and frameimg and draw underneath basemap
-#
-#		if ovec:
-#			rccmd = uni.composeRcCommand(ovec)
-#			self.post('nav cmd', rccmd)
-#
-#		# save mission parameters - frame, train, mission - done in mode fly, not sim
-#		if self.save_mission:
-#			fname = f"{uni.makedir('frame')}/{framenum}.jpg"
-#			cv.imwrite(fname,self.imgPrep)
-#			self.saveTrain(img, self.objects)
-#			self.logMission('sdata', rccmd)
-#
-#		# display through portal to human observer
-#		if self.ui:
-#			portal.drawUI()
-#
-#		return ovec,rccmd
-
 	# the hippocampus does all the memory, the drone has no memory
 	def logMission(self, sdata, rccmd):
 		# missing sdata, rccmd, agl, ddata['agl'] ; diff between framenum and self.framenum
@@ -386,7 +283,14 @@ class Hippocampus:
 	def post(self,key,value):
 		self.posts[key] = value
 		s = f'{key}={value}'
-		logging.debug(s)
+
+	def logPosts(self):
+		ssave = ''
+		for k in self.posts.keys():
+			v = self.posts[k]
+			s = f"{k.replace(' ','_')}={v}"
+			ssave += s + ';'
+		logging.debug(ssave)
 	
 	def probeMaps(self):
 		return self.baseMap, self.frameMap
@@ -404,13 +308,13 @@ if __name__ == '__main__':
 
 	visualcortex = VisualCortex()
 	objs = visualcortex.detectObjects(frame)
-	print(*objs, sep='\n')
+	logging.info(*objs, sep='\n')
 	
 	hippocampus = Hippocampus()
 	hippocampus.start()
 	mapp = hippocampus.buildMap(objs, 1)	
-	print(mapp)
-	print(*objs, sep='\n')
+	logging.info(mapp)
+	logging.info(*objs, sep='\n')
 
 '''
 aircraft altitude is measured in multiple ways

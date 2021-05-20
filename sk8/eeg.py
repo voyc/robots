@@ -346,15 +346,15 @@ if __name__ == '__main__':
 	# frame sent to visual cortex for edge detection
 
 	objs = visualcortex.detectObjects(frame)
-	print(*objs, sep='\n')
+	logging.info(*objs, sep='\n')
 
 	# ears (cerebrum) receive telemetry data from sensors 
 	
 	# frame and telemetry data are sent to hippocampus for spatial orientation
 	mapp = hippocampus.buildMap(objs,1)	
 	hippocampus.stop()
-	print(mapp)
-	print(*objs, sep='\n')  # objects list has been scrubbed
+	logging.info(mapp)
+	logging.info(*objs, sep='\n')  # objects list has been scrubbed
 
 	# test display of a single frame
 	eeg.scan()

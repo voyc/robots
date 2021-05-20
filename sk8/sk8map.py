@@ -1,4 +1,5 @@
 ''' sk8map.py - class Map, Spot, Pad, Cone, Arena '''
+
 import sk8math
 
 class Map:
@@ -67,7 +68,7 @@ class Pad:
 			self.center = sk8math.averageTwoPoints(self.padl.bbox.center, self.padr.bbox.center)
 			self.angle,self.radius,self.pt3 = sk8math.triangulateTwoPoints(self.padl.bbox.center, self.padr.bbox.center)
 		else:
-			self.center = Pt(0,0)
+			self.center = sk8math.Pt(0,0)
 			self.angle = 0
 			self.radius = 0
 

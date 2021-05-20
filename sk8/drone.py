@@ -1,6 +1,5 @@
-''' 
-drone.py - class Drone, drive the Tello drone
-'''
+''' drone.py - class Drone, drive the Tello drone '''
+
 import socket
 import time
 from time import strftime
@@ -9,7 +8,6 @@ import sys
 import numpy as np
 import cv2 as cv
 import struct
-from hippocampus import Hippocampus
 from wifi import Wifi
 import copy
 import universal
@@ -22,9 +20,6 @@ safe_battery = 20  # percent of full charge
 min_agl = 20  # mm, camera above the ground 
 
 use_rc = True   # rc command vs mission commands
-use_hippocampus = True  
-use_ui = False    # screen driven by hippocampus, kill switch handled by main here
-save_train = True  # pass to Hippocampus
 
 # three ports, three sockets.  firewall must be open to these ports.
 telemetry_port = 8890   # UDP server socket to repeatedly send a string of telemetry data
@@ -46,13 +41,11 @@ cmd_time_btw_rc_commands = 0.01 # rc command is fire and forget, does not requie
 cmd_maxlen = 1518
 
 class Telemetry(threading.Thread):
-	def __init__(self): # override
+	def __init__(self, callback): # Thread override
+		self.callback = callback
 		self.state = 'init'  # open, run, stop, crash
-		logging.info('telemetry object initializing')
 		self.sock  = False
 		threading.Thread.__init__(self)
-		self.baro_base = 0
-		self.lock = threading.Lock()
 		self.data = {             # source: Tello SDK 2.0 User Guide, online PDF
 			'pitch':-2,       # degree of attitude pitch
 			'roll':-2,        # degree of attitude roll
@@ -84,6 +77,7 @@ class Telemetry(threading.Thread):
 		self.state = 'stop'
 
 	def run(self): # override
+		logging.info(f'telemetry thread started')
 		count = 0
 		self.state = 'run'
 		while self.state == 'run': 
@@ -94,48 +88,17 @@ class Telemetry(threading.Thread):
 				logging.error('telemetry recvfrom failed: ' + str(ex))
 				self.state = 'crash'
 				break
-
-			sdata = data.strip().decode('utf-8')
-			ddata = universal.unpack(sdata)
-			agl = self.calcAgl(ddata)
-			ddata['agl'] = agl
-			ddata['n'] = count
-
-			self.lock.acquire()
-			self.ddata = ddata
-			self.sdata = sdata
-			self.lock.release()
+			self.callback(data,count)
 
 		logging.info(f'telemetry thread {self.state}')
 		self.sock.close()
 		logging.info('telemetry socket closed')
 	
-	def get(self):
-		self.lock.acquire()
-		ddata = copy.deepcopy(self.ddata)
-		sdata = copy.deepcopy(self.sdata)
-		self.lock.release()
-		return (ddata,sdata)
-
-	def calcAgl(self, data):
-		# calc AGL per the barometer reading 
-		#    tello baro is assumed to be MSL in meters to two decimal places 
-		#    the elevation of Chiang Mai is 310 meters 
-		baro = int(data['baro'] * 1000) # m to mm, float to int 
-		agl = min_agl
-		if not self.baro_base: 
-			self.baro_base = baro 
-		else: 
-			agl = baro - self.baro_base 
-			agl = max(agl,min_agl)
-		return agl
-
 class Video(threading.Thread):
-	def __init__(self, drone): # override
-		self.drone = drone 
+	def __init__(self, callback): # Thread override
+		self.callback = callback
 		self.stream = False
 		self.state = 'init' # init, run, stop, crash
-		self.hippocampus = False
 		threading.Thread.__init__(self)
 		self.lock = threading.Lock()
 		self.framenum = 0
@@ -155,12 +118,7 @@ class Video(threading.Thread):
 	def stop(self):
 		self.state = 'stop'
 	
-	def run(self): # override  # Video::run() - this is the main loop, does navigation and flying
-		# start hippocampus
-		if use_hippocampus:
-			self.hippocampus = Hippocampus( use_ui, save_train)
-			self.hippocampus.start()
-	
+	def run(self): # Thread override
 		logging.info(f'video thread started')
 		self.state = 'run'
 		timestart = time.time()
@@ -169,64 +127,20 @@ class Video(threading.Thread):
 		while self.state == 'run': 
 			# Capture frame-by-frame
 			framenum += 1
-			ret, frame = self.stream.read()
+			ret, frame = self.stream.read()  # no way to change default 20 second timeout
 			if not ret:
-				logging.error('Cannot receive frame.  Stream end?. Exiting.')
+				logging.error('Video stream timeout. Exiting.')
 				self.state == 'crash'
 				break
-			
-			# flip frame vertically to reverse effect of mirror
-			frame = cv.flip(frame,0)
-
-			# get telemetry
-			ddata, sdata = self.drone.telemetry.get()
-
-			# detect objects, build map, draw map
-			ovec = (0,0,0,0)
-			if self.hippocampus:
-				# detect objects, build map, draw map
-				ovec,rccmd = self.hippocampus.processFrame(frame, framenum, ddata)
-
-				# stop immediatly if lost
-				#if rccmd == 'land':
-				#	self.drone.cmd.do('land')
-				#	self.state == 'stop'
-				#	break;
-
-				# fly
-				#if self.drone.state == 'airborne' and ovec:
-				#	self.drone.cmd.sendCommand(rccmd)
-
-			# set frame, framenum, and ovec for use by other threads
-			self.lock.acquire()
-			self.framenum = framenum
-			self.frame = frame
-			self.ovec = ovec
-			self.lock.release()
-
-			# kill switch
-			k = cv.waitKey(1)  # in milliseconds, must be integer
-			if k & 0xFF == ord('q'):
-				self.state == 'stop'
-				break;
+			self.callback(frame,framenum) # normally the Vision-Motor-Circuit
 		
 		logging.info(f'video thread {self.state}') # close or crash
 		timestop = time.time()
 		logging.info(f'num frames: {framenum}, fps: {int(framenum/(timestop-timestart))}')
 
-		if self.hippocampus:
-			self.hippocampus.stop()
-
 		if self.stream and self.stream.isOpened():
 			self.stream.release()
 			logging.info('video stream closed')
-
-	def get(self):
-		self.lock(acquire)
-		num = self.framenum
-		frame = copy.deepcopy(self.frame)
-		self.lock.release()
-		return num, frame
 
 class Cmd(threading.Thread):
 	def __init__(self): #override
@@ -333,16 +247,21 @@ class Cmd(threading.Thread):
 		self.lock.release()
 		return rmsg;
 
+def empty(data,count):
+	pass
+
 class Drone:
-	def __init__(self):
+	def __init__(self,telemetry_callback=empty,video_callback=empty):
 		self.state = 'start', # start, ready, takeoff, airborne, land, down
-		self.video = False
-		self.telemetry = False
-		self.cmd = False
 		self.wifi = False
 
+		# create three objects, one for each socket
+		self.telemetry = Telemetry(telemetry_callback)
+		self.cmd = Cmd()
+		self.video = Video(video_callback)
+
 	def prepareForTakeoff(self):
-		logging.info('eyes starting ' + mode)
+		logging.info('drone starting')
 		timestart = time.time()
 		
 		# connect to tello
@@ -351,11 +270,6 @@ class Drone:
 		if not connected:
 			return False
 		
-		# create three objects, one for each socket
-		self.telemetry = Telemetry()
-		self.cmd = Cmd()
-		self.video = Video(self)
-
 		# open cmd socket
 		self.cmd.open()
 
@@ -395,12 +309,6 @@ class Drone:
 		logging.info(f'ready for takeoff, elapsed={time.time()-timestart}')
 		return True
 
-	#def fly(self, flighttime):
-	#	if self.state != 'airborne':
-	#		return
-	#	self.cmd.flighttime = flighttime
-	#	self.cmd.start()
-
 	def wait(self):  # BLOCKING until sub threads stopped
 		if self.telemetry.is_alive():
 			self.telemetry.join()
@@ -413,7 +321,7 @@ class Drone:
 		self.telemetry.stop()
 		self.video.stop()
 		self.cmd.close()
-		logging.info('eyes shutdown')
+		logging.info('drone shutdown')
 		logging.info('restoring wifi')
 		self.wifi.restore()
 
@@ -429,13 +337,6 @@ class Drone:
 			self.state = 'down'
 
 if __name__ == '__main__':
-	# look for startup options
-	mode = 'prod'
-	for i, arg in enumerate(sys.argv):
-		if arg == 'test':
-			mode = 'test'
-
-	# missions
 	takeoffland = (
 			'takeoff\n'
 			'land'
@@ -523,7 +424,7 @@ if __name__ == '__main__':
 			'go startmotors\n'
 			'pause 2\n'
 			'go liftoff\n'
-			'pause 10\n'
+			'pause 2\n'
 			'land'
 	)
 	launch = (
@@ -532,7 +433,6 @@ if __name__ == '__main__':
 			'land'
 	)
 	
-	# run a mission
 	def flyMission(s, drone):
 		a = s.split('\n')
 		for directive in a:
@@ -578,11 +478,29 @@ if __name__ == '__main__':
 	started = drone.prepareForTakeoff()
 	if started:
 		logging.info('start mission')
-		flyMission(testvideo, drone) 
+		flyMission(hover, drone) 
 		logging.info('mission complete')
 	drone.stop() 
 	drone.wait()
 '''
+todo:
+	pass a callback to Video::run()
+		execute SensoryMotorCircuit()
+		replace all run()
+		remove Hippocampus import
+	pass a callback to Telemetry::run()
+		send string to Cerebrum
+	
+	rename
+		Video -> Eyes
+		Telemetry -> Ears
+		Cmd -> Neck
+		Drone -> ?
+		drone.py -> ?
+
+	video: avoid "Circular buffer overrun" error
+		see: https://stackoverflow.com/questions/35338478/buffering-while-converting-stream-to-frames-with-ffmpegj
+--------
 mentors:
 	github, damiafuentes/djitellopy/tello.py
 	github, murtazahassan/
@@ -590,24 +508,21 @@ mentors:
 class Drone 
 	embeds three singleton objects, one each for the three Tello sockets:
 		Telemetry -
-			sensory nervous system other than vision
+			Ears, sensory nervous system, sensing speed, acceleration, attitude
 			thread, client socket
-			transmits telemetry record 5 times per second
-			public method get() shares the latest telemetry data object
+			transmits telemetry string 5 times per second
 		Video -
-			eyes, visual cortex
+			Eyes, vision
 			thread, client socket
 			transmits video stream at 40 fps
-			public method get() shares the latest frame
 		Cmd -
-			motor nervous system, controlling the eye muscles, head and neck
+			Neck, motor nervous system, aiming eyes
 			no thread, server socket
 			public method sendCommand(cmd)  shares access to Tello commands
 	also embeds:
 		Wifi - to connect to the Tello hub 
-		Hippocampus - spatial analysis, mapping, orientation, incl object detection
 
-	the __main__ function is a simulator, repeating missions flown by Drone
+	__main__ - flies pre-programmed missions, with no position feedback
 
 	data saving:
 		frames, already flipped for mirror, no resize
@@ -616,12 +531,6 @@ class Drone
 		debug log, logging all levels
 		Note: console log displays levels except debug and mission.
 		Note: frames and mission log can be used to rerun a mission in the simulator.
-
-todo:
-	rename eyes.py, class Eyes, really?
-
-	video: avoid "Circular buffer overrun" error
-		see: https://stackoverflow.com/questions/35338478/buffering-while-converting-stream-to-frames-with-ffmpegj
 
 about the Tello drone
 	mfg by DJI and Ryze, both in Shenghen

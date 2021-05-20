@@ -80,7 +80,6 @@ class Wifi:
 		return rc
 
 if __name__ == '__main__':
-	logging.basicConfig( level=logging.DEBUG) # 10 DEBUG, 20 INFO, 30 WARNING, 40 ERROR, 50 CRITICAL
 	wifi = Wifi('TELLO-591FFC', retry=3)
 	print(wifi.check())
 	print(wifi.get())

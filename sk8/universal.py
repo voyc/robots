@@ -1,10 +1,9 @@
-'''
-universal.py - global constants and functions
-'''
+''' universal.py - global constants and functions '''
 
 import datetime
 import os 
 import logging
+import time
 
 clsNone = -1
 clsCone = 0
@@ -17,6 +16,8 @@ sday   = f'{datetime.datetime.now().strftime("%Y%m%d")}'
 stime  = f'{datetime.datetime.now().strftime("%H%M%S")}'
 dirbase = False
 dirmode = 'fly'
+
+mission_start = time.time()
 
 def makedir(form=''): 
 	if not dirbase:
