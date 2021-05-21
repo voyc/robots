@@ -41,6 +41,7 @@ class Eeg:
 
 		# variables
 		self.trackbar_changed = False
+		self.clsfocus_changed = True
 
 	def scan(self):
 		self.detect = self.visualcortex.probeEdgeDetection()
@@ -52,9 +53,12 @@ class Eeg:
 		stack = self.drawUI(self.detect.img, frameMap, baseMap, self.detect.images, posts)
 		cv.imshow('Image Processing', stack)  # open the image processing window
 
-		self.openSettings()  # open the threshholds trackbar dialog
+		if self.clsfocus_changed:
+			self.openSettings()  # open the threshholds trackbar dialog
+			self.clsfocus_changed = False
 
 		k = self.readKeyboard()
+
 		return k
 
 	def openSettings(self):
@@ -103,6 +107,7 @@ class Eeg:
 		name = self.clsname[self.detect.clsfocus]
 		cv.destroyWindow(name)
 		self.detect.clsfocus = newfocus
+		self.clsfocus_changed = True
 		
 	def drawPosts(self,imgPost,posts):
 		linenum = 1

@@ -68,7 +68,7 @@ def openeyes():
 	dir = '/home/john/sk8/fly/20210512/224139'  # 150, 200 mm agl
 	dir = '/home/john/sk8/fly/20210514/172116'  # agl calc
 
-	dir = '/home/john/sk8/fly/20210521/085059'
+	dir = '/home/john/sk8/fly/20210521/091519'
 
 	dirframe = f'{dir}/frame'
 	missiondatainput  = f'{dir}/mission.log'

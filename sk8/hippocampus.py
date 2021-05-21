@@ -85,7 +85,7 @@ class Hippocampus:
 				halfmax.bbox.enlarge(obj.bbox)
 
 			# go back and scrub objects list
-			for obj in objects:
+			for obj in a:
 				if obj.cls == cls and obj is not o:
 					objects.remove(obj)
 
@@ -226,6 +226,7 @@ class Hippocampus:
 		self.framenum = framenum
 		self.frame = frame
 		self.post('framenum',framenum)
+		self.post('num objects', len(objects))
 
 		spot = self.findSpot(objects)
 		pad = self.findPad(objects)
