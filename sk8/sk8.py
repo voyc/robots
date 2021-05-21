@@ -13,7 +13,6 @@ import drone as drn
 
 class Sk8:
 	save_nth = 1
-	logpost_nth = 10
 
 	def yahoo(self, data, count):
 		pass
