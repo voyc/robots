@@ -118,40 +118,32 @@ if __name__ == '__main__':
 	print(*objs, sep='\n')
 
 '''
-settings are 0 to 360,100,100
-
-opencv values are 0 to 179,255,255
-trackbar settings are 360,100,100
+class VisualCortex
+	detectObjects - visual cortex, pareital lobe, occipital lobe, Brodmann area
 
 color coordinate systems
-most systems use RGB: 255,255,255
-openCV by default uses BGR: 255,255,255
+	most systems use RGB: 255,255,255
+	openCV by default uses BGR: 255,255,255
+
+trackbar settings are 0 to 360,100,100
+opencv values are 0 to 179,255,255
 
 sk8 HSV is defined as 360,100,100
 	hue is 0 to 360 degrees on the color wheel
-      sat is 0 to 100 percent white
-      val is 0 to 100 percent black
+	sat is 0 to 100 percent white
+	val is 0 to 100 percent black
 
 openCV HSV is 179,255,255
 	255 is the max integer, so the 360 is divided by 2
 
 interpolate
 a color coordinate has 3 values
-a color threshhold has 6 values
-
-opencv hsv values are 0 to 179,255,255
-trackbar settings are 360,100,100
-
+a color threshhold has 6 values (lower-upper or min-max)
 
 
 todo:
-
-inhibitions, prefrontal cortex
-
-add trackbars
-	framenum
-	gaus blur kernel size
-	gaus blur setting?
-
-write gradient descent training system
+	add trackbars for:
+		framenum
+		gaus blur kernel size
+		gaus blur setting?
 '''

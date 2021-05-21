@@ -131,6 +131,7 @@ class Video(threading.Thread):
 				logging.error('Video stream timeout. Exiting.')
 				self.state == 'crash'
 				break
+			frame = cv.flip(frame,0) # vertical flip mirror correction
 			self.callback(frame,framenum) # normally the Vision-Motor-Circuit
 		
 		logging.info(f'video thread {self.state}') # close or crash

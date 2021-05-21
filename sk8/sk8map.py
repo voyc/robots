@@ -101,8 +101,31 @@ class Arena:
 		self.bbox = bbox
 
 '''
-		# notes on vector, slope, angle, quadrant
-		# [angle, radius]  = similar to a vector in that it indicates direction and distance
-		# [leny, lenx]  = a slope, rise over run
-		# [lenx, leny] = a vector, [2,4] means move 2 mm to the left and 4 mm up
+vector, slope, angle, quadrant
+[lenx, leny] = a vector, [2,4] means move 2 mm to the left and 4 mm up
+[leny, lenx]  = a slope, rise over run
+[angle, radius]  = similar to a vector in that it indicates direction and distance
+
+angle units
+	sk8 uses degrees
+	python opencv uses radians
+
+distance units
+	pct - detected objects are identified by bounding box with 4 pct coordinates
+	pxl - pct is converted to pxl based on framesize
+	mm - after the agl is calculated, pxl can be converted to mm based on pxlpermm
+
+by default, internal units are in mm
+
+altitude
+aircraft altitude is measured in multiple ways
+   agl - above ground level
+   msl - mean sea level, based on 19-year averages
+   barometric pressure, varies depending on the weather
+
+baro reported by the tello is assumed to be MSL in meters to two decimal places
+   a typical value before flying is 322.32
+   the elevation of Chiang Mai is 310 meters
+
+before takeoff, the camera is 20mm above the pad
 '''

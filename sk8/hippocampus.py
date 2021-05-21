@@ -277,16 +277,7 @@ if __name__ == '__main__':
 	logging.info(*objs, sep='\n')
 
 '''
-aircraft altitude is measured in multiple ways
-   agl - above ground level
-   msl - mean sea level, based on 19-year averages
-   barometric pressure, varies depending on the weather
-
-baro reported by the tello is assumed to be MSL in meters to two decimal places
-   a typical value before flying is 322.32
-   the elevation of Chiang Mai is 310 meters
-
-before takeoff, the camera is 20mm above the pad
-
-all of our internal calculations are in mm
+class Hippocampus
+	Public methods:
+		buildMap(img,framenum,telemetry)
 '''

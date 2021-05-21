@@ -18,7 +18,6 @@ def wakeup():
 	global hippocampus,visualcortex,frontalcortex,neck,eeg
 	visualcortex = vc.VisualCortex()
 	hippocampus = hc.Hippocampus()
-	hippocampus.start()
 	frontalcortex = fc.FrontalCortex()
 	neck = nek.Neck()
 
@@ -38,7 +37,7 @@ def act():
 			break
 
 def sleep():
-	hippocampus.stop()
+	logging.info('sleep tight')
 
 def sensoryMotorCircuit(frame,framenum):
 	# start sensory-motor circuit
@@ -67,8 +66,9 @@ def openeyes():
 	dir = '/home/john/sk8/fly/20210512/161543'  # 5 steps of 200 mm each
 	dir = '/home/john/sk8/fly/20210512/212141'  # 30,50,100,120,140,160,180,200 mm
 	dir = '/home/john/sk8/fly/20210512/224139'  # 150, 200 mm agl
-	
 	dir = '/home/john/sk8/fly/20210514/172116'  # agl calc
+
+	dir = '/home/john/sk8/fly/20210521/085059'
 
 	dirframe = f'{dir}/frame'
 	missiondatainput  = f'{dir}/mission.log'
