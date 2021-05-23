@@ -30,7 +30,7 @@ class Eeg:
 	clsname         = [ 'cone','padl','padr','spot' ]
 	barnames        = ( 'cls',  'hue_min', 'hue_max', 'sat_min', 'sat_max', 'val_min', 'val_max', 'canny_lo', 'canny_hi')
 	barmax          = ( 18, 360,360, 100,100, 100,100, 255,255 )
-	draw_pad_halves = False
+	draw_pad_halves = True
 
 	def __init__(self, visualcortex=None, hippocampus=None, frontalcortex=None, neck=None):
 		# probed objects

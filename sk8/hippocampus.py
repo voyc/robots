@@ -168,10 +168,13 @@ class Hippocampus:
 
 			# from pxl to mm
 			cone.bbox.tomm(pxlpermm)
-			if cone.bbox.radius > radmin and cone.bbox.radius < radmax:
-				cones.append(cone)
-			else:
-				obj.cls = uni.clsNone
+
+			# select by size
+			cones.append(cone)
+			#if cone.bbox.radius > radmin and cone.bbox.radius < radmax:
+			#	cones.append(cone)
+			#else:
+			#	obj.cls = uni.clsNone # mark for scrubbing
 		self.post('cones accepted', len(cones))
 
 		# go back and scrub objects list

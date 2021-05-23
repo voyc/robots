@@ -2,6 +2,7 @@
 
 import cv2 as cv
 import numpy as np
+import os
 import logging
 import universal as uni
 import visualcortex as vc
@@ -12,6 +13,7 @@ import eeg as eg
 
 class Skim:
 	save_nth = 1
+	dirout = '/home/john/sk8/bench/train'
 
 	def __init__(self):
 		self.visualcortex = False
@@ -33,9 +35,21 @@ class Skim:
 		self.eeg = eg.Eeg(visualcortex=self.visualcortex, hippocampus=self.hippocampus, frontalcortex=self.frontalcortex, neck=self.neck)
 	
 		if self.save_nth:
-			self.dirframeout = uni.makedir('frame')
-			self.dirtrainout = uni.makedir('train')
+			self.dirframeout = f'{self.dirout}/frame'
+			self.dirtrainout = f'{self.dirout}/train'
+			self.framenumout = self.getNextFrameNum(self.dirframeout)
 
+	def getNextFrameNum(self,dirname):
+		filelist = os.listdir( dirname)
+		hnum = 0
+		for fname in filelist: 
+			fbase = os.path.splitext(fname)[0]
+			num = int(fbase) 
+			if num > hnum:
+				hnum = num
+		hnum += 1
+		return hnum
+	
 	def act(self):
 		missiondata,framenum,lastframe,dirframe = self.openeyes()
 		while True:
@@ -121,24 +135,25 @@ class Skim:
 		elif keypress == 'r':
 			pass
 		elif keypress == 's':
-			self.log(framenum)
+			self.log()
 		elif keypress == 'q':
 			kill = True
 		elif keypress in ['0','1','2','3']:
 			visualcortex.switchFocus(int)
 		return kill,newframe
 	
-	def log(self, framenum):
+	def log(self):
 		# save frame
-		fname = f'{self.dirframeout}/{framenum}.jpg'
+		fname = f'{self.dirframeout}/{self.framenumout}.jpg'
 		cv.imwrite( fname, self.frame)
 	
 		# save training data
-		fname = f'{self.dirtrainout}/{framenum}.txt'
+		fname = f'{self.dirtrainout}/{self.framenumout}.txt'
 		f = open(fname, 'a')
 		for obj in self.objs:
-			f.write(f"{obj.cls} {obj.bbox.t} {obj.bbox.l} {obj.bbox.w} {obj.bbox.h}\n")
+			f.write(f"{obj.cls} {obj.bbox.l} {obj.bbox.t} {obj.bbox.w} {obj.bbox.h}\n")
 		f.close()
+		self.framenumout += 1
 	
 if __name__ == '__main__':
 	skim = Skim()

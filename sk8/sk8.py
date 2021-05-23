@@ -81,7 +81,7 @@ class Sk8:
 		fname = f'{self.dirtrain}/{framenum}.txt'
 		f = open(fname, 'a')
 		for obj in objs:
-			f.write(f"{obj.cls} {obj.bbox.t} {obj.bbox.l} {obj.bbox.w} {obj.bbox.h}\n")
+			f.write(f"{obj.cls} {obj.bbox.l} {obj.bbox.t} {obj.bbox.w} {obj.bbox.h}\n")
 		f.close()
 
 		# save mission log

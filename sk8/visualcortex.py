@@ -16,10 +16,10 @@ class Edge:
 class Detect:
 	threshhold_defaults = [ 
 		# class          hue      sat      val     canny
-		( uni.clsCone,   0,  8,  42,100,  35,100,  82,127 ),
-		( uni.clsPadl,  52,106,  42,100,  41, 96,  82,127 ),
-		( uni.clsPadr, 258,335,  24, 76,  30, 85,  82,127 ),
-		( uni.clsSpot, 283,360,  46,100,  40,100,  82,127 )
+		( uni.clsCone, 358, 25,  42,100,  35,100,  82,127 ),
+		( uni.clsPadl,  52,106,  42,100,  10, 90,  82,127 ),
+		( uni.clsPadr, 258,335,  24, 76,  10, 90,  82,127 ),
+		( uni.clsSpot, 306,340,  46,100,  10, 90,  82,127 )
 	]
 
 	def __init__(self):
@@ -58,16 +58,28 @@ class VisualCortex:
 		#	and cv.findContours() detects only the remaining edge as an object.
 		cv.rectangle(img, (0,0), (self.imgWid-1,self.imgHt-1), (0,0,0), 1)
 
-		# mask based on hsv ranges
+		# interpolate sk8-trackbar to openCV values for hsv
 		sk8_hsv = [1,360,360,100,100,100,100,1,1]
 		ocv_hsv = [1,179,179,255,255,255,255,1,1]
 		ocv_set = sk8math.interpolate(np.array(settings), 0,np.array(sk8_hsv), 0,np.array(ocv_hsv))
 		ocv_set = ocv_set.astype(int)
 		cls,hl,hu,sl,su,vl,vu,cl,cu = ocv_set
+
+		# prepare a mask of pixels within hsv threshholds
+		imgHsv = cv.cvtColor(img,cv.COLOR_BGR2HSV)
 		lower = np.array([hl,sl,vl])
 		upper = np.array([hu,su,vu])
-		imgHsv = cv.cvtColor(img,cv.COLOR_BGR2HSV)
-		imgMask = cv.inRange(imgHsv,lower,upper) # choose pixels by hsv threshholds
+		imgMask = cv.inRange(imgHsv,lower,upper)
+		if hl > hu:  # combine two masks for red-orange plus red-purple
+			lower1 = np.array([  0,sl,vl])
+			upper1 = np.array([ hu,su,vu])
+			lower2 = np.array([ hl,sl,vl])
+			upper2 = np.array([179,su,vu])
+			mask1 = cv.inRange(imgHsv,lower1,upper1)
+			mask2 = cv.inRange(imgHsv,lower2,upper2)
+			imgMask = mask1 + mask2
+
+		# take the union of the mask and the original image
 		imgMasked = cv.bitwise_and(img,img, mask=imgMask)
 
 		# gaussian blur	
