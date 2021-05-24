@@ -14,7 +14,8 @@ class Edge:
 		return f'{self.cls}: {self.bbox}'
 
 class Detect:
-	threshhold_defaults = [ 
+	# object detection data, saved by VisualCortex, probed and modified by Eeg
+	threshhold_seeds = [ 
 		# class          hue      sat      val     canny
 		( uni.clsCone, 358, 25,  42,100,  35,100,  82,127 ),
 		( uni.clsPadl,  52,106,  42,100,  10, 90,  82,127 ),
@@ -25,7 +26,7 @@ class Detect:
 	def __init__(self):
 		self.img = False
 		self.clsfocus = uni.clsSpot
-		self.threshholds = self.threshhold_defaults 
+		self.threshholds = self.threshhold_seeds 
 		self.images = []
 
 	def __str__(self):
@@ -35,28 +36,31 @@ class VisualCortex:
 	use_neural_net = False
 
 	def __init__(self):
-		self.detect = Detect()
-		self.imgWid = 0
-		self.imgHt = 0
+		self.detect = Detect() # saved to be probed and modified by eeg
+		self.detect.threshholds = Detect.threshhold_seeds
+		self.pxldim = [0,0]
 
-	def detectObjects(self,img):
+	def detectObjects(self,img,threshholds):
 		self.detect.img = img
+		self.detect.threshholds = threshholds
 		if self.use_neural_net:
 			pass
 		else:
-			self.imgHt,self.imgWid,_ = img.shape
+			h,w,d = img.shape
+			self.pxldim = [w,h]
 			objects = []
-			settings = self.detect.threshholds
-			for cls in range(len(settings)): 
-				self.detectContours(img,settings[cls],objects)
+			for cls in range(len(threshholds)): 
+				boxes = self.detectContours(img,threshholds[cls])
+				objects = objects + boxes	
 		return objects
 
-	def detectContours(self,img,settings,objects):
+	def detectContours(self,img,settings):
 		# draw a one-pixel black border around the whole image
 		#	When the drone is on the pad, 
 		#	each halfpad object extends past the image boundary on three sides, 
 		#	and cv.findContours() detects only the remaining edge as an object.
-		cv.rectangle(img, (0,0), (self.imgWid-1,self.imgHt-1), (0,0,0), 1)
+		w,h = self.pxldim
+		cv.rectangle(img, (0,0), (w-1,h-1), (0,0,0), 1)
 
 		# interpolate sk8-trackbar to openCV values for hsv
 		sk8_hsv = [1,360,360,100,100,100,100,1,1]
@@ -99,21 +103,19 @@ class VisualCortex:
 			self.detect.images = [imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate]
 
 		# get bounding box for each contour
+		boxes = []
 		for contour in contours:
 			area = cv.contourArea(contour)
 			perimeter = cv.arcLength(contour, True)
 			polygon = cv.approxPolyDP(contour, 0.02 * perimeter, True)
 			l,t,w,h = cv.boundingRect(polygon)
 
-			tl = round(l/self.imgWid, 6)
-			tt = round(t/self.imgHt, 6)
-			tw = round(w/self.imgWid, 6)
-			th = round(h/self.imgHt, 6)
-
-			bbox = sk8math.Bbox(tl,tt,tw,th)
-			obj = Edge(cls, bbox)
-			objects.append(obj)
-		return
+			box = sk8math.Box(cls)
+			box.pxl_lt = (l,t)
+			box.pxl_wh = (w,h)
+			box.toPct(self.pxldim)
+			boxes.append(box)
+		return boxes
 
 	def probeEdgeDetection(self):
 		return self.detect

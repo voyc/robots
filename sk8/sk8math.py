@@ -99,6 +99,44 @@ def calcLine(c,r,a):
 	y2 = y + lena
 	return (x1,y1), (x2,y2) 
 
+class Box:
+	prec = 6
+
+	def __init__(self, cls, lt=None, wh=None):
+		self.cls = cls
+		self.pct_lt = lt
+		self.pct_wh = wh
+
+	def toPxl(self,pxldim):  # from pct
+		self.pxl_lt = tuple((np.array(self.pct_lt) * np.array(pxldim)).astype(int))
+		self.pxl_wh =  list((np.array(self.pct_wh) * np.array(pxldim)).astype(int))
+		self.pxl_rb =  tuple(np.array(self.pxl_lt) + np.array(self.pxl_wh))
+
+	def toPct(self,pxldim):  # from pxl
+		self.pct_lt = tuple(np.round((np.array(self.pxl_lt) / np.array(pxldim)).astype(float),self.prec))
+		self.pct_wh =  list(np.round((np.array(self.pxl_wh) / np.array(pxldim)).astype(float),self.prec))
+
+	def calc(self):
+		self.pxl_wh =  tuple(np.array(self.pxl_rb) - np.array(self.pxl_lt))
+
+	def pct_ltwh(self):
+		l,t = self.pct_lt
+		w,h = self.pct_wh
+		return (l,t,w,h)
+
+	def write(self):
+		l,t = self.pct_lt
+		w,h = self.pct_wh
+		s  = f'{self.cls} {l} {t} {w} {h}'
+		return s
+
+	def __str__(self):
+		s  = f'cls {self.cls}'
+		s += f'\npct ltwh: {self.pct_lt}, {self.pct_wh}'
+		if hasattr(self, 'pxl_lt'):
+			s += f'\npxl ltrb: {self.pxl_lt}, {self.pxl_wh}'
+		return s
+
 class Bbox:
 	# bbox is defined by an l-t point and a w-h vector, this is what NN data uses
 	# redefined with b,r, center, diameter, radius
