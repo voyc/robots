@@ -3,6 +3,7 @@
 import os
 import numpy as np
 import cv2 as cv
+import copy
 import visualcortex as vc
 import sk8math
 
@@ -87,9 +88,88 @@ def onetest(settings):
 
 	return sse
 
+threshhold_max = [ 
+	# class          hue      sat      val     canny
+	( uni.clsCone,   0,179,  42,100,  35,100,  82,127 ),
+	( uni.clsPadl,   0,179,  42,100,  10, 90,  82,127 ),
+	( uni.clsPadr,   0,179,  24, 76,  10, 90,  82,127 ),
+	( uni.clsSpot,   0,179,  46,100,  10, 90,  82,127 )
+]
+
+ta = [
+	
+class Ta:
+	def __init__(self,cls):
+		self.cls = cls 
+		self.sse = 0                                 # sum of squared error
+		self.psse = 0                                # previous sse
+		#self.a = [0,179,0,255,0,255,0,255,1,0]       # array of t, as in threshhold
+		self.a = threshholds[cls]
+		self.pa = []                                 # previous a
+		self.d = [1,-1,1,-1,1,-1,1,-1,2,1]           # direction to tweack
+		self.m = [179,0,255,0,255,0,255,0,255,255]   # max tweak
+		self.i = 0                                   # index into a
+		self.mi = 9                                  # max index
+
+	def unpack(self):
+		return self.a  # hl,hu,sl,su,vl,vu,cl,cu,gk,gs
+
+	def pack(self,a):
+		self.a = a  # [hl,hu,sl,su,vl,vu,cl,cu,gk,gs]
+	
+	def tweak(self,sse):
+		if sse < self.psse:                      # if latest result is better
+			self.pa = copy.deepcopy(self.a)  # save to previous set
+			self.incrt()                     # increment t
+		else:                                    # if latest result is worse
+			self.a = copy.deepcopy(self.pa)  # back up to previous set
+			self.nextt()                     # move on to next t
+		return True
+
+	def incrt(self):
+		self.a[self.i] += self.d[self.i]
+
+	def nextt(self):
+		if self.a[self.i] == self.m[self.i]: # if t is already at its max
+			self.i++                     # move on to the next t
+			if self.i >= self.mi:        # unless that was the last t
+				return False         # finished
+		else:                                # otherwise
+			pass          	             # no change	
+		return True
+
+def tweak(sse, threshholds):
+ 
+	newthreshholds = copy.deepcopy(threshholds)
+	for cls in range(0,4):
+		_,hl,hu,sl,su,vl,vu,cl,cu = newthreshholds[cls]
+		hl += 1
+		hu -= 1
+		newthreshholds[cls] = (cls,hl,hu,sl,su,vl,vu,cl,cu)
+	if hu < 0: return False
+	return newthreshholds
+
+def descent(threshholds):
+	newthreshholds = copy.deepcopy(threshholds)
+
+	while newthreshholds:
+		sse = onetest(newthreshholds)
+		for hold in newthreshholds: print(hold, sse[hold[0]])
+
+		newthreshholds = tweak(sse, newthreshholds)
+
+	return newthreshholds
+
 # begin here
 visualcortex = vc.VisualCortex()
-settings = vc.Detect.threshhold_seeds
-sse = onetest(settings)
-print(sse)
+#oldthreshholds = vc.Detect.threshhold_max
+#newthreshholds = descent(oldthreshholds)
+
+ta = []
+for cls = range(0,4):
+	ta[cls] = Ta(cls)
+
+while True:
+	for cls = range(0,4):
+		hl,hu,sl,su,vl,vu,cl,cu,gk,gs = ta[cls].unpack()
 

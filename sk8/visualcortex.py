@@ -3,24 +3,32 @@
 import cv2 as cv
 import numpy as np
 import universal as uni
-import sk8math
+import sk8mat as sm
 
-class Edge:
-	def __init__(self, cls, bbox, inputunits=False):
-		self.cls = cls
-		self.bbox = bbox
-
-	def __str__(self):
-		return f'{self.cls}: {self.bbox}'
+#class Edge:
+#	def __init__(self, cls, bbox, inputunits=False):
+#		self.cls = cls
+#		self.bbox = bbox
+#
+#	def __str__(self):
+#		return f'{self.cls}: {self.bbox}'
 
 class Detect:
 	# object detection data, saved by VisualCortex, probed and modified by Eeg
 	threshhold_seeds = [ 
-		# class          hue      sat      val     canny
-		( uni.clsCone, 358, 25,  42,100,  35,100,  82,127 ),
-		( uni.clsPadl,  52,106,  42,100,  10, 90,  82,127 ),
-		( uni.clsPadr, 258,335,  24, 76,  10, 90,  82,127 ),
-		( uni.clsSpot, 306,340,  46,100,  10, 90,  82,127 )
+		#   hue      sat      val     canny      # class        
+		( 358, 25,  42,100,  35,100,  82,127 ),  # uni.clsCone, 
+		(  52,106,  42,100,  10, 90,  82,127 ),  # uni.clsPadl, 
+		( 258,335,  24, 76,  10, 90,  82,127 ),  # uni.clsPadr, 
+		( 306,340,  46,100,  10, 90,  82,127 )   # uni.clsSpot, 
+	]
+
+	threshhold_max = [ 
+		#   hue      sat      val     canny
+		(   0,179,  42,100,  35,100,  82,127 ),
+		(   0,179,  42,100,  10, 90,  82,127 ),
+		(   0,179,  24, 76,  10, 90,  82,127 ),
+		(   0,179,  46,100,  10, 90,  82,127 )
 	]
 
 	def __init__(self):
@@ -38,7 +46,7 @@ class VisualCortex:
 	def __init__(self):
 		self.detect = Detect() # saved to be probed and modified by eeg
 		self.detect.threshholds = Detect.threshhold_seeds
-		self.pxldim = [0,0]
+		self.ddim = [0,0]
 
 	def detectObjects(self,img,threshholds):
 		self.detect.img = img
@@ -47,27 +55,27 @@ class VisualCortex:
 			pass
 		else:
 			h,w,d = img.shape
-			self.pxldim = [w,h]
+			self.ddim = [w,h]
 			objects = []
 			for cls in range(len(threshholds)): 
-				boxes = self.detectContours(img,threshholds[cls])
+				boxes = self.detectContours(img,cls,threshholds[cls])
 				objects = objects + boxes	
 		return objects
 
-	def detectContours(self,img,settings):
+	def detectContours(self,img,cls,settings):
 		# draw a one-pixel black border around the whole image
 		#	When the drone is on the pad, 
 		#	each halfpad object extends past the image boundary on three sides, 
 		#	and cv.findContours() detects only the remaining edge as an object.
-		w,h = self.pxldim
+		w,h = self.ddim
 		cv.rectangle(img, (0,0), (w-1,h-1), (0,0,0), 1)
 
 		# interpolate sk8-trackbar to openCV values for hsv
-		sk8_hsv = [1,360,360,100,100,100,100,1,1]
-		ocv_hsv = [1,179,179,255,255,255,255,1,1]
-		ocv_set = sk8math.interpolate(np.array(settings), 0,np.array(sk8_hsv), 0,np.array(ocv_hsv))
+		sk8_hsv = [360,360,100,100,100,100,1,1]
+		ocv_hsv = [179,179,255,255,255,255,1,1]
+		ocv_set = sm.interpolate(np.array(settings), 0,np.array(sk8_hsv), 0,np.array(ocv_hsv))
 		ocv_set = ocv_set.astype(int)
-		cls,hl,hu,sl,su,vl,vu,cl,cu = ocv_set
+		hl,hu,sl,su,vl,vu,cl,cu = ocv_set
 
 		# prepare a mask of pixels within hsv threshholds
 		imgHsv = cv.cvtColor(img,cv.COLOR_BGR2HSV)
@@ -103,19 +111,18 @@ class VisualCortex:
 			self.detect.images = [imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate]
 
 		# get bounding box for each contour
-		boxes = []
+		edges = []
 		for contour in contours:
 			area = cv.contourArea(contour)
 			perimeter = cv.arcLength(contour, True)
 			polygon = cv.approxPolyDP(contour, 0.02 * perimeter, True)
 			l,t,w,h = cv.boundingRect(polygon)
 
-			box = sk8math.Box(cls)
-			box.pxl_lt = (l,t)
-			box.pxl_wh = (w,h)
-			box.toPct(self.pxldim)
-			boxes.append(box)
-		return boxes
+			edge = sm.Edge(cls)
+			edge.dbox = sm.Box((l,t),[w,h])
+			edge.fromD(self.ddim)
+			edges.append(edge)
+		return edges
 
 	def probeEdgeDetection(self):
 		return self.detect
@@ -128,33 +135,25 @@ if __name__ == '__main__':
 		quit()
 
 	visualcortex = VisualCortex()
-	objs = visualcortex.detectObjects(frame)
+	objs = visualcortex.detectObjects(frame,Detect.threshhold_seeds)
 	print(*objs, sep='\n')
 
 '''
 class VisualCortex
 	detectObjects - visual cortex, pareital lobe, occipital lobe, Brodmann area
 
-color coordinate systems
-	most systems use RGB: 255,255,255
-	openCV by default uses BGR: 255,255,255
-
-trackbar settings are 0 to 360,100,100
-opencv values are 0 to 179,255,255
-
-sk8 HSV is defined as 360,100,100
-	hue is 0 to 360 degrees on the color wheel
-	sat is 0 to 100 percent white
-	val is 0 to 100 percent black
-
-openCV HSV is 179,255,255
-	255 is the max integer, so the 360 is divided by 2
-
-interpolate
-a color coordinate has 3 values
-a color threshhold has 6 values (lower-upper or min-max)
-
-
+	color coordinate systems
+		most systems use RGB: 255,255,255
+		openCV by default uses BGR: 255,255,255
+	
+	sk8 HSV trackbars are 0 to 360,100,100
+		hue is 0 to 360 degrees on the color wheel
+		sat is 0 to 100 percent white
+		val is 0 to 100 percent black
+	
+	openCV HSV is 0 to 179,255,255
+		255 is the max integer, so the 360 is divided by 2
+	
 todo:
 	add trackbars for:
 		framenum

@@ -1,7 +1,6 @@
-''' hippocamapus.py - class Hippocampus - spatial analysis, mapping, orientation '''
+''' hippocampus.py - class Hippocampus - spatial analysis, mapping, orientation '''
 import cv2 as cv
 import numpy as np
-from datetime import datetime
 import time
 import logging
 import os
@@ -9,13 +8,14 @@ import copy
 import colorsys
 import re
 import universal as uni
-from sk8math import *
-import sk8map
+import sk8mat as sm
+import visualcortex as vc
 
 class Hippocampus:
 	def __init__(self):
 		self.frameWidth  = 960
 		self.frameHeight = 720
+		self.ddim = [960,720]
 
 		self.framenum = 0
 		self.frameMap = False
@@ -36,7 +36,7 @@ class Hippocampus:
 		# if multiples, choose the one with the largest radius 
 		objspot = spota[0]
 		for obj in spota:
-			if obj.bbox.radius > objspot.bbox.radius:
+			if obj.pbox.radius() > objspot.pbox.radius():
 				objspot = obj
 
 		# go back and scrub objects list
@@ -45,16 +45,11 @@ class Hippocampus:
 				objects.remove(obj)
 
 		# from pct to pxl
-		bbox = copy.deepcopy(objspot.bbox)
-		bbox.l *= self.frameWidth
-		bbox.t *= self.frameHeight
-		bbox.w *= self.frameWidth 
-		bbox.h *= self.frameHeight 
-		bbox.calc()  # calc center, radius
+		objspot.toD(self.ddim)
 
-		spot = sk8map.Spot(bbox)
-		self.post('spot pxl diam', spot.bbox.diameter)
-		self.post('spot pxlpermm', spot.pxlpermm)
+		spot = sm.Spot(objspot)
+		self.post('spot pxl radius', spot.dbox.radius())
+		self.post('spot dpmm', spot.dpmm)
 		return spot
 
 	def findHalf(self, objects, cls):
@@ -68,10 +63,10 @@ class Hippocampus:
 		self.post(f'pad {clsname}', len(a))
 
 		# ideally we have one and only one
-		o = False
+		half = False
 		halfmax = False
 		if len(a) >= 1:
-			o = a[0]
+			half = a[0]
 			halfmax = copy.deepcopy(a[0])
 		else:
 			pass #logging.debug(f'missing half {clsname}')
@@ -80,33 +75,19 @@ class Hippocampus:
 		# or combine them all into one big one
 		if len(a) > 1:
 			for obj in a:
-				if obj.bbox.radius > o.bbox.radius:
-					o = obj
-				halfmax.bbox.enlarge(obj.bbox)
+				if obj.pbox.radius() > half.pbox.radius():
+					half = obj
+				halfmax.pbox.unite(obj.pbox)
 
 			# go back and scrub objects list
 			for obj in a:
-				if obj.cls == cls and obj is not o:
+				if obj.cls == cls and obj is not half:
 					objects.remove(obj)
 
-		# from pct to pxl
-		half = copy.deepcopy(o)
 		if half:
-			half.bbox.l *= self.frameWidth
-			half.bbox.t *= self.frameHeight
-			half.bbox.w *= self.frameWidth 
-			half.bbox.h *= self.frameHeight 
-			half.bbox.calc()
-
-		# i have not tested halfmax
-		# instead I increased the kernel size of the Gaussian Blur
-		if halfmax:
-			halfmax.bbox.l *= self.frameWidth
-			halfmax.bbox.t *= self.frameHeight
-			halfmax.bbox.w *= self.frameWidth 
-			halfmax.bbox.h *= self.frameHeight 
-			halfmax.bbox.calc()
-		return half, halfmax
+			half.toD(self.ddim)
+			halfmax.toD(self.ddim)
+		return half, halfmax  # halfmax never tested
 
 	def findPad(self, objects):
 		# find the two halfs
@@ -114,39 +95,40 @@ class Hippocampus:
 		padr, padrmax = self.findHalf(objects, uni.clsPadr)
 
 		# the two halfs are expected to intersect (unless perfectly straight up)
-		if padl and padr and not padl.bbox.intersects( padr.bbox):
+		#if padl and padr and not padl.bbox.intersects( padr.bbox):
+		if padl and padr and not padl.dbox.intersects(padr.dbox):
 			pass #logging.debug('pad halves do not intersect')
 
 		# replicate missing half
-		if padl and not padr:
-			#logging.warning('generate padr')
-			padr = copy.deepcopy(padl)
-			padr.bbox.l += (padr.bbox.w)
-			padr.bbox.calc()
-		if padr and not padl:
-			#logging.warning('generate padl')
-			padl = copy.deepcopy(padr)
-			padl.bbox.l -= (padl.bbox.w)
-			padl.bbox.calc()
+		#if padl and not padr:
+		#	#logging.warning('generate padr')
+		#	padr = copy.deepcopy(padl)
+		#	padr.bbox.l += (padr.bbox.w)
+		#	padr.bbox.calc()
+		#if padr and not padl:
+		#	#logging.warning('generate padl')
+		#	padl = copy.deepcopy(padr)
+		#	padl.bbox.l -= (padl.bbox.w)
+		#	padl.bbox.calc()
 
 		# calc pad state
 		state = 'missing'
 		if padl and padr:
-			if padl.bbox.touchesEdge(self.frameWidth,self.frameHeight) \
-			or padr.bbox.touchesEdge(self.frameWidth,self.frameHeight):
+			if padl.dbox.touchesEdge(self.ddim) \
+			or padr.dbox.touchesEdge(self.ddim):
 				state = 'partial'
 			else:
 				state = 'complete'
 		self.post('pad state', state)
 
 		# create pad object
-		pad = sk8map.Pad(padl, padr, state)
-		self.post('pad pxl diam', pad.bbox.diameter)
-		self.post('pad pxlpermm', pad.pxlpermm)
+		pad = sm.Pad(padl, padr, state)
+		self.post('pad pxl radius', pad.radius)
+		self.post('pad dpmm', pad.dpmm)
 
 		return pad
 
-	def findCones(self, objects, pxlpermm):
+	def findCones(self, objects, dpmm):
 		# make a separate list of cones
 		conea = []
 		for obj in objects:
@@ -155,22 +137,16 @@ class Hippocampus:
 		self.post('cones found', len(conea))
 
 		# choose only correctly sized objects
-		radmin = sk8map.Cone.radius - (sk8map.Cone.radius_range*sk8map.Cone.radius)
-		radmax = sk8map.Cone.radius + (sk8map.Cone.radius_range*sk8map.Cone.radius)
+		radmin = sm.Cone.radius - (sm.Cone.radius_range*sm.Cone.radius)
+		radmax = sm.Cone.radius + (sm.Cone.radius_range*sm.Cone.radius)
 		cones = []
-		for obj in conea:
-			# from pct to pxl
-			cone = copy.deepcopy(obj)  # original object stays in unit pct
-			cone.bbox.l *= self.frameWidth
-			cone.bbox.t *= self.frameHeight
-			cone.bbox.w *= self.frameWidth 
-			cone.bbox.h *= self.frameHeight 
-
-			# from pxl to mm
-			cone.bbox.tomm(pxlpermm)
+		for edge in conea:
+			edge.toD(self.ddim)
+			edge.toM(dpmm)
+			cone = sm.Cone(edge)
+			cones.append(cone)
 
 			# select by size
-			cones.append(cone)
 			#if cone.bbox.radius > radmin and cone.bbox.radius < radmax:
 			#	cones.append(cone)
 			#else:
@@ -197,31 +173,18 @@ class Hippocampus:
 		arenarot = ArenaRot(rect)
 		return arenarot
  	
-	def findArena(self, cones):
+	def findArena(self, cones, dpmm):
 		if not cones:
 			return False
 
 		# non-rotated arena, bbox from cones
-		l = self.frameWidth
-		r = 0
-		t = self.frameHeight
-		b = 0
-		bbox = Bbox(l,t,r-l,b-t)
+		mbox = cones[0].mbox
 		for cone in cones:
-			x = cone.bbox.center.x
-			y = cone.bbox.center.y
-			if x < l:
-				l = x
-			if x > r:
-				r = x
-			if y < t:
-				t = y
-			if y > b:
-				b = y
+			mbox.unite(cone.mbox)
 
-		bbox = Bbox(l,t,r-l,b-t)
-		bbox.expand(sk8map.Arena.padding)
-		arena  = sk8map.Arena(bbox)
+		mbox.pad(sm.Arena.padding)
+		arena  = sm.Arena(mbox)
+		arena.fromM(dpmm)
 		return arena
 
 	def buildMap(self,objects,framenum,frame=None):
@@ -235,23 +198,23 @@ class Hippocampus:
 		pad = self.findPad(objects)
 
 		# create map object
-		fmap = sk8map.Map(spot, pad)
+		fmap = sm.Map(spot, pad)
 		self.frameMap = fmap
 		self.post('map state', fmap.state)
-		self.post('map pxlpermm', fmap.pxlpermm)
+		self.post('map dpmm', fmap.dpmm)
 		self.post('map agl', fmap.agl)
 
 		if fmap.state != 'lost':
-			fmap.cones = self.findCones(objects, fmap.pxlpermm)
-			fmap.arena = self.findArena(fmap.cones)
+			fmap.cones = self.findCones(objects, fmap.dpmm)
+			fmap.arena = self.findArena(fmap.cones, fmap.dpmm)
 			
 			if fmap.pad.padl:
-				fmap.pad.padl.bbox.tomm(fmap.pxlpermm)
+				fmap.pad.padl.toM(fmap.dpmm)
 			if fmap.pad.padr:
-				fmap.pad.padr.bbox.tomm(fmap.pxlpermm)
+				fmap.pad.padr.toM(fmap.dpmm)
 			fmap.pad.calc()
 			if fmap.spot:
-				fmap.spot.bbox.tomm(fmap.pxlpermm)
+				fmap.spot.toM(fmap.dpmm)
 		return fmap
 
 	def post(self,key,value):
@@ -264,21 +227,25 @@ class Hippocampus:
 		return self.posts
 
 if __name__ == '__main__':
-	from visualcortex import VisualCortex
+	uni.configureLogging()
+	logging.info('test hippocampus')
 	fname = '/home/john/sk8/bench/testcase/frame/6.jpg'
 	frame = cv.imread( fname, cv.IMREAD_UNCHANGED)
 	if frame is None:
 		logging.error(f'file not found: {fname}')
 		quit()
 
-	visualcortex = VisualCortex()
-	objs = visualcortex.detectObjects(frame)
-	logging.info(*objs, sep='\n')
+	visualcortex = vc.VisualCortex()
+	objs = visualcortex.detectObjects(frame,vc.Detect.threshhold_seeds)
+	print(*objs, sep='\n')
 	
 	hippocampus = Hippocampus()
 	mapp = hippocampus.buildMap(objs, 1)	
-	logging.info(mapp)
-	logging.info(*objs, sep='\n')
+#	logging.info(mapp)
+	print(mapp)
+	print(mapp.cones)
+	print(isinstance(mapp.cones[0],sm.Edge))
+	print(isinstance(mapp.cones[0],sm.Cone))
 
 '''
 class Hippocampus

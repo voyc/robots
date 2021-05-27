@@ -66,7 +66,7 @@ class Skim:
 		logging.info('sleep tight')
 	
 	def sensoryMotorCircuit(self,frame,framenum):
-		objs = self.visualcortex.detectObjects(frame)
+		objs = self.visualcortex.detectObjects(frame,vc.Detect.threshhold_seeds)
 		self.frame = frame
 		self.objs = objs
 	
@@ -93,9 +93,10 @@ class Skim:
 		dir = '/home/john/sk8/fly/20210512/212141'  # 30,50,100,120,140,160,180,200 mm
 		dir = '/home/john/sk8/fly/20210512/224139'  # 150, 200 mm agl
 		dir = '/home/john/sk8/fly/20210514/172116'  # agl calc
-	
 		dir = '/home/john/sk8/fly/20210521/091519'
 	
+		dir = '/home/john/sk8/bench/train'
+
 		dirframe = f'{dir}/frame'
 		missiondatainput  = f'{dir}/mission.log'
 	

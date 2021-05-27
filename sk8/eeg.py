@@ -1,11 +1,11 @@
 ''' eeg.py - class Eeg - probe into internals for human observer '''
+
 import cv2 as cv
 import numpy as np
 import colorsys
 import logging
 import universal as uni
-from sk8math import *
-from sk8map import *
+import sk8mat as sm
 import hippocampus as hc
 import visualcortex as vc
 import frontalcortex as fc
@@ -28,8 +28,8 @@ class Eeg:
 	dialog_height   = 480
 	legit_keypress  = ['n','p','r','s','q']
 	clsname         = [ 'cone','padl','padr','spot' ]
-	barnames        = ( 'cls',  'hue_min', 'hue_max', 'sat_min', 'sat_max', 'val_min', 'val_max', 'canny_lo', 'canny_hi')
-	barmax          = ( 18, 360,360, 100,100, 100,100, 255,255 )
+	barnames        = ( 'hue_min', 'hue_max', 'sat_min', 'sat_max', 'val_min', 'val_max', 'canny_lo', 'canny_hi')
+	barmax          = ( 360,360, 100,100, 100,100, 255,255 )
 	draw_pad_halves = True
 
 	def __init__(self, visualcortex=None, hippocampus=None, frontalcortex=None, neck=None):
@@ -76,7 +76,7 @@ class Eeg:
 
 		# create the trackbars
 		threshholds = self.detect.threshholds[self.detect.clsfocus]
-		for n in range(1,9):
+		for n in range(0,8):
 			barname = self.barnames[n]
 			value = threshholds[n]
 			maxvalue = self.barmax[n]
@@ -143,7 +143,7 @@ class Eeg:
 
 		# trackbar threshholds are 360,100,100; convert to 0 to 1
 		a = np.array(threshholds) / np.array(self.barmax)
-		cls,hl,hu,sl,su,vl,vu,_,_ = a
+		hl,hu,sl,su,vl,vu,_,_ = a
 
 		# colorsys values are all 0.0 to 1.0
 		rl,gl,bl = colorsys.hsv_to_rgb(hl,sl,vl)
@@ -211,60 +211,42 @@ class Eeg:
 
 		# draw arena
 		if arena:
-			l = int(round(arena.bbox.l * bmap.pxlpermm))
-			t = int(round(arena.bbox.t * bmap.pxlpermm))
-			r = int(round(arena.bbox.r * bmap.pxlpermm))
-			b = int(round(arena.bbox.b * bmap.pxlpermm))
-			cv.rectangle(img, (l,t), (r,b), (127,0,0), 1)
+			cv.rectangle(img, arena.dbox.ltrb(), (127,0,0), 1)
 	
 		# draw cones
 		if cones:
-			r = int(round(Cone.radius * bmap.pxlpermm))
+			r = int(round(sm.Cone.radius * bmap.dpmm))
 			for cone in cones:
-				#x = int(round(arena.bbox.center.x + (obj.bbox.center.x * self.frameWidth)))
-				#y = int(round(arena.bbox.center.y + (obj.bbox.center.y * self.frameHeight)))
-				x = int(round(cone.bbox.center.x * bmap.pxlpermm))
-				y = int(round(cone.bbox.center.y * bmap.pxlpermm))
-				cv.circle(img,(x,y),r,(0,0,255),1)
+				cv.circle(img,cone.center,r,(0,0,255),1)
 	
 		# draw pad
 		if pad:
 			if pad.purpose == 'frame':
 				if self.draw_pad_halves:
 					if pad.padl:
-						l = int(round(pad.padl.bbox.l * bmap.pxlpermm))
-						t = int(round(pad.padl.bbox.t * bmap.pxlpermm))
-						r = int(round(pad.padl.bbox.r * bmap.pxlpermm))
-						b = int(round(pad.padl.bbox.b * bmap.pxlpermm))
-						cv.rectangle(img, (l,t), (r,b), (0,255,255), 1) # BGR yellow, left
+						cv.rectangle(img, pad.padl.dbox.lt, pad.padl.dbox.rb(), (0,255,255), 1) # BGR yellow, left
 
 					if pad.padr:
-						l = int(round(pad.padr.bbox.l * bmap.pxlpermm))
-						t = int(round(pad.padr.bbox.t * bmap.pxlpermm))
-						r = int(round(pad.padr.bbox.r * bmap.pxlpermm)) -1
-						b = int(round(pad.padr.bbox.b * bmap.pxlpermm)) -1
-						cv.rectangle(img, (l,t), (r,b), (255,0,255), 1) # BGR purple, right
+						cv.rectangle(img, pad.padr.dbox.lt, pad.padr.dbox.rb(), (255,0,255), 1) # BGR purple, right
 				
 					if pad.padl and pad.padr:
-						drawPolygon(img, [pad.padl.bbox.center.tuple(), pad.padr.bbox.center.tuple(), pad.pt3.tuple()], bmap.pxlpermm)
+						drawPolygon(img, [pad.padl.dbox.ctr(), pad.padr.dbox.ctr(), pad.pt3], bmap.dpmm)
 				
 				color = (0,0,0)
 				#  outer perimeter
-				r = round(Pad.mm_radius * bmap.pxlpermm)
-				x = round(pad.center.x * bmap.pxlpermm)
-				y = round(pad.center.y * bmap.pxlpermm)
-				cv.circle(img,(x,y),r,color,1)
+				r = round(sm.Pad.mm_radius * bmap.dpmm)
+				cv.circle(img,pad.center,r,color,1)
 
 				# axis with arrow
-				pt1, pt2 = calcLine((x,y), r, pad.angle)
+				pt1, pt2 = sm.calcLine(pad.center, r, pad.angle)
 				cv.line(img,pt1,pt2,color,1)  # center axis
 				cv.circle(img,pt1,3,color,3)   # arrow pointing forward
 
 			elif pad.purpose == 'home':
 				# draw props
-				r = round(Pad.mm_radius * bmap.pxlpermm)
-				x = round(pad.center.x * bmap.pxlpermm)
-				y = round(pad.center.y * bmap.pxlpermm)
+				r = round(Pad.mm_radius * bmap.dpmm)
+				x = round(pad.center.x * bmap.dpmm)
+				y = round(pad.center.y * bmap.dpmm)
 				color = (255,128,128)
 				radius_prop = .3 * r
 				radius_xframe = .7 * r
@@ -284,10 +266,8 @@ class Eeg:
 				#cv.rectangle(img, (l,t), (r,b), (127,0,0), 1)
 		if spot:
 			color = (255,255,255)
-			r = round(spot.bbox.radius * bmap.pxlpermm)
-			x = round(spot.bbox.center.x * bmap.pxlpermm)
-			y = round(spot.bbox.center.y * bmap.pxlpermm)
-			cv.circle(img,(x,y),r,color,1)
+			r = round(spot.mm_radius * bmap.dpmm)
+			cv.circle(img,spot.dbox.ctr(),r,color,1)
 
 	def drawUI(self, img, frameMap, baseMap=False, debugImages=None, posts=None):
 		# create empty image for the map
@@ -333,7 +313,6 @@ if __name__ == '__main__':
 	# wakeup, connect circuits
 	visualcortex = vc.VisualCortex()
 	hippocampus = hc.Hippocampus()
-	hippocampus.start()
 	frontalcortex = fc.FrontalCortex()
 	neck = nek.Neck()
 	eeg = Eeg(visualcortex=visualcortex, hippocampus=hippocampus, frontalcortex=frontalcortex, neck=neck)
@@ -350,14 +329,13 @@ if __name__ == '__main__':
 
 	# frame sent to visual cortex for edge detection
 
-	objs = visualcortex.detectObjects(frame)
+	objs = visualcortex.detectObjects(frame, vc.Detect.threshhold_seeds)
 	logging.info(*objs, sep='\n')
 
 	# ears (cerebrum) receive telemetry data from sensors 
 	
 	# frame and telemetry data are sent to hippocampus for spatial orientation
 	mapp = hippocampus.buildMap(objs,1)	
-	hippocampus.stop()
 	logging.info(mapp)
 	logging.info(*objs, sep='\n')  # objects list has been scrubbed
 
