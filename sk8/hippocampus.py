@@ -30,23 +30,12 @@ class Hippocampus:
 			if obj.cls == uni.clsSpot:
 				spota.append(obj)
 		self.post('num spot', len(spota))
-		if len(spota) <= 0:
+		if len(spota) != 1:
 			return False
-
-		# if multiples, choose the one with the largest radius 
 		objspot = spota[0]
-		for obj in spota:
-			if obj.pbox.radius() > objspot.pbox.radius():
-				objspot = obj
-
-		# go back and scrub objects list
-		for obj in spota:
-			if obj is not objspot:
-				objects.remove(obj)
 
 		# from pct to pxl
 		objspot.toD(self.ddim)
-
 		spot = sm.Spot(objspot)
 		self.post('spot pxl radius', spot.dbox.radius())
 		self.post('spot dpmm', spot.dpmm)
@@ -62,54 +51,21 @@ class Hippocampus:
 				a.append(obj)
 		self.post(f'pad {clsname}', len(a))
 
-		# ideally we have one and only one
-		half = False
-		halfmax = False
-		if len(a) >= 1:
-			half = a[0]
-			halfmax = copy.deepcopy(a[0])
-		else:
-			pass #logging.debug(f'missing half {clsname}')
+		if len(a) != 1:
+			return False
 
-		# if multiples, choose the one with the largest radius 
-		# or combine them all into one big one
-		if len(a) > 1:
-			for obj in a:
-				if obj.pbox.radius() > half.pbox.radius():
-					half = obj
-				halfmax.pbox.unite(obj.pbox)
-
-			# go back and scrub objects list
-			for obj in a:
-				if obj.cls == cls and obj is not half:
-					objects.remove(obj)
-
-		if half:
-			half.toD(self.ddim)
-			halfmax.toD(self.ddim)
-		return half, halfmax  # halfmax never tested
+		half = a[0]
+		half.toD(self.ddim)
+		return half
 
 	def findPad(self, objects):
 		# find the two halfs
-		padl, padlmax = self.findHalf(objects, uni.clsPadl)
-		padr, padrmax = self.findHalf(objects, uni.clsPadr)
+		padl = self.findHalf(objects, uni.clsPadl)
+		padr = self.findHalf(objects, uni.clsPadr)
 
-		# the two halfs are expected to intersect (unless perfectly straight up)
-		#if padl and padr and not padl.bbox.intersects( padr.bbox):
+		# the two halfs are expected to intersect each other (unless perfectly straight up)
 		if padl and padr and not padl.dbox.intersects(padr.dbox):
 			pass #logging.debug('pad halves do not intersect')
-
-		# replicate missing half
-		#if padl and not padr:
-		#	#logging.warning('generate padr')
-		#	padr = copy.deepcopy(padl)
-		#	padr.bbox.l += (padr.bbox.w)
-		#	padr.bbox.calc()
-		#if padr and not padl:
-		#	#logging.warning('generate padl')
-		#	padl = copy.deepcopy(padr)
-		#	padl.bbox.l -= (padl.bbox.w)
-		#	padl.bbox.calc()
 
 		# calc pad state
 		state = 'missing'
@@ -136,30 +92,13 @@ class Hippocampus:
 				conea.append(obj)
 		self.post('cones found', len(conea))
 
-		# choose only correctly sized objects
-		radmin = sm.Cone.radius - (sm.Cone.radius_range*sm.Cone.radius)
-		radmax = sm.Cone.radius + (sm.Cone.radius_range*sm.Cone.radius)
 		cones = []
 		for edge in conea:
 			edge.toD(self.ddim)
 			edge.toM(dpmm)
 			cone = sm.Cone(edge)
 			cones.append(cone)
-
-			# select by size
-			#if cone.bbox.radius > radmin and cone.bbox.radius < radmax:
-			#	cones.append(cone)
-			#else:
-			#	obj.cls = uni.clsNone # mark for scrubbing
 		self.post('cones accepted', len(cones))
-
-		# go back and scrub objects list
-		for obj in conea:
-			if obj.cls == uni.clsNone:
-				objects.remove(obj)
-
-		#if len(cones) <= 0:
-		#	cones = False
 		return cones
 
 	def findArenaRot(self, cones):
@@ -188,6 +127,7 @@ class Hippocampus:
 		return arena
 
 	def buildMap(self,objects,framenum,frame=None):
+		self.posts = {}
 		self.objects = objects
 		self.framenum = framenum
 		self.frame = frame

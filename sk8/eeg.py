@@ -28,9 +28,16 @@ class Eeg:
 	dialog_height   = 480
 	legit_keypress  = ['n','p','r','s','q']
 	clsname         = [ 'cone','padl','padr','spot' ]
-	barnames        = ( 'hue_min', 'hue_max', 'sat_min', 'sat_max', 'val_min', 'val_max', 'canny_lo', 'canny_hi')
-	barmax          = ( 360,360, 100,100, 100,100, 255,255 )
+	barnames        = ( 'hue_min', 'hue_max', 'sat_min', 'sat_max', 'val_min', 'val_max', 'canny_lo', 'canny_hi', 'gaus_kernel', 'gaus_sigma', 'open_kernel')
+	barmax          = ( 360,360, 100,100, 100,100, 255,255, 255, 255, 255 )
 	draw_pad_halves = True
+	line_thickness  = 3
+	color_cone = (0,0,255)
+	color_padl = (0,255,255)
+	color_padr = (127,0,127)
+	color_pad = (0,0,0)
+	color_padcalc = (255,0,0)
+	color_spot = (255,127,255)
 
 	def __init__(self, visualcortex=None, hippocampus=None, frontalcortex=None, neck=None):
 		# probed objects
@@ -76,7 +83,8 @@ class Eeg:
 
 		# create the trackbars
 		threshholds = self.detect.threshholds[self.detect.clsfocus]
-		for n in range(0,8):
+		numbars = len(self.barnames)
+		for n in range(0,numbars):
 			barname = self.barnames[n]
 			value = threshholds[n]
 			maxvalue = self.barmax[n]
@@ -124,10 +132,14 @@ class Eeg:
 		# read the threshholds from the trackbars
 		threshholds = self.detect.threshholds[self.detect.clsfocus]
 		windowname = self.clsname[self.detect.clsfocus]
-		newset = [threshholds[0]]
-		for n in range(1,9):
+		newset = []
+		numbars = len(self.barnames)
+		for n in range(0,numbars):
 			barname = self.barnames[n]
 			value = cv.getTrackbarPos(barname, windowname)
+			if barname == 'gaus_kernel' and value > 0 and value % 2 == 0:
+				value += 1
+				cv.setTrackbarPos(barname, windowname, value)
 			newset.append(value)
 		threshholds = tuple(newset)
 
@@ -143,7 +155,7 @@ class Eeg:
 
 		# trackbar threshholds are 360,100,100; convert to 0 to 1
 		a = np.array(threshholds) / np.array(self.barmax)
-		hl,hu,sl,su,vl,vu,_,_ = a
+		hl,hu,sl,su,vl,vu,_,_,_,_,_ = a
 
 		# colorsys values are all 0.0 to 1.0
 		rl,gl,bl = colorsys.hsv_to_rgb(hl,sl,vl)
@@ -210,37 +222,36 @@ class Eeg:
 		arena = bmap.arena if bmap.arena else False
 
 		# draw arena
-		if arena:
-			cv.rectangle(img, arena.dbox.ltrb(), (127,0,0), 1)
+		#if arena:
+		#	cv.rectangle(img, arena.dbox.ltrb(), (127,0,0), 1)
 	
 		# draw cones
 		if cones:
 			r = int(round(sm.Cone.radius * bmap.dpmm))
 			for cone in cones:
-				cv.circle(img,cone.center,r,(0,0,255),1)
+				cv.circle(img,cone.center,r,self.color_cone,self.line_thickness)
 	
 		# draw pad
 		if pad:
 			if pad.purpose == 'frame':
 				if self.draw_pad_halves:
 					if pad.padl:
-						cv.rectangle(img, pad.padl.dbox.lt, pad.padl.dbox.rb(), (0,255,255), 1) # BGR yellow, left
+						cv.rectangle(img, pad.padl.dbox.lt, pad.padl.dbox.rb(), self.color_padl, self.line_thickness) # BGR yellow, left
 
 					if pad.padr:
-						cv.rectangle(img, pad.padr.dbox.lt, pad.padr.dbox.rb(), (255,0,255), 1) # BGR purple, right
+						cv.rectangle(img, pad.padr.dbox.lt, pad.padr.dbox.rb(), self.color_padr, self.line_thickness) # BGR purple, right
 				
 					if pad.padl and pad.padr:
-						drawPolygon(img, [pad.padl.dbox.ctr(), pad.padr.dbox.ctr(), pad.pt3], bmap.dpmm)
+						drawPolygon(img, [pad.padl.dbox.ctr(), pad.padr.dbox.ctr(), pad.pt3], factor=bmap.dpmm, color=self.color_padcalc)
 				
-				color = (0,0,0)
 				#  outer perimeter
 				r = round(sm.Pad.mm_radius * bmap.dpmm)
-				cv.circle(img,pad.center,r,color,1)
+				cv.circle(img,pad.center,r, self.color_pad, self.line_thickness)
 
 				# axis with arrow
 				pt1, pt2 = sm.calcLine(pad.center, r, pad.angle)
-				cv.line(img,pt1,pt2,color,1)  # center axis
-				cv.circle(img,pt1,3,color,3)   # arrow pointing forward
+				cv.line(img,pt1,pt2,self.color_pad,self.line_thickness)  # center axis
+				cv.circle(img,pt1,3,self.color_pad,self.line_thickness*2)   # arrow pointing forward
 
 			elif pad.purpose == 'home':
 				# draw props
@@ -265,15 +276,21 @@ class Eeg:
 				# draw drone body
 				#cv.rectangle(img, (l,t), (r,b), (127,0,0), 1)
 		if spot:
-			color = (255,255,255)
 			r = round(spot.mm_radius * bmap.dpmm)
-			cv.circle(img,spot.dbox.ctr(),r,color,1)
+			cv.circle(img,spot.dbox.ctr(),r,self.color_spot,self.line_thickness)
 
 	def drawUI(self, img, frameMap, baseMap=False, debugImages=None, posts=None):
 		# create empty image for the map
 		self.frameHeight,self.frameWidth,self.frameDepth = img.shape
 		imgMap = np.zeros((self.frameHeight, self.frameWidth, self.frameDepth), np.uint8) # blank image
 		imgMap.fill(255)  # made white
+
+		# create contours
+		imgContours = imgMap.copy() # start blank
+		cv.drawContours(imgContours, self.detect.contours, -1, (0,0,255),1)
+		for contour in self.detect.contours:
+			l,t,w,h = cv.boundingRect(contour)
+			cv.rectangle(imgContours, (l,t), (l+w,t+h), (0,0,0), 1)
 	
 		# create final as copy of original
 		imgFinal = img.copy()
@@ -302,11 +319,14 @@ class Eeg:
 		# stack all images into one
 		imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate = debugImages
 		imgHsv= cv.cvtColor( imgHsv, cv.COLOR_HSV2BGR)
+		imgMask = cv.cvtColor( imgMask, cv.COLOR_GRAY2BGR)
 		imgTuple = ([imgPost,imgFinal],)
 		imgTuple = ([imgMap,imgPost,imgFinal],)
-		imgTuple = ([imgPost,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgFinal])
 		imgTuple = ([imgMasked,imgBlur,imgCanny],[imgPost,imgMap,imgFinal])
+		imgTuple = ([imgPost,imgMask,imgBlur],[imgCanny,imgDilate,imgContours])
+		imgTuple = ([imgMask,imgBlur,imgCanny,imgDilate],[imgPost,imgContours,imgMap,imgFinal])
 		stack = self.stackImages(Eeg.stack_scale,imgTuple)
+		cv.imshow('Final', imgFinal)  # open the image processing window
 		return stack
 
 if __name__ == '__main__':
@@ -344,13 +364,24 @@ if __name__ == '__main__':
 	# for more detailed testing of a stream of frames, see sim.py
 
 '''
-hsv
-see https://alloyui.com/examples/color-picker/hsv.html
+notes on HSV
+	see https://alloyui.com/examples/color-picker/hsv.html
+	
+	h = hue, 0 to 360 on the color wheel; 0=red, 60=yellow, 120=green, 180=cyan, 240=blue, 300=magenta,360=red
+	s = saturation as inverted pct of white,        0=white, 100=pure color, at zero => gray scale
+	v = value "intensity" as inverted pct of black, 0=black, 100=pure color, takes precedence over sat
 
-h = 6 primary colors, each with a 60 degree range, 6*60=360
-    primary     red  yellow  green  cyan  blue  magenta  red
-    hue degrees   0      60    120   180   240      300  359  360
-    hue inRange   0      30     60    90   120      150  179  180
-s = saturation as pct,        0=white, 100=pure color, at zero => gray scale
-v = value "intensity" as pct, 0=black, 100=pure color, takes precedence over sat
+	sk8 HSV trackbars are valued 0 to 360,100,100
+	openCV HSV are valued 0 to 179,255,255;  hue with max 360 is divided by 2, because 255 is max int
+
+	color coordinate systems
+		most systems use RGB: 255,255,255
+		openCV by default uses BGR: 255,255,255
+	
+todo:
+	add trackbars for:
+		x gaus blur kernel size
+		x gaus blur sigma
+		framenum
+		dilate kernel size
 '''

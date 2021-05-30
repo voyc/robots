@@ -55,7 +55,8 @@ class Skim:
 		while True:
 			frame = self.vision(missiondata,framenum,lastframe,dirframe)
 			if frame is None:
-				break
+				framenum -= 1
+				continue
 	
 			keypress = self.sensoryMotorCircuit(frame,framenum)
 			killed,framenum = self.handleKeypress(keypress,framenum,lastframe)
@@ -124,6 +125,7 @@ class Skim:
 		frame = cv.imread( fname, cv.IMREAD_UNCHANGED)
 		if frame is None:
 			logging.error(f'file not found: {fname}')
+			return None
 		return frame
 	
 	def handleKeypress(self,keypress,framenum,lastframe):

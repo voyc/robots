@@ -103,6 +103,7 @@ class Box:
 	def rb(self): return tuple(np.array(self.lt) + np.array(self.wh))
 	def lt_rb(self): return (self.lt, self.rb())
 	def ltrb(self): return self.lt[0], self.lt[1], self.rb()[0], self.rb()[1]
+	def ltwh(self): return self.lt[0], self.lt[1], self.wh[0], self.wh[1]
 
 	def xcalc(self):
 		self.pxl_wh =  tuple(np.array(self.pxl_rb) - np.array(self.pxl_lt))
@@ -118,8 +119,13 @@ class Box:
 		return self.intersection(box2) > 0
 
 	def touchesEdge(self, dim):
-		dim = list(np.array(dim) - 2)
-		return self.intersects( Box((1,1),dim))
+		w,h = dim
+		l,t,r,b = self.ltrb()
+		touches = False
+		if l <= 1 or r >= w-2 \
+		or t <= 1 or b >= h-2: 
+			touches = True
+		return touches
 
 	def pad(self, padding):  # previously expand
 		v = np.array([padding,padding])
@@ -246,7 +252,7 @@ class Cone(Edge):
 		self.pbox = edge.pbox
 		self.dbox = edge.dbox
 		self.mbox = edge.mbox
-		self.center = averageTwoPoints(self.mbox.lt, self.mbox.rb())
+		self.center = averageTwoPoints(self.dbox.lt, self.dbox.rb())
 
 	def __str__(self):
 		return f'cone {self.center}, {self.mbox.radius()}' 

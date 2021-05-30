@@ -2,6 +2,7 @@
 
 import cv2 as cv
 import numpy as np
+import copy
 import universal as uni
 import sk8mat as sm
 
@@ -16,19 +17,19 @@ import sk8mat as sm
 class Detect:
 	# object detection data, saved by VisualCortex, probed and modified by Eeg
 	threshhold_seeds = [ 
-		#   hue      sat      val     canny      # class        
-		( 358, 25,  42,100,  35,100,  82,127 ),  # uni.clsCone, 
-		(  52,106,  42,100,  10, 90,  82,127 ),  # uni.clsPadl, 
-		( 258,335,  24, 76,  10, 90,  82,127 ),  # uni.clsPadr, 
-		( 306,340,  46,100,  10, 90,  82,127 )   # uni.clsSpot, 
+		#   hue      sat      val     canny    gk  gs,  ok     # class        
+		( 358,  7,  42,100,  26,100,  78,127,  17,  1,   7 ),  # uni.clsCone, 
+		(  52,106,  42,100,  10, 90,  82,127,  17,  1,   7 ),  # uni.clsPadl, 
+		( 236,330,  24, 76,  10, 50,  82,127,  17,  1,   7 ),  # uni.clsPadr, 
+		( 306,340,  50,100,  10, 90,  82,127,  17,  1,   7 )   # uni.clsSpot, 
 	]
 
 	threshhold_max = [ 
-		#   hue      sat      val     canny
-		(   0,179,  42,100,  35,100,  82,127 ),
-		(   0,179,  42,100,  10, 90,  82,127 ),
-		(   0,179,  24, 76,  10, 90,  82,127 ),
-		(   0,179,  46,100,  10, 90,  82,127 )
+		#   hue      sat      val     canny    gk  gs,  ok
+		[   0,179,  42,100,  35,100,  78,127, 255, 10,   7 ],
+		[   0,179,  42,100,  10, 90,  82,127, 255, 10,   7 ],
+		[   0,179,  24, 76,  10, 90,  82,127, 255, 10,   7 ],
+		[   0,179,  46,100,  10, 90,  82,127, 255, 10,   7 ]
 	]
 
 	def __init__(self):
@@ -36,6 +37,7 @@ class Detect:
 		self.clsfocus = uni.clsSpot
 		self.threshholds = self.threshhold_seeds 
 		self.images = []
+		self.contours = None
 
 	def __str__(self):
 		return str(self.clsfocus)
@@ -60,22 +62,40 @@ class VisualCortex:
 			for cls in range(len(threshholds)): 
 				boxes = self.detectContours(img,cls,threshholds[cls])
 				objects = objects + boxes	
+		self.filterCones(objects)
 		return objects
 
-	def detectContours(self,img,cls,settings):
+	def filterCones(self,objects):
+		pad = None
+		cones = []
+		for obj in objects:
+			if obj.cls > 0:
+				if pad:
+					pad.dbox.unite(obj.dbox)
+				else:
+					pad = copy.deepcopy(obj)
+			else:
+				cones.append(obj)
+		for cone in cones:
+			if pad.dbox.intersects(cone.dbox):
+				objects.remove(cone)
+
+
+	def detectContours(self,img,cls,threshholds):
 		# draw a one-pixel black border around the whole image
 		#	When the drone is on the pad, 
 		#	each halfpad object extends past the image boundary on three sides, 
 		#	and cv.findContours() detects only the remaining edge as an object.
-		w,h = self.ddim
-		cv.rectangle(img, (0,0), (w-1,h-1), (0,0,0), 1)
+		def drawBorder(onimg):
+			w,h = self.ddim
+			cv.rectangle(onimg, (0,0), (w-1,h-1), (0,0,0), 1)
 
-		# interpolate sk8-trackbar to openCV values for hsv
-		sk8_hsv = [360,360,100,100,100,100,1,1]
-		ocv_hsv = [179,179,255,255,255,255,1,1]
-		ocv_set = sm.interpolate(np.array(settings), 0,np.array(sk8_hsv), 0,np.array(ocv_hsv))
+		# interpolate sk8-trackbar to openCV values for hsv (see visualcortex.py notes on hsv)
+		sk8_hsv = [360,360,100,100,100,100,1,1,1,1,1]
+		ocv_hsv = [179,179,255,255,255,255,1,1,1,1,1]
+		ocv_set = sm.interpolate(np.array(threshholds), 0,np.array(sk8_hsv), 0,np.array(ocv_hsv))
 		ocv_set = ocv_set.astype(int)
-		hl,hu,sl,su,vl,vu,cl,cu = ocv_set
+		hl,hu,sl,su,vl,vu,cl,cu,gk,gs,ok = ocv_set
 
 		# prepare a mask of pixels within hsv threshholds
 		imgHsv = cv.cvtColor(img,cv.COLOR_BGR2HSV)
@@ -91,24 +111,42 @@ class VisualCortex:
 			mask2 = cv.inRange(imgHsv,lower2,upper2)
 			imgMask = mask1 + mask2
 
-		# take the union of the mask and the original image
-		imgMasked = cv.bitwise_and(img,img, mask=imgMask)
+		# murtaza: # mask the original image
+		#imgMasked = cv.bitwise_and(img,img, mask=imgMask)
+		#imgBlur = cv.GaussianBlur(imgMasked, (gk, gk), gs)  # started at (7,7);  the bigger kernel size pulls together the pieces of padr
+		#imgGray = cv.cvtColor(imgBlur, cv.COLOR_BGR2GRAY)
 
-		# gaussian blur	
-		imgBlur = cv.GaussianBlur(imgMasked, (17, 17), 1)  # started at (7,7);  the bigger kernel size pulls together the pieces of padr
-		imgGray = cv.cvtColor(imgBlur, cv.COLOR_BGR2GRAY)
-	
-		# canny edge detection.  Canny recommends hi:lo ratio around 2:1 or 3:1.
-		imgCanny = cv.Canny(imgGray, cl, cu)
-	
-		# dilate: thicken the line
-		kernel = np.ones((5, 5))
-		imgDilate = cv.dilate(imgCanny, kernel, iterations=1)
+		# remove the small bits of cone; open = erode followed by dilate
+		imgMasked = imgMask
+		if ok > 0:
+			imgMasked = cv.morphologyEx(imgMask, cv.MORPH_OPEN, np.ones((ok, ok)))
+
+		# pull together the pieces of padr
+		imgBlur = imgMasked
+		if gk+gs > 0:
+			imgBlur = cv.GaussianBlur(imgMasked, (gk, gk), gs)
+		drawBorder(imgBlur)
+
+		imgGray = imgBlur
 
 		# get a data array of polygons, one contour boundary for each object
-		contours, _ = cv.findContours(imgDilate, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
+		imgCanny = cv.Canny(imgGray, cl, cu)
+		imgDilate = cv.dilate(imgCanny, np.ones((5, 5)), iterations=1)
+		contours, _ = cv.findContours(imgDilate, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+
+		# save for drawing by eeg
 		if self.detect.clsfocus == cls:
 			self.detect.images = [imgHsv, imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate]
+			self.detect.contours = copy.deepcopy(contours)
+
+		# take only the largest of padl, padr, and spot objects
+		areas = []
+		for contour in contours:
+			area = cv.contourArea(contour)
+			areas.append([area,contour])
+		if cls > 0 and len(contours) > 1:
+			areas.sort(key=lambda x: x[0], reverse=True)
+			contours = [areas[0][1]]
 
 		# get bounding box for each contour
 		edges = []
@@ -122,6 +160,7 @@ class VisualCortex:
 			edge.dbox = sm.Box((l,t),[w,h])
 			edge.fromD(self.ddim)
 			edges.append(edge)
+
 		return edges
 
 	def probeEdgeDetection(self):
@@ -140,23 +179,7 @@ if __name__ == '__main__':
 
 '''
 class VisualCortex
-	detectObjects - visual cortex, pareital lobe, occipital lobe, Brodmann area
-
-	color coordinate systems
-		most systems use RGB: 255,255,255
-		openCV by default uses BGR: 255,255,255
-	
-	sk8 HSV trackbars are 0 to 360,100,100
-		hue is 0 to 360 degrees on the color wheel
-		sat is 0 to 100 percent white
-		val is 0 to 100 percent black
-	
-	openCV HSV is 0 to 179,255,255
-		255 is the max integer, so the 360 is divided by 2
-	
-todo:
-	add trackbars for:
-		framenum
-		gaus blur kernel size
-		gaus blur setting?
+	aka: visual cortex, pareital lobe, occipital lobe, Brodmann area
+	public function:
+		detectObjects()
 '''
