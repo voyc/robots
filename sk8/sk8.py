@@ -50,7 +50,7 @@ class Sk8:
 		logging.info('good night')
 	
 	def sensoryMotorCircuit(self, frame, framenum):
-		objs = self.visualcortex.detectObjects(frame)
+		objs = self.visualcortex.detectObjects(frame,vc.Detect.threshhold_seeds)
 		fmap = self.hippocampus.buildMap(objs,framenum,frame)
 		vector = self.frontalcortex.navigate()
 		rccmd = 'rc'
@@ -81,7 +81,7 @@ class Sk8:
 		fname = f'{self.dirtrain}/{framenum}.txt'
 		f = open(fname, 'a')
 		for obj in objs:
-			f.write(f"{obj.cls} {obj.bbox.l} {obj.bbox.t} {obj.bbox.w} {obj.bbox.h}\n")
+			f.write(obj.write())
 		f.close()
 
 		# save mission log

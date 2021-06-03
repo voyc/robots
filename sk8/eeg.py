@@ -12,7 +12,8 @@ import frontalcortex as fc
 import neck as nek
 
 def drawPolygon(img, ptarray, factor=1, color=(255,0,0), linewidth=1):	
-	a = np.multiply(ptarray,factor)
+#	a = np.multiply(ptarray,factor)
+	a = np.array(ptarray)
 	a = a.astype(int)
 	for i in range(0,len(a)):
 		j = i+1 if i < len(a)-1 else 0
@@ -34,10 +35,10 @@ class Eeg:
 	line_thickness  = 3
 	color_cone = (0,0,255)
 	color_padl = (0,255,255)
-	color_padr = (127,0,127)
+	color_padr = (255,127,255)
 	color_pad = (0,0,0)
 	color_padcalc = (255,0,0)
-	color_spot = (255,127,255)
+	color_spot = (255,0,0)
 
 	def __init__(self, visualcortex=None, hippocampus=None, frontalcortex=None, neck=None):
 		# probed objects

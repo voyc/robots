@@ -359,7 +359,7 @@ if __name__ == '__main__':
 			'land'
 	)
 	testvideo = (
-			'pause 60'
+			'pause 120'
 	)
 	missioncmds = (
 			'takeoff\n'
@@ -478,7 +478,7 @@ if __name__ == '__main__':
 	started = drone.prepareForTakeoff()
 	if started:
 		logging.info('start mission')
-		flyMission(hover, drone) 
+		flyMission(testvideo, drone) 
 		logging.info('mission complete')
 	drone.stop() 
 	drone.wait()

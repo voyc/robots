@@ -96,6 +96,8 @@ class Skim:
 		dir = '/home/john/sk8/fly/20210514/172116'  # agl calc
 		dir = '/home/john/sk8/fly/20210521/091519'
 	
+		dir = '/home/john/sk8/bench/train_padv1'
+		dir = '/home/john/sk8/fly/20210601/115432'  # new pad, height levels, 24-frame anomoly at 3282
 		dir = '/home/john/sk8/bench/train'
 
 		dirframe = f'{dir}/frame'
@@ -154,7 +156,7 @@ class Skim:
 		fname = f'{self.dirtrainout}/{self.framenumout}.txt'
 		f = open(fname, 'a')
 		for obj in self.objs:
-			f.write(f"{obj.cls} {obj.bbox.l} {obj.bbox.t} {obj.bbox.w} {obj.bbox.h}\n")
+			f.write(obj.write())
 		f.close()
 		self.framenumout += 1
 	

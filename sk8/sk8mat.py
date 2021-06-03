@@ -1,6 +1,7 @@
 ''' sk8mat.py - math, geometry, bounding box, and mapping functions for sk8 '''
 
 import numpy as np
+import copy
 
 # a point is represented by a tuple, (x,y)
 
@@ -128,9 +129,13 @@ class Box:
 		return touches
 
 	def pad(self, padding):  # previously expand
-		v = np.array([padding,padding])
-		self.lt = tuple(np.array(self.lt) - v)
-		self.wh = self.wh = tuple(np.array(self.lt) - (v*2))
+		l,t,w,h = self.ltwh()
+		l = max(0, l - padding)
+		t = max(0, t - padding)
+		w = max(0, w + (padding*2))
+		h = max(0, h + (padding*2))
+		padded = Box((l,t),[w,h])
+		return padded
 
 	def unite(self, box2):  # previously enlarge
 		l = min(self.lt[0], box2.lt[0])
@@ -187,9 +192,10 @@ class Edge: # represents a detected object, classification plus bounding box, in
 		return s
 
 	def write(self):  # write to training data file
+		def prec(x): return round(x,Box.prec)	
 		l,t = self.pbox.lt
 		w,h = self.pbox.wh
-		s  = f'{self.cls} {l} {t} {w} {h}'
+		s  = f'{self.cls} {prec(l)} {prec(t)} {prec(w)} {prec(h)}\n'
 		return s
 
 class Spot(Edge):
@@ -289,10 +295,10 @@ class Map:
 	def calc(self):
 		# set state
 		self.state = 'lost' # no pad, no spot
-		if self.spot and self.calcAgl( self.spot.dpmm) < Spot.agl_max:
-			self.state = 'spot'
-		elif self.pad and self.pad.state == 'complete':
+		if self.pad and self.pad.state == 'complete':
 			self.state = 'pad'
+		elif self.spot and self.pad.state == 'partial':
+			self.state = 'spot'
 
 		# choose dpmm and calc agl
 		self.dpmm = self.spot.dpmm if self.state == 'spot' else self.pad.dpmm
@@ -342,8 +348,13 @@ if __name__ == '__main__':
 
 	ba = Box((150,160), [200,190])
 	intersection = ba.intersection(bb)
-	intersect = ba.intersects(bb)
-	print(intersect)
+	intersects = ba.intersects(bb)
+	print(intersection, intersects)
+
+	bd = Box((0,0), [151,161])
+	intersection = bd.intersection(ba)
+	intersects = bd.intersects(ba)
+	print(intersection, intersects)
 
 	bc = Box((100,100),(700,600))
 	touch = ba.touchesEdge([640,480])

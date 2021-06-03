@@ -18,7 +18,15 @@ class Detect:
 	# object detection data, saved by VisualCortex, probed and modified by Eeg
 	threshhold_seeds = [ 
 		#   hue      sat      val     canny    gk  gs,  ok     # class        
-		( 358,  7,  42,100,  26,100,  78,127,  17,  1,   7 ),  # uni.clsCone, 
+		( 358, 13,  42,100,  12,100,  78,127,  17,  1,  11 ),  # uni.clsCone, 
+		(  47, 81,  41,100,  10, 85,  82,127,  17,  1,   7 ),  # uni.clsPadl, 
+		( 296,357,  33,100,  10, 91,  82,127,  17,  1,   7 ),  # uni.clsPadr, 
+		( 186,299,  21,100,  12, 97,  82,127,  17,  1,   7 )   # uni.clsSpot, 
+	]
+
+	threshhold_seeds_v1 = [ 
+		#   hue      sat      val     canny    gk  gs,  ok     # class        
+		( 358, 13,  42,100,  12,100,  78,127,  17,  1,   7 ),  # uni.clsCone, 
 		(  52,106,  42,100,  10, 90,  82,127,  17,  1,   7 ),  # uni.clsPadl, 
 		( 236,330,  24, 76,  10, 50,  82,127,  17,  1,   7 ),  # uni.clsPadr, 
 		( 306,340,  50,100,  10, 90,  82,127,  17,  1,   7 )   # uni.clsSpot, 
@@ -62,23 +70,23 @@ class VisualCortex:
 			for cls in range(len(threshholds)): 
 				boxes = self.detectContours(img,cls,threshholds[cls])
 				objects = objects + boxes	
-		self.filterCones(objects)
+		#self.filterCones(objects)
 		return objects
 
-	def filterCones(self,objects):
-		pad = None
-		cones = []
-		for obj in objects:
-			if obj.cls > 0:
-				if pad:
-					pad.dbox.unite(obj.dbox)
-				else:
-					pad = copy.deepcopy(obj)
-			else:
-				cones.append(obj)
-		for cone in cones:
-			if pad.dbox.intersects(cone.dbox):
-				objects.remove(cone)
+	#def filterCones(self,objects):
+	#	pad = None
+	#	cones = []
+	#	for obj in objects:
+	#		if obj.cls > 0:
+	#			if pad:
+	#				pad.dbox.unite(obj.dbox)
+	#			else:
+	#				pad = copy.deepcopy(obj)
+	#		else:
+	#			cones.append(obj)
+	#	for cone in cones:
+	#		if pad.dbox.intersects(cone.dbox):
+	#			objects.remove(cone)
 
 
 	def detectContours(self,img,cls,threshholds):
@@ -161,6 +169,7 @@ class VisualCortex:
 			edge.fromD(self.ddim)
 			edges.append(edge)
 
+		edges.sort(key=lambda x: x.dbox.lt[0])
 		return edges
 
 	def probeEdgeDetection(self):

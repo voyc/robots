@@ -5,7 +5,7 @@ import universal as uni
 import time
 
 class FrontalCortex:
-	max_mission_time = 30
+	max_mission_time = 120
 
 	def __init__(self):
 		self.state = 'bored'

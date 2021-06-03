@@ -63,15 +63,14 @@ class Hippocampus:
 		padl = self.findHalf(objects, uni.clsPadl)
 		padr = self.findHalf(objects, uni.clsPadr)
 
-		# the two halfs are expected to intersect each other (unless perfectly straight up)
-		if padl and padr and not padl.dbox.intersects(padr.dbox):
-			pass #logging.debug('pad halves do not intersect')
-
 		# calc pad state
 		state = 'missing'
 		if padl and padr:
-			if padl.dbox.touchesEdge(self.ddim) \
-			or padr.dbox.touchesEdge(self.ddim):
+			if not padl.dbox.pad(8).intersects(padr.dbox.pad(8)):
+				print(padl.dbox, padr.dbox)
+				state = 'nonadjacent'
+			elif padl.dbox.touchesEdge(self.ddim) \
+			  or padr.dbox.touchesEdge(self.ddim):
 				state = 'partial'
 			else:
 				state = 'complete'
@@ -121,7 +120,7 @@ class Hippocampus:
 		for cone in cones:
 			mbox.unite(cone.mbox)
 
-		mbox.pad(sm.Arena.padding)
+		mbox = mbox.pad(sm.Arena.padding)
 		arena  = sm.Arena(mbox)
 		arena.fromM(dpmm)
 		return arena
