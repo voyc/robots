@@ -19,7 +19,7 @@ class Detect:
 	threshhold_seeds = [ 
 		#   hue      sat      val     canny    gk  gs,  ok     # class        
 		( 358, 13,  42,100,  12,100,  78,127,  17,  1,  11 ),  # uni.clsCone, 
-		(  47, 81,  41,100,  10, 85,  82,127,  17,  1,   7 ),  # uni.clsPadl, 
+		(  47, 81,  41,100,  10,100,  82,127,  17,  1,   7 ),  # uni.clsPadl, 
 		( 296,357,  33,100,  10, 91,  82,127,  17,  1,   7 ),  # uni.clsPadr, 
 		( 186,299,  21,100,  12, 97,  82,127,  17,  1,   7 )   # uni.clsSpot, 
 	]

@@ -5,20 +5,59 @@ import universal as uni
 import time
 
 class FrontalCortex:
-	max_mission_time = 120
+	hoverpad_height = 700  # hover 1 meter above pad
+	max_lost = 20
 
-	def __init__(self):
+	def __init__(self, max_mission_time=20):
+		self.max_mission_time = max_mission_time
 		self.state = 'bored'
-		self.vector = (2,4,5,6)
-		self.timestart = time.time()
+		self.vector = [0,0,0,0]
+		self.timestart = 0.
+		self.lostn = 0
 
-	def navigate(self):
-		# are we airborne?
-		# are we ready for takeoff?
-		if (time.time() - self.timestart) > self.max_mission_time:
+	def navigate(self, state, fmap, max_mmo):
+		# thats long enough		
+		if not self.timestart:
+			self.timestart = time.time()
+		elif (time.time() - self.timestart) > self.max_mission_time:
 			logging.info('mission clock expired.  forced landing.')
 			return False
-		return self.vector
+
+		# get location of pad
+		px,py,pw = fmap.loc()
+		if px < 0:
+			self.vector = [0,0,0,0]
+			self.lostn += 1
+			if self.lostn > self.max_lost:
+				logging.info('pad lost. forced landing.')
+				return False 
+			else:
+				return self.vector
+		self.lostn = 0
+
+		# yaw
+		if pw > 180:
+			pw = 360 - pw
+		else:
+			pw = 0 - pw
+
+		# know that current location of drone is center
+		dx,dy = fmap.ctr()
+		dz = fmap.agl
+
+		# vector to desired location
+		x = px - dx
+		y = dy - py
+		z = self.hoverpad_height - dz
+		w = pw 
+		ovec = [x,y,z,w]
+
+		#if any(abs(i) > max_mmo for i in ovec): # too far off course, bail
+		#	logging.warning('off course.  forced landing.')
+		#	return False
+
+		self.vector = ovec
+		return ovec
 
 	def probeVector(self):
 		return self.vector

@@ -12,14 +12,15 @@ from wifi import Wifi
 import copy
 import universal
 import logging
+import sk8mat as sm
 
 # global constants
 tello_ssid = 'TELLO-591FFC'
 tello_ip = '192.168.10.1'
 safe_battery = 20  # percent of full charge
 min_agl = 20  # mm, camera above the ground 
-
-use_rc = True   # rc command vs mission commands
+max_mmo = [300,300,300,180] # maximum mm offset
+max_vel = [60,60,30,60] # maximum safe velocity (up to 100)
 
 # three ports, three sockets.  firewall must be open to these ports.
 telemetry_port = 8890   # UDP server socket to repeatedly send a string of telemetry data
@@ -37,12 +38,11 @@ cmd_address = (tello_ip, cmd_port)
 cmd_sock_timeout = 7 # seconds
 cmd_takeoff_timeout = 20  # seconds. takeoff slow to return
 cmd_time_btw_commands = 0.1  # seconds.  Commands too quick => Tello not respond.
-cmd_time_btw_rc_commands = 0.01 # rc command is fire and forget, does not requie a recvfrom
+cmd_time_btw_rc_commands = 0.01 # rc command designed for rapid fire
 cmd_maxlen = 1518
 
 class Telemetry(threading.Thread):
-	def __init__(self, callback): # Thread override
-		self.callback = callback
+	def __init__(self): # Thread override
 		self.state = 'init'  # open, run, stop, crash
 		self.sock  = False
 		threading.Thread.__init__(self)
@@ -64,6 +64,8 @@ class Telemetry(threading.Thread):
 			'agy':48.00,      # the acceleration of the y axis
 			'agz':-1008.00    # the acceleration of the z axis
 		}
+		self.count = 0
+		self.lock = threading.Lock() # lock up data and count
 
 	def open(self):
 		# Create telemetry socket as UDP server
@@ -88,20 +90,30 @@ class Telemetry(threading.Thread):
 				logging.error('telemetry recvfrom failed: ' + str(ex))
 				self.state = 'crash'
 				break
-			self.callback(data,count)
+			self.lock.acquire()
+			self.data = data
+			self.count = count
+			self.lock.release()
 
 		logging.info(f'telemetry thread {self.state}')
 		self.sock.close()
 		logging.info('telemetry socket closed')
+
+	def get(self):
+		self.lock.acquire()
+		data = self.data
+		count = self.count
+		self.lock.release()
+		return data,count
 	
 class Video(threading.Thread):
-	def __init__(self, callback): # Thread override
-		self.callback = callback
+	def __init__(self): # Thread override
 		self.stream = False
 		self.state = 'init' # init, run, stop, crash
 		threading.Thread.__init__(self)
 		self.framenum = 0
 		self.frame = False
+		self.lock = threading.Lock() # lock up frame and framenum
 
 	def open(self):
 		timestart = time.time()
@@ -132,8 +144,12 @@ class Video(threading.Thread):
 				self.state == 'crash'
 				break
 			frame = cv.flip(frame,0) # vertical flip mirror correction
-			self.callback(frame,framenum) # normally the Vision-Motor-Circuit
-		
+
+			self.lock.acquire()
+			self.frame = frame
+			self.framenum = framenum
+			self.lock.release()
+
 		logging.info(f'video thread {self.state}') # close or crash
 		timestop = time.time()
 		logging.info(f'num frames: {framenum}, fps: {int(framenum/(timestop-timestart))}')
@@ -142,15 +158,23 @@ class Video(threading.Thread):
 			self.stream.release()
 			logging.info('video stream closed')
 
+	def get(self):
+		self.lock.acquire()
+		frame = self.frame
+		framenum = self.framenum
+		self.lock.release()
+		return frame, framenum
+
 class Cmd(threading.Thread):
-	def __init__(self): #override
+	def __init__(self,mode_fly): #override
+		self.mode_fly = mode_fly
 		self.state = 'init' # open, close
 		self.sock = False
 		self.timestamp = 0
 		threading.Thread.__init__(self)
 		self.lock = threading.Lock()
 		self.flighttime = 0
-		self.threshhold = 0
+		self.delay = 0
 
 	def close(self):
 		self.sock.close()
@@ -184,31 +208,35 @@ class Cmd(threading.Thread):
 		if cmd == 'command' or cmd == 'battery?':
 			retry = 2
 
-		# rc command is fire and forget
+		# rc command is fire and forget; others wait for a reply
 		wait = True
-		if 'rc' in cmd:
+		if 'rc' in cmd or 'emergency' in cmd:
 			wait = False
 
-		# pause a moment, sending commands too quickly overwhelms the Tello
+		# delay a moment, sending commands too quickly overwhelms the Tello
 		diff = time.time() - self.timestamp
-		if diff < self.threshhold:
-			logging.debug(f'waiting {diff} between commands')
+		if diff < self.delay:
+			logging.debug(f'delaying {diff} between commands')
 			time.sleep(diff)
-		self.threshhold = cmd_time_btw_commands # set pause self.threshhold for next command
+		self.delay = cmd_time_btw_commands # set delay amount for next command
 		if 'rc' in cmd:
-			self.threshhold = cmd_time_btw_rc_commands
+			self.delay = cmd_time_btw_rc_commands
 
 		# send command to socket
 		rmsg = 'error'
 		timestart = time.time()
 		try:
 			msg = cmd.encode(encoding="utf-8")
-			len = self.sock.sendto(msg, cmd_address)
+			if 'rc' in cmd and not self.mode_fly:
+				pass # logging.info('no fly ' + cmd)
+			else:
+				len = self.sock.sendto(msg, cmd_address)
 		except Exception as ex:
 			logging.error(f'sendCommand {cmd} sendto failed:{str(ex)}, elapsed={time.time()-timestart}')
 		else:
 			if not wait:
-				logging.info(f'sendCommand {cmd} complete, elapsed={time.time()-timestart}')
+				if not 'rc' in cmd:
+					logging.info(f'sendCommand {cmd} complete, elapsed={time.time()-timestart}')
 				rmsg = 'ok'
 			else:
 				# read response from command
@@ -247,18 +275,22 @@ class Cmd(threading.Thread):
 		self.lock.release()
 		return rmsg;
 
-def empty(data,count):
-	pass
-
 class Drone:
-	def __init__(self,telemetry_callback=empty,video_callback=empty):
-		self.state = 'start', # start, ready, takeoff, airborne, land, down
+	def __init__(self,mode_fly=True):
+		self.state = 'start', # start, ready, airborne, land
+		self.rccmd = ''
 		self.wifi = False
 
 		# create three objects, one for each socket
-		self.telemetry = Telemetry(telemetry_callback)
-		self.cmd = Cmd()
-		self.video = Video(video_callback)
+		self.telemetry = Telemetry()
+		self.cmd = Cmd(mode_fly)
+		self.video = Video()
+
+	def getFrame(self):
+		return self.video.get()
+
+	def getTelemetry(self):
+		return self.telemetry.get()
 
 	def prepareForTakeoff(self):
 		logging.info('drone starting')
@@ -299,15 +331,25 @@ class Drone:
 
 		# open video socket and start thread
 		self.video.open() # blocks until started, about 5 seconds
-		self.video.start()
+		self.video.start()  # do we need to wait for confirmation that thread is started?
 		
-		# can we wait for video thread to start here?
+		# start motors
+		motorson = self.startMotors()
 
-		# ready for takeoff:
-		#     command mode, good battery, video running, telemetry running, ui open
+		# ready for takeoff: command mode, good battery, video on, telemetry on, motors on
 		self.state = 'ready'
 		logging.info(f'ready for takeoff, elapsed={time.time()-timestart}')
 		return True
+
+	def startMotors(self):
+		x,y,z,w = (-100,-100,-100,100) # both sticks down and inward
+		scmd = f'rc {x} {y} {z} {w}'
+		self.cmd.sendCommand(scmd)
+		time.sleep(3)
+		return True
+
+	def stopMotors(self):
+		self.cmd.sendCommand('emergency')
 
 	def wait(self):  # BLOCKING until sub threads stopped
 		logging.info('start join')
@@ -315,26 +357,55 @@ class Drone:
 		self.telemetry.join()
 		logging.info('end join')
 
-	def stop(self):
+	#def do(self, cmd):
+	#	if 'takeoff' in cmd:
+	#		self.state = 'takeoff'
+	#	if 'land' in cmd:
+	#		self.state = 'land'
+	#	result = self.cmd.sendCommand(cmd)
+	#	if 'takeoff' in cmd:
+	#		self.state = 'airborne'
+	#	if 'land' in cmd:
+	#		self.state = 'down'
+
+	def go(self, ovec): # send rc cmd string, 'rc x y z w'
+		def clamp(a,m):
+			clamped = []
+			for i in range(len(a)):
+				b = a[i]
+				b = min(b, m[i])
+				b = max(b, 0-m[i])
+				clamped.append(b)
+			return clamped
+
+		# interpolate mm to pct velocity -100 to 100
+		vel = sm.interpolate(np.array(ovec), 0,np.array(max_mmo)*2, 0,np.array(max_vel)*2)
+		vel = vel.astype(int)
+		vel = clamp(vel,max_vel)
+	
+		# x:left/right roll, y:back/forward pitch, z:down/up, w:ccw/cw yaw as angular velocity
+		x,y,z,w = vel
+		rccmd = f'rc {x} {y} {z} {w}'
+		self.cmd.sendCommand(rccmd)
+		if self.state == 'ready' and z > 0: 
+			self.state = 'airborne'
+		self.rccmd = rccmd
+		return rccmd
+
+	def probeRc(self):
+		return self.rccmd
+
+	def shutdown(self):
+		logging.info('drone shutdown started')
 		if self.state == 'airborne':
-			self.do('land')
+			self.sendCommand('land')  # normally the navigator lands manually
+		self.stopMotors()
 		self.telemetry.stop()
 		self.video.stop()
 		self.cmd.close()
-		logging.info('drone shutdown')
+		logging.info('drone shutdown complete')
 		logging.info('restoring wifi')
 		self.wifi.restore()
-
-	def do(self, cmd):
-		if 'takeoff' in cmd:
-			self.state = 'takeoff'
-		if 'land' in cmd:
-			self.state = 'land'
-		result = self.cmd.sendCommand(cmd)
-		if 'takeoff' in cmd:
-			self.state = 'airborne'
-		if 'land' in cmd:
-			self.state = 'down'
 
 if __name__ == '__main__':
 	takeoffland = (
@@ -343,7 +414,7 @@ if __name__ == '__main__':
 	)
 	testheight = (
 			'sdk?\n'
-			'rc 0 0 0 0\n'  # left/right, forward/back, up/down, yaw; -100 to 100
+			'rc 0 0 0 0\n'
 			'height?\n'
 			'tof?\n'
 			'baro?'
@@ -480,59 +551,59 @@ if __name__ == '__main__':
 		logging.info('start mission')
 		flyMission(testvideo, drone) 
 		logging.info('mission complete')
-	drone.stop() 
+	drone.shutdown() 
 	drone.wait()
 '''
 todo:
-	pass a callback to Telemetry::run()
-		send string to Cerebrum
-	
 	video: avoid "Circular buffer overrun" error
 		see: https://stackoverflow.com/questions/35338478/buffering-while-converting-stream-to-frames-with-ffmpegj
---------
-mentors:
-	github, damiafuentes/djitellopy/tello.py
-	github, murtazahassan/
+	land before emergency
+'''
 
+'''
 class Drone 
 	embeds three singleton objects, one each for the three Tello sockets:
 		Telemetry -
 			Ears, sensory nervous system, sensing speed, acceleration, attitude
-			thread, client socket
+			thread, server socket
 			transmits telemetry string 5 times per second
 		Video -
 			Eyes, vision
-			thread, client socket
+			thread, server socket
 			transmits video stream at 40 fps
 		Cmd -
 			Neck, motor nervous system, aiming eyes
-			no thread, server socket
+			no thread, clent socket
 			public method sendCommand(cmd)  shares access to Tello commands
 	also embeds:
 		Wifi - to connect to the Tello hub 
 
 	__main__ - flies pre-programmed missions, with no position feedback
 
-	data saving:
-		frames, already flipped for mirror, no resize
-		training file, detected objects, must match frame
-		mission log, logging level 17 only
-		debug log, logging all levels
-		Note: console log displays levels except debug and mission.
-		Note: frames and mission log can be used to rerun a mission in the simulator.
-
 about the Tello drone
-	mfg by DJI and Ryze, both in Shenghen
+	mfg by DJI and Ryze, both in Shenzhen
 	
-	commands described in Tello SDK User Guide, online PDF, 1.0 or 2.0
-		our Tello has SDK 1.3, includes "rc", but not "sdk?"
+	documentation
+		Tello SDK 1.3 PDF; describes commands; version 1.3 includes "rc", but not "sdk?"
+			https://dl-cdn.ryzerobotics.com/downloads/tello/20180910/Tello%20SDK%20Documentation%20EN_1.3.pdf
+		Tello SDK 2.0 PDF; version 2.0 is for the Tello EDU, but the doc has additional information
+			https://dl-cdn.ryzerobotics.com/downloads/Tello/Tello%20SDK%202.0%20User%20Guide.pdf
+		User Manual, describes LED codes
+			https://dl-cdn.ryzerobotics.com/downloads/Tello/20180404/Tello_User_Manual_V1.2_EN.pdf
+
+	third-party code
+		github, damiafuentes/djitellopy/tello.py
+		github, murtazahassan/
+
+	Vision Positioning System (VPS):
+		using front camera and downward-facing infrared
+		there is no way to turn it off
+		for effectiveness:
+			bright, soft, indirect sunlight
+			AC and fan off, no wind
+			blanket on floor, non-shiny surface
 	
-	for effectiveness of Tello Vision Positioning System (VPS):
-		bright, soft, indirect sunlight
-		AC and fan off, no wind
-		blanket on floor, non-shiny surface
-	
-	Tello LED codes, see User Guide:
+	LED codes, see User Guide:
 		red,grn,yel   blink alternating   startup diagnostics, 10 seconds
 		yellow        blink quickly       wifi ready, not connected, signal lost
 		green         blink slowly        wifi connected
@@ -557,7 +628,7 @@ about the Tello drone
 		z is vertical, -100 is full down velocity,     +100 is full up velocity
 		w is yaw,      -100 is full CCW spin velocity, +100 is full CW spin velocity
 
-	The Tello coordinate system is "ground".  See below for explanation.
+	The Tello coordinate system is "body".  See below for explanation.
 	
 about DJI Flight Controllers (FC) in general:
 	One way to fly is called "virtual sticks mode" or "virtual joysticks".

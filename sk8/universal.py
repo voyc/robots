@@ -69,30 +69,6 @@ def configureLogging(mode='fly'):
 
 	logging.info('logging configured')
 
-# is called from both Drone.Cmd and Hippocampus
-max_mmo = 179 # maximum mm offset
-max_vel = 90 # maximum safe velocity (up to 100)
-def composeRcCommand(ovec): # compose tello rc command
-	x,y,z,w = ovec # input orientation vector in mm, diff between frameMap and baseMap
-
-	# output rc cmd string, 'rc x y z w'
-	# each param is -100 to 100, as pct of full velocity
-	# x:left/right roll, y:back/forward pitch, z:down/up, w:ccw/cw yaw as angular velocity
-
-
-	# if we're off by 30cm or more, land
-	if abs(x) > max_mmo or abs(y) > max_mmo:
-		return 'land'
-
-	# interpolate to safe velocity range
-	x = int((x/(max_mmo*2))*(max_vel*2))
-	y = int((y/(max_mmo*2))*(max_vel*2))
-	z = int((z/(max_mmo*2))*(max_vel*2))
-	w = int((w/(max_mmo*2))*(max_vel*2))
-
-	s = f'rc {x} {y} {z} {w}'
-	return s
-
 def unpack( sdata):
 	# data=b'pitch:-2;roll:-2;yaw:2;vgx:0;vgy:0;vgz:0;templ:62;temph:65;tof:6553;h:0;bat:42;baro:404.45;time:0;agx:-37.00;agy:48.00;agz:-1008.00;'
 	adata = sdata.split(';')      # array

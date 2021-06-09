@@ -11,6 +11,7 @@ def interpolate(x, b, e, bp, ep):
 	# x: input value
 	# b,e: begin and end of input range
 	# bp,ep: begin and end of output range
+	# x/e-b : xp/ep-bp
 	#return  int((x / (e-b)) * (ep-bp))
 	return  (x / (e-b)) * (ep-bp)
 
@@ -200,7 +201,7 @@ class Edge: # represents a detected object, classification plus bounding box, in
 
 class Spot(Edge):
 	mm_radius = 8     # spot is 16 mm diameter
-	mm_offset = 46    # spot center is 46 mm forward of pad center
+	mm_offset = 46    # spot center is 46 mm forward of pad center (y=24, tb=16,32)
 	agl_max = 600     # good for agl calc up to max mm
 
 	def __init__(self, edge):
@@ -282,9 +283,10 @@ class Arena():
 class Map:
 	agl_k = 1153
 
-	def __init__(self, spot, pad, cones=[], arena=None):
+	def __init__(self, spot, pad, ddim, cones=[], arena=None):
 		self.spot = spot
 		self.pad = pad
+		self.ddim = ddim
 		self.cones = cones
 		self.arena = arena
 		self.state = 'new'
@@ -292,17 +294,30 @@ class Map:
 		self.agl = 0
 		self.calc()
 
+	def ctr(self):
+		return tuple((np.array(self.ddim) / 2).astype(int))
+
 	def calc(self):
 		# set state
 		self.state = 'lost' # no pad, no spot
 		if self.pad and self.pad.state == 'complete':
 			self.state = 'pad'
-		elif self.spot and self.pad.state == 'partial':
+		elif self.spot: # and self.pad.state == 'partial':
 			self.state = 'spot'
 
 		# choose dpmm and calc agl
 		self.dpmm = self.spot.dpmm if self.state == 'spot' else self.pad.dpmm
 		self.agl = self.calcAgl(self.dpmm)
+
+	def loc(self):
+		x = y = w = -1
+		if self.state == 'spot':
+			x,y = self.spot.dbox.ctr()
+			w = 0
+		elif self.state == 'pad':
+			x,y = self.pad.center
+			w = self.pad.angle
+		return x,y,w
 
 	def calcAgl(self, dpmm):
 		if dpmm <=0:

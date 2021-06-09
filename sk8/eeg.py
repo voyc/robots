@@ -9,7 +9,7 @@ import sk8mat as sm
 import hippocampus as hc
 import visualcortex as vc
 import frontalcortex as fc
-import neck as nek
+import drone as drn
 
 def drawPolygon(img, ptarray, factor=1, color=(255,0,0), linewidth=1):	
 #	a = np.multiply(ptarray,factor)
@@ -40,12 +40,12 @@ class Eeg:
 	color_padcalc = (255,0,0)
 	color_spot = (255,0,0)
 
-	def __init__(self, visualcortex=None, hippocampus=None, frontalcortex=None, neck=None):
+	def __init__(self, visualcortex=None, hippocampus=None, frontalcortex=None, drone=None):
 		# probed objects
 		self.visualcortex = visualcortex
 		self.hippocampus = hippocampus
 		self.frontalcortex = frontalcortex
-		self.neck = neck
+		self.drone = drone
 
 		# variables
 		self.trackbar_changed = False
@@ -54,9 +54,11 @@ class Eeg:
 	def scan(self):
 		self.detect = self.visualcortex.probeEdgeDetection()
 		baseMap, frameMap = self.hippocampus.probeMaps()
-		posts = self.hippocampus.probePostData()
 		vector = self.frontalcortex.probeVector()
-		rccmd = self.neck.probeRcCmd()
+		rccmd = self.drone.probeRc()
+		self.hippocampus.post('vector', vector)
+		self.hippocampus.post('rccmd', rccmd)
+		posts = self.hippocampus.probePostData()
 
 		stack = self.drawUI(self.detect.img, frameMap, baseMap, self.detect.images, posts)
 		cv.imshow('Image Processing', stack)  # open the image processing window
@@ -335,8 +337,7 @@ if __name__ == '__main__':
 	visualcortex = vc.VisualCortex()
 	hippocampus = hc.Hippocampus()
 	frontalcortex = fc.FrontalCortex()
-	neck = nek.Neck()
-	eeg = Eeg(visualcortex=visualcortex, hippocampus=hippocampus, frontalcortex=frontalcortex, neck=neck)
+	eeg = Eeg(visualcortex=visualcortex, hippocampus=hippocampus, frontalcortex=frontalcortex)
 
 	# start sensory-motor circuit
 

@@ -4,19 +4,16 @@ import cv2 as cv
 import numpy as np
 import time
 import logging
+import traceback
 import universal as uni
 import visualcortex as vc
 import hippocampus as hc
 import frontalcortex as fc
-import neck as nek
 import drone as drn
 
 class Sk8:
 	save_nth = 1
 
-	def yahoo(self, data, count):
-		pass
-	
 	def __init__(self):
 		self.visualcortex = None
 		self.hippocampus = None
@@ -24,6 +21,7 @@ class Sk8:
 		self.neck = None
 		self.drone = None
 		self.timesave = 0
+		self.prevframenum = 0
 	
 	def wakeup(self):
 		uni.configureLogging('fly')
@@ -33,8 +31,7 @@ class Sk8:
 		self.visualcortex = vc.VisualCortex()
 		self.hippocampus = hc.Hippocampus()
 		self.frontalcortex = fc.FrontalCortex()
-		self.neck = nek.Neck()
-		self.drone = drn.Drone(self.yahoo,self.sensoryMotorCircuit)
+		self.drone = drn.Drone(mode_fly=True)
 	
 		if self.save_nth:
 			self.dirframe = uni.makedir('frame')
@@ -44,34 +41,46 @@ class Sk8:
 		started = self.drone.prepareForTakeoff()
 		if started:
 			logging.info('start mission')
+			acting = True
+			while acting:
+				try:
+					acting = self.sensoryMotorCircuit()
+				except Exception as e:
+					traceback.print_exc()
+					logging.error(e)
+					logging.error('error in sensoryMotorCircuit. forced landing.')
+					break
+			self.drone.shutdown()		
 			self.drone.wait()  # block here until video and telemetry threads stopped
-	
+
 	def sleep(self):
 		logging.info('good night')
 	
-	def sensoryMotorCircuit(self, frame, framenum):
-		objs = self.visualcortex.detectObjects(frame,vc.Detect.threshhold_seeds)
-		fmap = self.hippocampus.buildMap(objs,framenum,frame)
-		vector = self.frontalcortex.navigate()
-		rccmd = 'rc'
-		if not vector:
-			self.drone.stop()
+	def sensoryMotorCircuit(self):
+		frame,framenum = self.drone.getFrame()
+		
+		# check framenum, if no change, bail
+		if self.prevframenum >= framenum:
+			pass # logging.warning('no new frame')  # repeat previous frame
 		else:
-			rccmd = uni.composeRcCommand(vector)
-			#self.drone.cmd.sendCommand(rccmd)
-	
-		self.log(frame,framenum,objs,rccmd,fmap)
-		return
+			self.prevframenum = framenum 
 
-	def log(self,frame,framenum,objs,rccmd,fmap):
+		objs = self.visualcortex.detectObjects(frame,vc.Detect.threshhold_seeds)
+		
+		fmap,posts = self.hippocampus.buildMap(objs,framenum,frame)
+
+		vector = self.frontalcortex.navigate(self.drone.state, fmap, drn.max_mmo)
+
+		rccmd = False
+		if vector:
+			rccmd = self.drone.go(vector)
+	
+		self.log(frame,framenum,objs,fmap,posts,rccmd)
+		return (vector and rccmd)
+
+	def log(self,frame,framenum,objs,fmap,posts,rccmd):
 		if not uni.soTrue(framenum,self.save_nth) or frame is None:
 			return
-
-		#self.detect = self.visualcortex.probeEdgeDetection()
-		#baseMap, frameMap = self.hippocampus.probeMaps()
-		posts = self.hippocampus.probePostData()
-		#vector = self.frontalcortex.probeVector()
-		#rccmd = self.neck.probeRcCmd()
 
 		# save frame
 		fname = f'{self.dirframe}/{framenum}.jpg'
@@ -87,13 +96,14 @@ class Sk8:
 		# save mission log
 		ts = time.time()
 		tsd = ts - self.timesave
-		src = rccmd.replace(' ','.')
-		agl = fmap.agl
+		src = rccmd.replace(' ','.') if rccmd else 'rc'
+		agl = fmap.agl if fmap else 0
 		prefix = f"rc:{src};ts:{ts};tsd:{tsd};fn:{framenum};agl:{agl};"
 		self.timesave = ts
 		logging.log(logging.MISSION, prefix)
 
 		# log posts
+		posts = self.hippocampus.probePostData()
 		ssave = ''
 		for k in posts.keys():
 			v = posts[k]
@@ -114,28 +124,11 @@ sk8d.sh
 sk8d.service
 skim.py 
 
-	four items are saved to disk
-		1. frames, already flipped for mirror, no resize
-		2. training file, detected objects, must match frame
-		3. mission log, logging level 17 only
-		4. debug log, logging all levels
-
-		Notes on data saving: 
-			see universal.py for folder and filename settings
-			console log does NOT display levels debug and mission.
-			frames and mission log can be used to rerun a mission in the simulator.
-			when flying the drone, we save frames and mission log
-				when flying the simulator, we do not
-			training files:
-				saved automaically during flight
-				can optionally be rewritten during sim
-				can be rewritten one frame at a time on-demand during sim
-
 todo:
 
-inhibitions, prefrontal cortex
+A. inhibitions, prefrontal cortex
 
-write gradient descent training system
+B. gradient descent training system
 
 1. benchmark flight(s), manual
 	a. ground to 2 meters
@@ -149,41 +142,25 @@ write gradient descent training system
 		missing cones
 		missing left, right, cones
 
-2. execute rc command, to hover over pad
+2. maneuvers
+	a. hover over pad
+	b. liftoff
+	c. land
+	d. spiral around pad
 
 3. mirror calibration
 
-4. write liftoff and land maneuvers
-
-5. calculate and execute a course, after mastering hover
-
-6. remove pad and use basemap with cones alone
-	- rotate basemap for best shape arena
-	- orient each frame to the basemap
-	- orient each frame to the basemap, even when the frame shows only a portion of the basemap
-
-7. orientation
+7. orientation - see orient.py
+	use cones
 	three overlays: map, frame, sk8
 		1. map - "basemap" centered and angled on arena, plus home
 		2. frame - momentary position of tello, "base" has radius of tello as virtual pad
 		3. pad - momentary position of sk8, often obscurred, temporarily fixed
-	todo:	
-		- rotate arena and enlarge to base map
-		- add home to base map
-		- superimpose map onto frame, frameMap matches frame by definition
-		- underimpose frame under basemap
-			- match frame to portion of map
-	dead reckoning
-		when pad and arena is lost
-		go with previous calculations
+	- superimpose map onto frame, frameMap matches frame by definition
+	- underimpose frame under basemap
 
-8. matrix math
-	use tuple for point and list for vector
-	use np.array() for matrix math among points and vectors
-	all points and vectors are 4D, ? the only point in the air is the tello
-	a point on the ground can have a yaw angle, z is always 0
-
-10. fix rc compose to use body coordinates instead of ground coordinates
+8. dead reckoning
+	when orientation fails, go with previous calculations
 
 11. photo angle correction
 '''

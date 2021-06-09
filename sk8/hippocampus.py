@@ -66,10 +66,9 @@ class Hippocampus:
 		# calc pad state
 		state = 'missing'
 		if padl and padr:
-			if not padl.dbox.pad(8).intersects(padr.dbox.pad(8)):
-				print(padl.dbox, padr.dbox)
-				state = 'nonadjacent'
-			elif padl.dbox.touchesEdge(self.ddim) \
+			#if not padl.dbox.pad(8).intersects(padr.dbox.pad(8)):
+			#	state = 'nonadjacent'
+			if padl.dbox.touchesEdge(self.ddim) \
 			  or padr.dbox.touchesEdge(self.ddim):
 				state = 'partial'
 			else:
@@ -137,7 +136,7 @@ class Hippocampus:
 		pad = self.findPad(objects)
 
 		# create map object
-		fmap = sm.Map(spot, pad)
+		fmap = sm.Map(spot, pad, self.ddim)
 		self.frameMap = fmap
 		self.post('map state', fmap.state)
 		self.post('map dpmm', fmap.dpmm)
@@ -154,7 +153,7 @@ class Hippocampus:
 			fmap.pad.calc()
 			if fmap.spot:
 				fmap.spot.toM(fmap.dpmm)
-		return fmap
+		return fmap, self.posts
 
 	def post(self,key,value):
 		self.posts[key] = value

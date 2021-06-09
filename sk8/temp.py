@@ -1,18 +1,30 @@
-import os
+import traceback
+import pdb
 
-dirout = '/home/john/sk8/bench/train'
+x = 't'
+try:
+	print(x + 3)
+except Exception as e:
+	traceback.print_exc()
+	print( 'in hoohah: ' + str(e))
+	
+print('---------------------')
+print(x + 4)
 
-def getNextFrameNum(dirname):
-	filelist = os.listdir( dirname)
-	hnum = 0
-	for fname in filelist: 
-		fbase = os.path.splitext(fname)[0]
-		num = int(fbase) 
-		if num > hnum:
-			hnum = num
-	hnum += 1
-	return hnum
 
-dirframeout = f'{dirout}/frame'
-outframenum = getNextFrameNum(dirframeout)
-print(outframenum)
+46
+
+0 - 140
+
+70
+
+70 - 46 = 24
+
+spot center is at y=24
+spot t is 24-8 = 16
+spot b is 24+8 = 32
+  0
+ 24
+ 40
+ 70
+140
