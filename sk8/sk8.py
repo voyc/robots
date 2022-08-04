@@ -1,5 +1,6 @@
 ''' sk8.py - class Sk8 - control sk8 robot '''
 
+import sys
 import cv2 as cv
 import numpy as np
 import time
@@ -23,7 +24,7 @@ class Sk8:
 		self.timesave = 0
 		self.prevframenum = 0
 	
-	def wakeup(self):
+	def wakeup(self,flymode=True):
 		uni.configureLogging('fly')
 		logging.info('good morning')
 	
@@ -31,7 +32,7 @@ class Sk8:
 		self.visualcortex = vc.VisualCortex()
 		self.hippocampus = hc.Hippocampus()
 		self.frontalcortex = fc.FrontalCortex()
-		self.drone = drn.Drone(mode_fly=True)
+		self.drone = drn.Drone(flymode=flymode)
 	
 		if self.save_nth:
 			self.dirframe = uni.makedir('frame')
@@ -40,7 +41,7 @@ class Sk8:
 	def act(self):
 		started = self.drone.prepareForTakeoff()
 		if started:
-			logging.info('start mission')
+			logging.info('start sensoryMotorCircuit')
 			acting = True
 			while acting:
 				try:
@@ -58,6 +59,10 @@ class Sk8:
 	
 	def sensoryMotorCircuit(self):
 		frame,framenum = self.drone.getFrame()
+		if frame is None:
+			logging.info('no frame.  retry.')
+			time.sleep(0.2)
+			return True
 		
 		# check framenum, if no change, bail
 		if self.prevframenum >= framenum:
@@ -112,8 +117,12 @@ class Sk8:
 		logging.debug(ssave)
 
 if __name__ == '__main__':
+	if len(sys.argv) < 2 or sys.argv[1] not in ['fly','nofly']:
+		print ('usage: python3 sk8.py [fly nofly]')
+		quit()
+	flymode = True if sys.argv[1] == 'fly' else False
 	sk8 = Sk8()
-	sk8.wakeup()
+	sk8.wakeup(flymode=flymode)
 	sk8.act()
 	sk8.sleep()
 '''
@@ -162,5 +171,5 @@ B. gradient descent training system
 8. dead reckoning
 	when orientation fails, go with previous calculations
 
-11. photo angle correction
+11. photo angle correction, center vs peripheral
 '''

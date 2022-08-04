@@ -19,8 +19,8 @@ tello_ssid = 'TELLO-591FFC'
 tello_ip = '192.168.10.1'
 safe_battery = 20  # percent of full charge
 min_agl = 20  # mm, camera above the ground 
-max_mmo = [300,300,300,180] # maximum mm offset
-max_vel = [60,60,30,60] # maximum safe velocity (up to 100)
+max_mmo = [100,100,100,180] # maximum mm offset
+max_vel = [100,100,100,100] # maximum safe velocity (up to 100)
 
 # three ports, three sockets.  firewall must be open to these ports.
 telemetry_port = 8890   # UDP server socket to repeatedly send a string of telemetry data
@@ -37,7 +37,7 @@ video_maxlen = 2**16
 cmd_address = (tello_ip, cmd_port)
 cmd_sock_timeout = 7 # seconds
 cmd_takeoff_timeout = 20  # seconds. takeoff slow to return
-cmd_time_btw_commands = 0.1  # seconds.  Commands too quick => Tello not respond.
+cmd_time_btw_commands = 0.12  # seconds.  Commands too quick => Tello not respond.
 cmd_time_btw_rc_commands = 0.01 # rc command designed for rapid fire
 cmd_maxlen = 1518
 
@@ -112,7 +112,7 @@ class Video(threading.Thread):
 		self.state = 'init' # init, run, stop, crash
 		threading.Thread.__init__(self)
 		self.framenum = 0
-		self.frame = False
+		self.frame = None
 		self.lock = threading.Lock() # lock up frame and framenum
 
 	def open(self):
@@ -166,8 +166,8 @@ class Video(threading.Thread):
 		return frame, framenum
 
 class Cmd(threading.Thread):
-	def __init__(self,mode_fly): #override
-		self.mode_fly = mode_fly
+	def __init__(self,flymode): #override
+		self.flymode = flymode
 		self.state = 'init' # open, close
 		self.sock = False
 		self.timestamp = 0
@@ -227,7 +227,7 @@ class Cmd(threading.Thread):
 		timestart = time.time()
 		try:
 			msg = cmd.encode(encoding="utf-8")
-			if 'rc' in cmd and not self.mode_fly:
+			if 'rc' in cmd and not self.flymode:
 				pass # logging.info('no fly ' + cmd)
 			else:
 				len = self.sock.sendto(msg, cmd_address)
@@ -235,7 +235,7 @@ class Cmd(threading.Thread):
 			logging.error(f'sendCommand {cmd} sendto failed:{str(ex)}, elapsed={time.time()-timestart}')
 		else:
 			if not wait:
-				if not 'rc' in cmd:
+				if True: #not 'rc' in cmd:
 					logging.info(f'sendCommand {cmd} complete, elapsed={time.time()-timestart}')
 				rmsg = 'ok'
 			else:
@@ -276,15 +276,16 @@ class Cmd(threading.Thread):
 		return rmsg;
 
 class Drone:
-	def __init__(self,mode_fly=True):
+	def __init__(self,flymode=True):
 		self.state = 'start', # start, ready, airborne, land
 		self.rccmd = ''
 		self.wifi = False
 
 		# create three objects, one for each socket
 		self.telemetry = Telemetry()
-		self.cmd = Cmd(mode_fly)
+		self.cmd = Cmd(flymode)
 		self.video = Video()
+		print(f'Drone created flymode {flymode}')
 
 	def getFrame(self):
 		return self.video.get()
@@ -332,19 +333,17 @@ class Drone:
 		# open video socket and start thread
 		self.video.open() # blocks until started, about 5 seconds
 		self.video.start()  # do we need to wait for confirmation that thread is started?
+		# yes, wait at least 0.2 secs.  startMotors waits 3 sec
 		
-		# start motors
-		motorson = self.startMotors()
+		self.startMotors()
 
-		# ready for takeoff: command mode, good battery, video on, telemetry on, motors on
+		# ready for takeoff: command mode, good battery, video on, telemetry on
 		self.state = 'ready'
 		logging.info(f'ready for takeoff, elapsed={time.time()-timestart}')
 		return True
 
 	def startMotors(self):
-		x,y,z,w = (-100,-100,-100,100) # both sticks down and inward
-		scmd = f'rc {x} {y} {z} {w}'
-		self.cmd.sendCommand(scmd)
+		self.cmd.sendCommand('rc -100 -100 -100 100') # both sticks back and inward
 		time.sleep(3)
 		return True
 
@@ -353,20 +352,11 @@ class Drone:
 
 	def wait(self):  # BLOCKING until sub threads stopped
 		logging.info('start join')
-		self.video.join()
-		self.telemetry.join()
+		if self.video.is_alive():
+			self.video.join()
+		if self.telemetry.is_alive():
+			self.telemetry.join()
 		logging.info('end join')
-
-	#def do(self, cmd):
-	#	if 'takeoff' in cmd:
-	#		self.state = 'takeoff'
-	#	if 'land' in cmd:
-	#		self.state = 'land'
-	#	result = self.cmd.sendCommand(cmd)
-	#	if 'takeoff' in cmd:
-	#		self.state = 'airborne'
-	#	if 'land' in cmd:
-	#		self.state = 'down'
 
 	def go(self, ovec): # send rc cmd string, 'rc x y z w'
 		def clamp(a,m):
@@ -398,8 +388,7 @@ class Drone:
 	def shutdown(self):
 		logging.info('drone shutdown started')
 		if self.state == 'airborne':
-			self.sendCommand('land')  # normally the navigator lands manually
-		self.stopMotors()
+			self.cmd.sendCommand('land')  # normally the navigator lands manually
 		self.telemetry.stop()
 		self.video.stop()
 		self.cmd.close()
@@ -407,149 +396,94 @@ class Drone:
 		logging.info('restoring wifi')
 		self.wifi.restore()
 
+'''
+x hover on blanket, no mirror - bright light required to avoid backward drift
+x takeoff vs liftoff, subtle changes in motor ignored, need speed 100
+	# at left speed -10, we get almost no left movement and considerable drift backward
+	# at left speed -20, we get some left movement and less drift backward
+	# at left speed -30, we get expected left movement and still some drift backward
+- left 20 vs rc -50 0 0 0, sleep(2)
+- does the VPS fight against rc?
+	- can I compensate for the backward drift?
+		- with rc 0 20 0 0? 
+		- with forward 20?
+
+- stabilized flight issues:
+	- height restrictions:
+		rc can fly no lower than 20 cm - which means we cannot land manually
+		rc can fly no higher than 10 meters
+- telemetry data issues:
+	- no height data
+'''
+#----------------------------------------
+# maneuvers
+
+def hover(drone):
+	liftoff(drone)
+	time.sleep(5)
+	splashdown(drone)
+
+def liftoff(drone):
+	drone.startMotors()
+	drone.cmd.sendCommand('rc 0 80 100 0')
+	time.sleep(1.5)
+	drone.cmd.sendCommand('rc 0 0 0 0 ')
+
+def splashdown(drone):
+	drone.cmd.sendCommand('rc 0 80 -100 0')
+	time.sleep(2.5)
+	drone.cmd.sendCommand('rc 0 0 0 0 ')
+	drone.cmd.sendCommand('emergency')
+
+def leftrc(drone):
+	liftoff(drone)
+	time.sleep(1.5)
+	drone.cmd.sendCommand(f'rc -100 0 0 0')
+	time.sleep(0.5)
+	drone.cmd.sendCommand('rc 0 0 0 0')
+	time.sleep(1.5)
+	drone.cmd.sendCommand('land')
+
+def spiral(drone):
+
+	liftoff(drone)
+	time.sleep(1.5)
+
+	#for z in range(100,0,-10):
+	#	drone.cmd.sendCommand(f'rc {-z} 0 0 0')
+	#	time.sleep(0.1)
+
+	nsec = 0.1 
+	for i in range(3):
+		drone.cmd.sendCommand(f'rc -100 0 0 0')
+		time.sleep(nsec)
+		drone.cmd.sendCommand(f'rc 0 100 0 0')
+		time.sleep(nsec)
+		drone.cmd.sendCommand(f'rc 100 0 0 0')
+		time.sleep(nsec)
+		drone.cmd.sendCommand(f'rc 0 -100 0 0')
+		time.sleep(nsec)
+
+	drone.cmd.sendCommand('rc 0 0 0 0')
+	time.sleep(1.5)
+	#drone.cmd.sendCommand('rc 100 0 0 0')
+	#time.sleep(0.3)
+	#drone.cmd.sendCommand('rc 0 0 0 0 ')
+	#time.sleep(1.5)
+	drone.cmd.sendCommand('land')
+
 if __name__ == '__main__':
-	takeoffland = (
-			'takeoff\n'
-			'land'
-	)
-	testheight = (
-			'sdk?\n'
-			'rc 0 0 0 0\n'
-			'height?\n'
-			'tof?\n'
-			'baro?'
-	)
-	demo = (
-			'takeoff\n'
-			'up 20\n'
-			'cw 90\n'
-			'right 20\n'
-			'cww 90\n'
-			'forward 20\n'
-			'down 40\n'
-			'land'
-	)
-	testvideo = (
-			'pause 120'
-	)
-	missioncmds = (
-			'takeoff\n'
-			'go left\n'
-			'pause 2\n'
-			'go right\n'
-			'pause 2\n'
-			'go forward\n'
-			'pause 2\n'
-			'go back\n'
-			'pause 2\n'
-			'go hold\n'
-			'pause 2\n'
-			'land'
-	)
-	pitchroll = (
-			'go startmotors\n'
-			'pause 2\n'
-			'go liftoff\n'
-			'pause 2\n'
-			'go hold\n'
-			'pause 2\n'
-			'go left\n'
-			'pause 1\n'
-			'go right\n'
-			'pause 1\n'
-			'go forward\n'
-			'pause 2\n'
-			'go back\n'
-			'pause 1\n'
-			'go forward\n'
-			'pause 0.5\n'
-			'go hold\n'
-			'pause 1\n'
-			'land'
-	)
-	vertyaw = (
-			'go startmotors\n'
-			'pause 2\n'
-			'go liftoff\n'
-			'pause 2\n'
-			'go hold\n'
-			'pause 2\n'
-			'go up\n'
-			'pause 1\n'
-			'go down\n'
-			'pause 1\n'
-			'go cw\n'
-			'pause 2\n'
-			'go ccw\n'
-			'pause 1\n'
-			'go hold\n'
-			'pause 1\n'
-			'go land'
-	)
-	stop = (
-			'go startmotors\n'
-			'pause 2\n'
-			'emergency'
-	)
-	hover = (
-			'go startmotors\n'
-			'pause 2\n'
-			'go liftoff\n'
-			'pause 2\n'
-			'land'
-	)
-	launch = (
-			'takeoff\n'
-			'up 100\n'
-			'land'
-	)
-	
-	def flyMission(s, drone):
-		a = s.split('\n')
-		for directive in a:
-			logging.info(f'mission: {directive}')
-			if 'pause' in directive:
-				n = directive.split(' ')[1]
-				time.sleep(float(n))
-			#elif 'hover' in directive:
-			#	n = directive.split(' ')[1]
-			#	drone.fly(int(n))
-			elif 'go' in directive:
-				speed = 50
-				d = directive.split(' ')[1]
-				
-				# left stick
-				if d == 'left'   : x,y,z,w = (-speed,0,0,0)
-				if d == 'right'  : x,y,z,w = (speed,0,0,0)
-				if d == 'forward': x,y,z,w = (0,speed,0,0)
-				if d == 'back'   : x,y,z,w = (0,-speed,0,0)
-
-				# right stick
-				if d == 'up'     : x,y,z,w = (0,0,speed,0)
-				if d == 'down'   : x,y,z,w = (0,0,-speed,0)
-				if d == 'cw'     : x,y,z,w = (0,0,0,speed)
-				if d == 'ccw'    : x,y,z,w = (0,0,0,-speed)
-
-				if d == 'hold'   : x,y,z,w = (0,0,0,0)
-				if d == 'startmotors' : x,y,z,w = (-100,-100,-100,100) # both sticks down and inward
-				if d == 'stopmotors1' : x,y,z,w = (-100,-100,-100,100) # same as startmotors
-				if d == 'stopmotors2' : x,y,z,w = (0,-100,0,0) # left stick full back
-				if d == 'liftoff'     : x,y,z,w = (0,0,speed,0)
-				if d == 'land'        : x,y,z,w = (0,0,-40,0)
-
-				scmd = f'rc {x} {y} {z} {w}'
-				drone.cmd.sendCommand(scmd)
-				if d == 'liftoff':
-					drone.state = 'airborne'
-			else:
-				drone.do(directive)
-
+	if len(sys.argv) < 2:
+		print ('usage: python3 drone.py mission_name')
+		quit()
+	mission_name = sys.argv[1]
+	print(f'fly mission: {mission_name}')
 	universal.configureLogging()
 	drone = Drone()
 	started = drone.prepareForTakeoff()
 	if started:
 		logging.info('start mission')
-		flyMission(testvideo, drone) 
+		locals()[mission_name](drone)
 		logging.info('mission complete')
 	drone.shutdown() 
 	drone.wait()
@@ -558,6 +492,7 @@ todo:
 	video: avoid "Circular buffer overrun" error
 		see: https://stackoverflow.com/questions/35338478/buffering-while-converting-stream-to-frames-with-ffmpegj
 	land before emergency
+	x 1.2, longer time between commands; check datatype of return code
 '''
 
 '''
@@ -628,7 +563,14 @@ about the Tello drone
 		z is vertical, -100 is full down velocity,     +100 is full up velocity
 		w is yaw,      -100 is full CCW spin velocity, +100 is full CW spin velocity
 
-	The Tello coordinate system is "body".  See below for explanation.
+		The Tello coordinate system is "body".  See below for explanation.
+
+	notes
+		My drone consistently drifts backwards.
+		The VPS prevents the rc command from going lower than 30 cm.
+		If I start motors with rc, then takeoff fails.
+		Land often fails.  Sometimes it works but the recvfrom fails.
+
 	
 about DJI Flight Controllers (FC) in general:
 	One way to fly is called "virtual sticks mode" or "virtual joysticks".
