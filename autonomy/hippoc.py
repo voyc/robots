@@ -13,7 +13,6 @@ import numpy as np
 import matplotlib.pyplot as plt  
 import math
 
-
 arena_spec = {
 	'w':4000,
 	'h': 4000,
@@ -26,7 +25,7 @@ skate_spec = {
 	'turning_radius': 200,
 }
 
-def buildArena(spec, num_cones):
+def placeConesInArena(spec, num_cones):
 	#constants
 	min_dist_factor = 0.3
 	starting_pool_size = 100
@@ -40,7 +39,6 @@ def buildArena(spec, num_cones):
 	x = np.random.randint(low=margin, high=spec['w']-margin, size=(starting_pool_size,1), dtype=int)
 	y = np.random.randint(low=margin, high=spec['h']-margin, size=(starting_pool_size,1), dtype=int)
 	pool = np.transpose([x,y])[0]
-
 
 	# elimate points until remaining points have a good spread
 	j = 1 # count of good points
@@ -58,59 +56,22 @@ def buildArena(spec, num_cones):
 	
 	# choose final four
 	pool = pool[:num_cones]
-	
-	# calc bounding box
-	xlo = spec['w']/2
-	xhi = xlo
-	ylo = spec['h']/2
-	yhi = ylo
-	for pt in pool:
-		if pt[0] > xhi:
-			xhi = pt[0] 
-		if pt[0] < xlo:
-			xlo = pt[0] 
-		if pt[1] > yhi:
-			yhi = pt[1] 
-		if pt[1] < ylo:
-			ylo = pt[1] 
-	
-	# draw the box
-	#print(xlo,xhi,ylo,yhi)
-	#plt.plot([xlo,xhi], [ylo,ylo])
-	#plt.plot([xlo,xhi], [yhi,yhi])
-	#plt.plot([xlo,xlo], [ylo,yhi])
-	#plt.plot([xhi,xhi], [ylo,yhi])
-	
-	# find center of box
-	xc = xlo + int((xhi - xlo)/2)
-	yc = ylo + int((yhi - ylo)/2)
-	
-	# find center of arena
-	xd = int(spec['w']/2)
-	yd = int(spec['h']/2)
-	
-	# adjustment factor
-	xj = xd - xc
-	yj = yd - yc
-	
-	# center the data
-	for pt in pool:
-		pt[0] += xj
-		pt[1] += yj
-	
-	
+
+	# center the cones in the arena
+	tpool = np.transpose(pool)
+	lo = np.array([tpool[0].min(), tpool[1].min()])
+	hi = np.array([tpool[0].max(), tpool[1].max()]) 
+	bbox_center = lo + ((hi - lo) / 2)
+	arena_center = np.array([int(spec['w']/2), int(spec['h']/2)])
+	adj = arena_center - bbox_center
+	pool = np.add(pool,adj)
+
 	# add starting gate
 	gate = [int(spec['w']/2),10]
 	pool = np.insert(pool,0,[gate],axis=0)
 	pool = np.append(pool,[gate],axis=0)
 	
-	# draw lines between all points
-	x,y = np.transpose(pool)
-	#plt.plot(x,y)
-	
-	
 	return pool
-
 
 def calcRoute(skate):
 	# draw perpendicular
@@ -197,28 +158,16 @@ def calcRoute(skate):
 	
 	'''
 	
-	
-	#plt.plot([x[0],x[2]],[y[0],y[2]]) 
-	#plt.plot([x[0],x[3]],[y[0],y[3]]) 
-	#plt.plot([x[0],x[4]],[y[0],y[4]]) 
-	
-	#plt.plot([x[1],x[2]],[y[1],y[2]]) 
-	#plt.plot([x[1],x[3]],[y[1],y[3]]) 
-	#plt.plot([x[1],x[4]],[y[1],y[4]]) 
-	
-	#plt.plot([x[2],x[3]],[y[2],y[3]]) 
-	#plt.plot([x[2],x[4]],[y[2],y[4]]) 
-	
-	#plt.plot([x[3],x[4]],[y[3],y[4]]) 
 	return	
 
-cones = buildArena(arena_spec, num_cones)
-route = calcRoute(skate_spec)
-
-# plot the cones
+# setup the arena
+cones = placeConesInArena(arena_spec, num_cones)
 x,y = np.transpose(cones); 
 plt.scatter(x,y)
-	
+
+# plot course
+route = calcRoute(skate_spec)
+
 # draw arena
 plt.xlim(0,arena_spec['w'])
 plt.ylim(0,arena_spec['h'])
