@@ -30,8 +30,8 @@ exit point
 
 for each cone
 	center
-	entry: slope, lineseg, theta1, theta2, choice
-	exit:  slope, lineseg, theta1, theta2, choice
+	entry: slope, perp, thetac, thetad, choice
+	exit:  slope, perp, thetac, thetad, choice
 	theta_entry	
 	theta_exit
 
@@ -41,11 +41,13 @@ make entry choice
 make exit choice
 	go around the cone once?
 
+polar coordinates (range, bearing) to cartesian coordinates (x,y)
 '''
 
 import numpy as np
 import matplotlib.pyplot as plt  
 import matplotlib  
+import mpmath  
 import math
 
 arena_spec = {
@@ -102,6 +104,14 @@ def placeConesInArena(arena, num_cones):
 	arena_center = np.array([int(arena['w']/2), int(arena['h']/2)])
 	adj = arena_center - bbox_center
 	pool = np.add(pool,adj)
+	
+	# test case
+	if True:
+		pool = 	[[1704.5,  667. ],
+			 [3588.5, 1410. ],
+			 [1294.5, 3333. ],
+			 [2928.5, 2561. ],
+			 [ 411.5,  787. ]]
 
 	# add starting gate
 	gate = [int(arena['w']/2),10]
@@ -115,45 +125,61 @@ def calcPerpendicular(A,B,radius):
 
 	# calc slope of A to B
 	slope = (B[1] - A[1]) / (B[0] - A[0]) # slope of AB, rise over run
+	l2r = (B[0] - A[0]) > 0  # horse is running left to right, true or false
+	lo2hi = (B[1] - A[1]) > 0  # horse is running low to high, true or false
+
 
 	# slope of CD as dy/dx
 	dy = math.sqrt(radius**2/(slope**2+1))
 	dx = -slope*dy
 	diff = [dx, dy]
-	print(slope,dx,dy)
 
-	# calc xy endpoints CD of perpendicular across the circle
-	C = [0,0]
-	D = [0,0]
-	C[0] = B[0] + dx
-	C[1] = B[1] + dy
-	D[0] = B[0] - dx
-	D[1] = B[1] - dy
-	return [C,D]
+	# calc xy endpoints CD of perpendicular across the circle at B
+	if l2r:
+		C = B + diff
+		D = B - diff
+	else:
+		C = B - diff
+		D = B + diff
+
+	if lo2hi:
+		thetad = math.degrees(np.arctan(dy/dx))
+		thetac = thetad + 180
+	else:
+		thetac = math.degrees(np.arctan(dy/dx))
+		thetad = thetac + 180
+
+	return {
+		'center': B,
+		'slope': slope,
+		'l2r': l2r,
+		'perp': [C,D],
+		'thetac': thetac,
+		'thetad': thetad,
+		'choice': 0,
+	}
+		
 
 def calcRoute(cones, skate):
 	
-	xcones = np.array([[cones[0], cones[0], cones[0]]]) # starting gate
+	xcones = []
 	for i in range(1,cones.shape[0]-1):
 		# entry point
 		A = cones[i-1]  # previous point
 		B = cones[i]    # this point
-		perp = calcPerpendicular(A,B,skate['turning_radius'])
-		entry = perp[0] if np.random.choice(['r', 'l']) == 'r' else perp[1]
-		x,y = np.transpose(perp)
+		entry = calcPerpendicular(A,B,skate['turning_radius'])
+		x,y = np.transpose(entry['perp'])
 		plt.plot(x,y)
 	
 		# exit point
 		A = cones[i+1]  # next point
 		B = cones[i]    # this point
-		perp = calcPerpendicular(A,B,skate['turning_radius'])
-		exit = perp[0] if np.random.choice(['r', 'l']) == 'r' else perp[1]
-		x,y = np.transpose(perp)
+		exit = calcPerpendicular(A,B,skate['turning_radius'])
+		x,y = np.transpose(exit['perp'])
 		plt.plot(x,y)
 	
-		xcones = np.insert(xcones,i, np.array([cones[i], entry, exit]), axis=0)
+		xcones.append({'center':cones[i], 'entry':entry, 'exit':exit})
 
-	xcones = np.insert(xcones,i+1, xcones[0], axis=0) # back to starting gate
 	return xcones
 	
 # setup the arena
@@ -164,35 +190,49 @@ cones = placeConesInArena(arena_spec, num_cones)
 #plt.scatter(x,y)
 
 # draw a circle around each center point
-radius = skate_spec['turning_radius']
-for pt in cones:
-	c = plt.Circle(pt, radius, fill=False)
-
-	a = matplotlib.patches.Arc(pt, radius*2, radius*2, 0, 90, 270)
-
-	plt.gca().add_patch(a)
-
-
-
+#radius = skate_spec['turning_radius']
+#for pt in cones:
+#	c = plt.Circle(pt, radius, fill=False)
+#	plt.gca().add_patch(c)
 
 # draw lines connecting center points
-x,y = np.transpose(cones)
-plt.plot(x,y)
+#x,y = np.transpose(cones)
+#plt.plot(x,y)
 
 # plot course
 route = calcRoute(cones, skate_spec)
 
 print(cones)
-print(route)
+
+for e in route:
+	print(e['entry']['thetac'], e['entry']['thetad'])
+
+#print(route)
+
+# draw an arc from entry to exit
+radius = skate_spec['turning_radius']
+for pt in route:
+	a = matplotlib.patches.Arc(pt['center'], radius*2, radius*2, 0, pt['entry']['thetac'], pt['exit']['thetac'])
+	plt.gca().add_patch(a)
 
 # draw entry and exit points points
-x,y = np.transpose(route); 
-plt.scatter(x[1],y[1],color='green')
-plt.scatter(x[2],y[2],color='red')
+entrypoints = []
+exitpoints = []
+for pt in route:
+	entrypoints.append(pt['entry']['perp'][0])
+	exitpoints.append(pt['exit']['perp'][0])
+x,y = np.transpose(entrypoints); 
+plt.scatter(x,y,color='green')
+x,y = np.transpose(exitpoints); 
+plt.scatter(x,y,color='red')
 
 # draw lines from exit to entry
 #x,y = np.transpose(route)
 #plt.plot(x,y)
+for i in range(1,len(route)):
+	line = [route[i-1]['exit']['perp'][0], route[i]['entry']['perp'][0]]
+	x,y = np.transpose(line)
+	plt.plot(x,y)
 
 # draw arena
 plt.xlim(0,arena_spec['w'])
