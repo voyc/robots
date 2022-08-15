@@ -1,8 +1,12 @@
 '''hippoc.py
+
 skateboard cones
-barrel racing
-slalom https://www.youtube.com/watch?v=sYSr-Sft4Zk
-freestyle
+
+three events:
+	barrel racing
+	slalom https://www.youtube.com/watch?v=sYSr-Sft4Zk
+	freestyle
+
 The aesthetic control available:
 - choose order of barrels
 - choose direction around each barrel, cw or ccw
@@ -25,31 +29,11 @@ stay on the line
 aim at a spot
 constantly self correct
 
-for each cone
-cente
-entry point
-exit point
-
-
-for each cone
-	center
-	entry: slope, perp, thetaC, thetaD, choice
-	exit:  slope, perp, thetaC, thetaD, choice
-	theta_entry	
-	theta_exit
-
-make entry choice
-	if angle between line in and line out > 90 degrees?
-
-make exit choice
-	go around the cone once?
-
-polar coordinates (range, bearing) to cartesian coordinates (x,y)
-http://rossum.sourceforge.net/papers/CalculationsForRobotics/CirclePath.htm
-
-
-enter on the left, go clockwise
+enter on the left, go clockwise around the cone
 enter on the right, go counter-clockwise
+
+calculations and drawing should be separate
+calc, draw, navigate
 '''
 
 import numpy as np
@@ -57,6 +41,7 @@ import matplotlib.pyplot as plt
 import matplotlib  
 import mpmath  
 import math
+import perp
 
 arena_spec = {
 	'w':4000,
@@ -127,62 +112,6 @@ def placeConesInArena(arena, num_cones):
 	pool = np.append(pool,[gate],axis=0)
 	return pool
 
-def calcPerpendicular(A,B,radius):
-	# see https://stackoverflow.com/questions/57065080/draw-perpendicular-line-of-fixed-length-at-a-point-of-another-line
-
-	# calc slope of A to B
-	slope = (B[1] - A[1]) / (B[0] - A[0]) # slope of AB, rise over run
-	l2r = (B[0] - A[0]) > 0  # horse is running left to right, true or false
-	lo2hi = (B[1] - A[1]) > 0  # horse is running low to high, true or false
-
-	# B = next or current point
-	# A = previous point
-
-	# A = previous cone
-	# B = current cone
-	# next cone
-
-	r = {
-		'pointC': [0,0],
-		'thetaC': [0,0],
-		'pointD': 0,
-		'thetaD': 0, 
-		'θC': 0,
-		'θD': 0,
-	}
-
-	# slope of CD as dy/dx
-	dy = math.sqrt(radius**2/(slope**2+1))
-	dx = -slope*dy
-	diff = [dx, dy]
-
-	# calc xy endpoints CD of perpendicular across the circle at B
-	if l2r:
-		C = B + diff
-		D = B - diff
-	else:
-		C = B - diff
-		D = B + diff
-
-	if lo2hi:
-		thetaD = math.degrees(np.arctan(dy/dx))
-		thetaC = thetaD + 180
-	else:
-		thetaC = math.degrees(np.arctan(dy/dx))
-		thetaD = thetaC + 180
-
-
-	return {
-		'center': B,
-		'slope': slope,
-		'l2r': l2r,
-		'perp': [C,D],
-		'thetaC': thetaC,
-		'thetaD': thetaD,
-		'enterleft': np.random.choice([True, False])
-	}
-		
-
 def calcRoute(cones, skate):
 	
 	xcones = []
@@ -190,87 +119,86 @@ def calcRoute(cones, skate):
 		# entry point
 		A = cones[i-1]  # previous point
 		B = cones[i]    # this point
-		entry = calcPerpendicular(A,B,skate['turning_radius'])
-		#x,y = np.transpose(entry['perp'])
-		#plt.plot(x,y)
+		L, R, thetaL, thetaR,_,_ = perp.calcPerpendicular(A, B, skate['turning_radius'])
+		entry = {
+			'L': L,
+			'R': R,
+			'thetaL': thetaL,
+			'thetaR': thetaR
+		}
 	
 		# exit point
 		A = cones[i+1]  # next point
 		B = cones[i]    # this point
-		exit = calcPerpendicular(A,B,skate['turning_radius'])
-		#x,y = np.transpose(exit['perp'])
-		#plt.plot(x,y)
+		L, R, thetaL, thetaR,_,_ = perp.calcPerpendicular(A,B,skate['turning_radius'])
+		exit = {
+			'L': L,
+			'R': R,
+			'thetaL': thetaL,
+			'thetaR': thetaR
+		}
 	
-		xcones.append({'center':cones[i], 'entry':entry, 'exit':exit})
+		xcones.append({
+			'center':cones[i], 
+			'entry':entry, 
+			'exit':exit, 
+			'enterleft': np.random.choice([True,False])
+		})
 
 	return xcones
 	
-# setup the arena
+# setup arena
 cones = placeConesInArena(arena_spec, num_cones)
 
-# draw center points
-x,y = np.transpose(cones); 
-plt.scatter(x,y)
+# draw arena
 print(cones)
+radius = skate_spec['turning_radius']
+i = 0
+for pt in cones:
+	if i == 0 or i == len(cones)-1:
+		x,y = np.transpose(pt); plt.scatter(x,y, color='cyan')
+	else:
+		plt.text( pt[0], pt[1], str(i), fontsize='14', ha='center', va='center', color='cyan')
+	#c = plt.Circle(pt, radius, fill=False); plt.gca().add_patch(c)
+	i += 1
 
-# draw a circle around each center point
-#radius = skate_spec['turning_radius']
-#for pt in cones:
-#	c = plt.Circle(pt, radius, fill=False)
-#	plt.gca().add_patch(c)
-
-# draw lines connecting center points
-#x,y = np.transpose(cones)
-#plt.plot(x,y)
-
-# plot course
+# plot route
 route = calcRoute(cones, skate_spec)
+
+# draw route
 #print(route)
 
-for e in route:
-	print(e['entry']['thetaC'], e['entry']['thetaD'])
+def drawline(line, color='black'): x,y = np.transpose(line); plt.plot(x,y, color=color, lw=1)
+def drawpoint(pt,color='black'): x,y = np.transpose(pt); plt.scatter(x,y,color=color)
 
-
-# draw an arc from entry to exit
-radius = skate_spec['turning_radius']
-for pt in route:
-	print(pt['entry']['enterleft'])
-	if pt['entry']['enterleft']:  #CW D to C
-		a = matplotlib.patches.Arc(pt['center'], radius*2, radius*2, 0, pt['exit']['thetaD'], pt['entry']['thetaC'], color='blue')
-		plt.gca().add_patch(a)
-	else:  #CCW C to D
-		a = matplotlib.patches.Arc(pt['center'], radius*2, radius*2, 0, pt['entry']['thetaD'], pt['exit']['thetaC'], color='red')
-		plt.gca().add_patch(a)
-
-# draw entry and exit points
-entrypoints = []
-exitpoints = []
-for pt in route:
-	#entrypoints.append(pt['entry']['perp'][0])
-	#exitpoints.append(pt['exit']['perp'][1])
-	entrypoints.append(pt['entry']['perp'][1])
-	exitpoints.append(pt['exit']['perp'][0])
-x,y = np.transpose(entrypoints); 
-plt.scatter(x,y,color='green')
-x,y = np.transpose(exitpoints); 
-plt.scatter(x,y,color='red')
-
-def plotline(line):
-	x,y = np.transpose(line)
-	plt.plot(x,y, color='black', lw=1)
-
-# draw lines from cone to cone, exit to entry
-plotline([cones[0], route[0]['entry']['perp'][1]]) # starting gate
-for i in range(1,len(route)):
+prevexitpoint = cones[0]  # starting gate
+for i in range(0,len(route)):
 	pt = route[i]
-	if pt['entry']['enterleft']:
-		entrypoint = route[i]['entry']['perp'][0]
-	else:
-		entrypoint = pt['entry']['perp'][1]
 
-	#plotline([route[i-1]['exit']['perp'][1], route[i]['entry']['perp'][0]])
-	plotline([route[i-1]['exit']['perp'][0], route[i]['entry']['perp'][1]])
-plotline([route[len(route)-1]['exit']['perp'][0], cones[0]]) # back to starting gate
+	#print(pt['enterleft'])
+	if pt['enterleft']:  # CW L to R (Arc always goes CCW)
+		theta1 = pt['exit']['thetaR'] 
+		theta2 = pt['entry']['thetaL']
+		entrypoint = pt['entry']['L']
+		exitpoint = pt['exit']['R']
+	else:  # CCW R to L
+		theta1 = pt['entry']['thetaR']
+		theta2 = pt['exit']['thetaL']
+		entrypoint = pt['entry']['R']
+		exitpoint = pt['exit']['L']
+
+	#drawline([pt['entry']['R'], pt['entry']['L']], 'green')
+	#drawline([pt['exit']['R'], pt['exit']['L']], 'red')
+	#drawpoint(entrypoint, color='green')
+	#drawpoint(exitpoint, color='red')
+
+	a = matplotlib.patches.Arc(pt['center'], radius*2, radius*2, 0, math.degrees(theta1), math.degrees(theta2), color='black')
+	plt.gca().add_patch(a)
+
+	drawline([prevexitpoint, entrypoint])
+	prevexitpoint = exitpoint
+
+drawline([prevexitpoint, cones[0]]) # back to starting gate
 
 # draw arena
 plt.xlim(0,arena_spec['w'])

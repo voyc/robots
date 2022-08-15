@@ -1,9 +1,26 @@
-''' perp.py '''
+''' nav.py
+
+directions in compass degrees:
+	Heading - direction the aircraft is pointing
+
+	Course - direction the aircraft is moving, may be different from heading due to drift
+
+	Bearing - direction to destination or nav aid
+
+	Relative bearing - angle between heading and bearing
+
+compass degrees - 360 to a circle, oriented to 12 o'clock
+radians - 2pi to a circle, oriented at 3 o'clock
+'''
 
 import numpy as np
 import matplotlib.pyplot as plt  
+import matplotlib
 import math
 
+
+def radian2compass(radians): return math.degrees(radians) - 90
+def compass2radians(compass): return math.radians(compass + 90)
 
 def polar2cart(r, theta, center):
 	x = r * np.cos(theta) + center[0]
@@ -60,6 +77,10 @@ if __name__ == '__main__':
 		plt.scatter(B[0], B[1], c='green')
 		plt.scatter(L[0], L[1], c='blue')
 		plt.scatter(R[0], R[1], c='red')
+		a = matplotlib.patches.Arc(B, r*2, r*2, 0, math.degrees(thetaR), math.degrees(thetaL), color='chartreuse')
+		plt.gca().add_patch(a)
+		a = matplotlib.patches.Arc(B, r*2, r*2, 0, math.degrees(thetaL), math.degrees(thetaR), color='orange')
+		plt.gca().add_patch(a)
 
 	r = 50
 	
