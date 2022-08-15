@@ -41,7 +41,7 @@ import matplotlib.pyplot as plt
 import matplotlib  
 import mpmath  
 import math
-import perp
+import nav
 
 arena_spec = {
 	'w':4000,
@@ -119,7 +119,7 @@ def calcRoute(cones, skate):
 		# entry point
 		A = cones[i-1]  # previous point
 		B = cones[i]    # this point
-		L, R, thetaL, thetaR,_,_ = perp.calcPerpendicular(A, B, skate['turning_radius'])
+		L, R, thetaL, thetaR,_,_ = nav.calcPerpendicular(A, B, skate['turning_radius'])
 		entry = {
 			'L': L,
 			'R': R,
@@ -130,7 +130,7 @@ def calcRoute(cones, skate):
 		# exit point
 		A = cones[i+1]  # next point
 		B = cones[i]    # this point
-		L, R, thetaL, thetaR,_,_ = perp.calcPerpendicular(A,B,skate['turning_radius'])
+		L, R, thetaL, thetaR,_,_ = nav.calcPerpendicular(A,B,skate['turning_radius'])
 		exit = {
 			'L': L,
 			'R': R,
