@@ -63,6 +63,8 @@ arena_spec = {
 	'h': 4000,
 	'title': 'Arena',
 	'gate': [2000,50],
+	'conecolor': 'cyan',
+	'routecolor': 'black'
 }
 
 event_spec = {
@@ -74,7 +76,14 @@ skate_spec = {
 	'turning_radius': 200,
 }
 
-def placeCones(arena, num_cones):
+# for animation
+line, = plt.gca().plot([], [], lw = 3) 
+begin = 0
+end = 200
+girth = 20
+speed = 15
+
+def placeCones(arena, event):
 	# build and return a 2D array of x,y points randomly positioned within the arena
 
 	#constants
@@ -106,7 +115,7 @@ def placeCones(arena, num_cones):
 		j = j+1
 	
 	# choose final four
-	pool = pool[:num_cones]
+	pool = pool[:event['num_cones']]
 
 	# center the cones in the arena
 	tpool = np.transpose(pool)
@@ -116,7 +125,7 @@ def placeCones(arena, num_cones):
 	arena_center = np.array([int(arena['w']/2), int(arena['h']/2)])
 	adj = arena_center - bbox_center
 	pool = np.add(pool,adj)
-	
+
 	# test case
 	if isTest:
 		pool = 	[[1704.5,  667. ], 
@@ -124,35 +133,35 @@ def placeCones(arena, num_cones):
 			 [1294.5, 3333. ], # -slope, +dy, -dx, up  , to the left , quadrant 2
 			 [2928.5, 2561. ], # -slope, -dy, +dx, down, to the right, quadrant 4
 			 [ 411.5,  787. ]] # +slope, -dy, -dx, down, to the left , quadrant 3
-	return pool
-		
-def planRoute(cones):
-	# not implemented yet
-	# return an extended version of the cones array with enterleft choices
-	xcones = []
-	for i in range(cones.shape[0]-1):
-		choice = np.random.choice([True,False])
-		xcones.append({
-			'center':cones[i], 
-			'enterleft': np.random.choice([True,False])
+
+	cones = []
+	for pt in pool:
+		cones.append({
+			'center':pt, 
 		})
-	return xcones
 	
+	return cones 
+		
+def chooseSides(cones):
+	# add enterleft choice to each cone
+	for cone in cones:
+		enterleft = np.random.choice([True,False])
+		cone['enterleft'] = enterleft
+	return cones
+	
+def calcCones(cones, skate):
+	# add entry and exit points to each cone
+	r = skate['turning_radius']
+	gate = { 'center': arena_spec['gate'] }
+	for i in range(len(cones)):
+		cone = cones[i]
+		prevcone = gate if i <= 0 else cones[i-1]
+		nextcone = gate if i+1 >= len(cones) else cones[i+1] 
 
-def planRoute(cones, skate):
-	# return an extended version of the cones array with calculations
-	xcones = []
-
-	# add starting and ending gate to temp copy of cones array
-	gate = arena_spec['gate']
-	cones = np.insert(cones,0,[gate],axis=0)
-	cones = np.append(cones,[gate],axis=0)
-
-	for i in range(1,cones.shape[0]-1):
 		# entry point
-		A = cones[i-1]  # previous point
-		B = cones[i]    # this point
-		L, R, thetaL, thetaR,_,_ = nav.calcPerpendicular(A, B, skate['turning_radius'])
+		A = prevcone['center']
+		B = cone['center']
+		L, R, thetaL, thetaR,_,_ = nav.calcPerpendicular(A, B, r)
 		entry = {
 			'L': L,
 			'R': R,
@@ -161,9 +170,9 @@ def planRoute(cones, skate):
 		}
 	
 		# exit point
-		A = cones[i+1]  # next point
-		B = cones[i]    # this point
-		L, R, thetaL, thetaR,_,_ = nav.calcPerpendicular(A,B,skate['turning_radius'])
+		A = nextcone['center']
+		B = cone['center']
+		L, R, thetaL, thetaR,_,_ = nav.calcPerpendicular(A,B,r)
 		exit = {
 			'L': L,
 			'R': R,
@@ -171,145 +180,126 @@ def planRoute(cones, skate):
 			'thetaR': thetaR
 		}
 	
-		# make choice: left or right entry
-		enterleft = np.random.choice([True,False])
-		if isTest: enterleft = testLeft
-
-		xcones.append({
-			'center':cones[i], 
-			'entry':entry, 
-			'exit':exit, 
-			'enterleft': enterleft
-		})
-
-	return xcones
+		cone['entry'] = entry
+		cone['exit'] = exit
+	return cones
 	
-# setup arena
-cones = placeCones(arena_spec, event_spec['num_cones'])
-
-# draw arena
-print(cones)
-radius = skate_spec['turning_radius']
-i = 0
-for pt in cones:
-	plt.text( pt[0], pt[1], str(i+1), fontsize='14', ha='center', va='center', color='cyan')
-	#c = plt.Circle(pt, radius, fill=False); plt.gca().add_patch(c)
-	i += 1
-x,y = np.transpose(arena_spec['gate']); plt.scatter(x,y, color='cyan')
-
-# plot route
-route = planRoute(cones, skate_spec)
-#route = plotRoute(route, skate_spec)
-
-# draw route
-for r in route: print(r['center'])
-
-def drawline(line, color='black'): x,y = np.transpose(line); plt.plot(x,y, color=color, lw=1)
-def drawpoint(pt,color='black'): x,y = np.transpose(pt); plt.scatter(x,y,color=color)
-
-#prevexitpoint = arena_spec['gate']
-#for i in range(0,len(route)):
-#	pt = route[i]
-#
-#	#print(pt['enterleft'])
-#	if pt['enterleft']:  # CW L to R (Arc always goes CCW)
-#		theta1 = pt['exit']['thetaR'] 
-#		theta2 = pt['entry']['thetaL']
-#		entrypoint = pt['entry']['L']
-#		exitpoint = pt['exit']['R']
-#	else:  # CCW R to L
-#		theta1 = pt['entry']['thetaR']
-#		theta2 = pt['exit']['thetaL']
-#		entrypoint = pt['entry']['R']
-#		exitpoint = pt['exit']['L']
-#
-#	#drawline([pt['entry']['R'], pt['entry']['L']], 'green')
-#	#drawline([pt['exit']['R'], pt['exit']['L']], 'red')
-#	#drawpoint(entrypoint, color='green')
-#	#drawpoint(exitpoint, color='red')
-#
-#	a = matplotlib.patches.Arc(pt['center'], radius*2, radius*2, 0, math.degrees(theta1), math.degrees(theta2), color='black')
-#	plt.gca().add_patch(a)
-#
-#	drawline([prevexitpoint, entrypoint])
-#	prevexitpoint = exitpoint
-#
-#drawline([prevexitpoint, arena_spec['gate']])
-
-# save route
-xroute = []
-prevexitpoint = arena_spec['gate']
-for i in range(0,len(route)):
-	pt = route[i]
-
-	#print(pt['enterleft'])
-	if pt['enterleft']:  # CW L to R (Arc always goes CCW)
-		theta1 = pt['exit']['thetaR'] 
-		theta2 = pt['entry']['thetaL']
-		entrypoint = pt['entry']['L']
-		exitpoint = pt['exit']['R']
-	else:  # CCW R to L
-		theta1 = pt['entry']['thetaR']
-		theta2 = pt['exit']['thetaL']
-		entrypoint = pt['entry']['R']
-		exitpoint = pt['exit']['L']
-
-	#drawline([pt['entry']['R'], pt['entry']['L']], 'green')
-	#drawline([pt['exit']['R'], pt['exit']['L']], 'red')
-	#drawpoint(entrypoint, color='green')
-	#drawpoint(exitpoint, color='red')
-
-	heading = nav.calcHeading(prevexitpoint, entrypoint)
-
-	xroute.append({
-		'type': 'line',
+def buildRoute(cones, skate):
+	route = []
+	gate = arena_spec['gate']
+	prevexitpoint = gate
+	for i in range(0,len(cones)):
+		cone = cones[i]
+	
+		if cone['enterleft']:  # CW L to R (Arc always goes CCW)
+			theta1 = cone['exit']['thetaR'] 
+			theta2 = cone['entry']['thetaL']
+			entrypoint = cone['entry']['L']
+			exitpoint = cone['exit']['R']
+		else:  # CCW R to L
+			theta1 = cone['entry']['thetaR']
+			theta2 = cone['exit']['thetaL']
+			entrypoint = cone['entry']['R']
+			exitpoint = cone['exit']['L']
+	
+		heading = nav.lineHeading(prevexitpoint, entrypoint)
+	
+		route.append({
+			'shape': 'line',
+			'from': prevexitpoint,
+			'to': entrypoint,
+			'heading': heading,
+		})
+	
+		route.append({
+			'shape': 'arc',
+			'from': theta1,
+			'to': theta2,
+			'center': cone['center'],
+		})
+		
+		prevexitpoint = exitpoint
+	
+	# back to starting gate
+	heading = nav.lineHeading(prevexitpoint, gate)
+	route.append({
+		'shape': 'line',
 		'from': prevexitpoint,
-		'to': entrypoint,
+		'to': gate,
 		'heading': heading,
 	})
+	return route
 
-	xroute.append({
-		'type': 'arc',
-		'from': theta1,
-		'to': theta2,
-		'wise': 'cw',
-	})
+def drawRoute(route, arena, skate):
+	def drawLine(line, color='black'): 
+		x,y = np.transpose(line); 
+		plt.plot(x,y, color=color, lw=1)
 
-	a = matplotlib.patches.Arc(pt['center'], radius*2, radius*2, 0, math.degrees(theta1), math.degrees(theta2), color='black')
-	plt.gca().add_patch(a)
+	def drawPoint(pt, color='black'): 
+		x,y = np.transpose(pt); 
+		plt.scatter(x,y,color=color)
 
-	drawline([prevexitpoint, entrypoint])
-	prevexitpoint = exitpoint
+	def drawArc(pt, r, theta1, theta2, color='black'): 
+		a = matplotlib.patches.Arc(pt, r*2, r*2, 0, math.degrees(theta1), math.degrees(theta2), color=color)
+		plt.gca().add_patch(a)
 
+	radius = skate['turning_radius']
+	color = arena['routecolor']
+	for leg in route:
+	
+		#drawLine([cone['entry']['R'], cone['entry']['L']], 'green')
+		#drawLine([cone['exit']['R'], cone['exit']['L']], 'red')
+		#drawPoint(entrypoint, color='green')
+		#drawPoint(exitpoint, color='red')
+	
+		if leg['shape'] == 'line':
+			drawLine([leg['from'], leg['to']], color)
 
+		elif leg['shape'] == 'arc':
+			drawArc(leg['center'], radius, leg['from'], leg['to'], color)
 
-drawline([prevexitpoint, arena_spec['gate']])
-xroute.append({
-	'type': 'line',
-	'from': prevexitpoint,
-	'to': entrypoint,
-	'heading': heading,
-})
+def drawArena(cones, arena):
+	# draw cones
+	color = arena['conecolor'] 
+	radius = skate_spec['turning_radius']
+	i = 0
+	for cone in cones:
+		pt = cone['center']
+		plt.text( pt[0], pt[1], str(i+1), fontsize='14', ha='center', va='center', color=color)
+		#c = plt.Circle(pt, radius, fill=False); plt.gca().add_patch(c)
+		i += 1
 
-for pt in xroute: print(pt)
+	# draw gate
+	x,y = np.transpose(arena_spec['gate']); 
+	plt.scatter(x,y, color=color)
 
-# initializing a line variable
-line, = plt.gca().plot([], [], lw = 3) 
-begin = 0
-end = 200
-girth = 20
-speed = 15
-   
+	# draw frame
+	plt.xlim(0,arena_spec['w'])
+	plt.ylim(0,arena_spec['h'])
+	plt.autoscale(False)
+	plt.gca().set_aspect('equal', anchor='C')
+	plt.tick_params(left=False, right=False, labelleft=False, labelbottom= False, bottom=False)
+	plt.gca().spines['bottom'].set_color(color)
+	plt.gca().spines['top'].set_color(color)
+	plt.gca().spines['left'].set_color(color)
+	plt.gca().spines['right'].set_color(color)
+
 
 def init(): # called once before first frame
-	
-	x,y = np.transpose([xroute[0]['from'], xroute[0]['to']])
+	x,y = np.transpose([route[0]['from'], route[0]['to']])
 	plt.plot(x,y, color='blue', lw=5)
 	line.set_data(x, y)
 	return line,
-   
+
+def positionSkate():
+	return
+
+def drawSkate(heading):
+	# given heading, length, speed	 
+	return
+
 def animate(frame): # called once for every frame
-	global line, begin, end, girth
+	global line, begin, end, girth, speed
 	x = np.linspace(begin, end, girth)
 
 	y = x * 2
@@ -319,18 +309,16 @@ def animate(frame): # called once for every frame
 	end += speed
 	return line, # because blit=True, return a list of artists
 
-fig = plt.gcf()
-   
-anim = FuncAnimation(fig, animate, init_func=init, frames=range(1,200), interval=20, blit=True)
-  
-# draw arena
-plt.xlim(0,arena_spec['w'])
-plt.ylim(0,arena_spec['h'])
-plt.autoscale(False)
-plt.gca().set_aspect('equal', anchor='C')
-plt.tick_params(left=False, right=False, labelleft=False, labelbottom= False, bottom=False)
-plt.gca().spines['bottom'].set_color('cyan')
-plt.gca().spines['top'].set_color('cyan')
-plt.gca().spines['left'].set_color('cyan')
-plt.gca().spines['right'].set_color('cyan')
+# main
+cones = placeCones(arena_spec, event_spec)
+cones = chooseSides(cones)
+cones = calcCones(cones, skate_spec)
+route = buildRoute(cones, skate_spec)
+drawArena(cones, arena_spec)
+drawRoute(route, arena_spec, skate_spec)
+anim = FuncAnimation(plt.gcf(), animate, init_func=init, frames=range(1,200), interval=20, blit=True)
+ 
+for cone in cones: print(cone['center'], cone['enterleft'])
+for leg in route: print(leg)
+
 plt.show()
