@@ -179,7 +179,12 @@ def thetaFromHeading(heading):
 	theta = math.radians(degr)
 	return theta
 
-# rename to slopeFromLine
+def isPointPast(A,B,C):
+	# is pt C past the line from A to B, yes or no
+	ab = lineLength(A,B)
+	ac = lineLength(A,C)
+	return (ac > ab)
+
 def lineSlope(A,B):
 	dy = (B[1] - A[1])
 	dx = (B[0] - A[0])
@@ -187,7 +192,15 @@ def lineSlope(A,B):
 	slope = dy / dx
 	return slope, dy, dx
 
-# rename to headingFromLine
+def lineLength(A,B):
+	# in these problems, the angle is always with the x-axis
+	# so dx=>adj, dy=>oppo
+	# dy is also the radius
+	slope, dy, dx = lineSlope(A,B)
+	ah = np.arctan(abs(slope))    # toa: tan(ah) = dy/dx
+	hypo = np.sin(ah) * abs(dy)   # soh: sin(ah) = dy/hypo
+	return hypo
+
 def lineHeading(A,B):  # calc compass heading of a line
 	slope, dy, dx = lineSlope(A,B)
 	atan = np.arctan(slope)

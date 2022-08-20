@@ -302,10 +302,20 @@ skateline, = plt.gca().plot([], [], lw=lw, color=color)
 speed = kmh2cps(skate_spec['avgspeed'])
 lastKnownPosition = arena_spec['gate']
 lastKnownHeading = 318 # compass heading
-lastKnownSteeringAngle = 0 # relative bearing
+lastKnownSteeringAngle = 0 # relative bearing2
+legndx = 0
 
 # animation constants
 delay = int(1000 / animation_spec['fps']) # delay between frames in milliseconds
+
+def nextLeg():
+	global legndx, lastKnownPosition, lastKnownHeading
+	legndx += 2
+	if legndx >= len(route):
+		legndx = 0
+	lastKnownHeading = route[legndx]['heading']
+	lastKnownPosition = route[legndx]['from']
+	return legndx
 
 def drawSkate(): # based on position and heading
 	global lastKnownPosition, lastKnownHeading
@@ -313,12 +323,17 @@ def drawSkate(): # based on position and heading
 	x,y = np.transpose([stern, bow])
 	return x,y
 
-def positionSkate(prevPos, framenum):
-	x,y = np.transpose(prevPos)
-	y += framenum
-	newPos = [x,y]
-	newPos = nav.reckon(lastKnownPosition, lastKnownHeading, speed)
-	return newPos
+def positionSkate(prevpos, framenum):
+	global lastKnownPosition, lastKnownHeading
+	start = route[legndx]['from']
+	end = route[legndx]['to']
+	newpos = nav.reckon(lastKnownPosition, lastKnownHeading, speed)
+
+	ispast = nav.isPointPast(start, end, newpos)
+	if ispast:
+		nextLeg()
+		newpos = nav.reckon(lastKnownPosition, lastKnownHeading, speed)
+	return newpos
 
 def init(): # called once before first frame, but in fact is called twice
 	# set initial position of skateline
