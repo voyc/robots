@@ -67,7 +67,6 @@ path = []
 
 def init(): 
 	# called once before first frame
-	line.set_data([], [])
 	return line,
    
 def animate(frame):

@@ -1,4 +1,4 @@
-'''hippoc.py
+''' hippoc.py
 
 skateboard cones
 
@@ -54,9 +54,18 @@ import mpmath
 import math
 import nav
 from matplotlib.animation import FuncAnimation 
+import copy
 
 isTest = True 
-testLeft = True
+test1 =	[{'center':[1704.5,  667. ], 'enterleft':True }, 
+	 {'center':[3588.5, 1410. ], 'enterleft':True }, # +slope, +dy, +dx, up  , to the right, quadrant 1
+	 {'center':[1294.5, 3333. ], 'enterleft':True }, # -slope, +dy, -dx, up  , to the left , quadrant 2
+	 {'center':[2928.5, 2561. ], 'enterleft':True }, # -slope, -dy, +dx, down, to the right, quadrant 4
+	 {'center':[ 411.5,  787. ], 'enterleft':True }] # +slope, -dy, -dx, down, to the left , quadrant 3
+
+# all measurements are in cm's, and 1 cm == 1 pixel
+# speed is in kph, and internally changed to cps
+# x,y pixel positions in the arena are stand-ins for lng,lat coordinates
 
 arena_spec = {
 	'w':4000,
@@ -74,14 +83,21 @@ event_spec = {
 
 skate_spec = {
 	'turning_radius': 200,
+	'length': 70,
+	'width':  20,
+	'avgspeed': 15, # kmh
+	'color': 'red',
 }
 
-# for animation
-line, = plt.gca().plot([], [], lw = 3) 
-begin = 0
-end = 200
-girth = 20
-speed = 15
+animation_spec = {
+	'fps':20,  # frames per second
+}
+
+def kmh2cps(kph):
+	cm_per_km = 10000
+	sec_per_hr = 3600
+	cps = (kph * cm_per_km) / sec_per_hr
+	return cps
 
 def placeCones(arena, event):
 	# build and return a 2D array of x,y points randomly positioned within the arena
@@ -125,14 +141,6 @@ def placeCones(arena, event):
 	arena_center = np.array([int(arena['w']/2), int(arena['h']/2)])
 	adj = arena_center - bbox_center
 	pool = np.add(pool,adj)
-
-	# test case
-	if isTest:
-		pool = 	[[1704.5,  667. ], 
-			 [3588.5, 1410. ], # +slope, +dy, +dx, up  , to the right, quadrant 1
-			 [1294.5, 3333. ], # -slope, +dy, -dx, up  , to the left , quadrant 2
-			 [2928.5, 2561. ], # -slope, -dy, +dx, down, to the right, quadrant 4
-			 [ 411.5,  787. ]] # +slope, -dy, -dx, down, to the left , quadrant 3
 
 	cones = []
 	for pt in pool:
@@ -284,41 +292,61 @@ def drawArena(cones, arena):
 	plt.gca().spines['left'].set_color(color)
 	plt.gca().spines['right'].set_color(color)
 
+# a line2D artist object to represent the skate, used by FuncAnimation
+color = skate_spec['color']
+points_per_pixel = 7  # linewidth is given in "points"
+lw = int(skate_spec['width'] / points_per_pixel)
+skateline, = plt.gca().plot([], [], lw=lw, color=color)
 
-def init(): # called once before first frame
-	x,y = np.transpose([route[0]['from'], route[0]['to']])
-	plt.plot(x,y, color='blue', lw=5)
-	line.set_data(x, y)
-	return line,
+# animation variables
+speed = kmh2cps(skate_spec['avgspeed'])
+lastKnownPosition = arena_spec['gate']
+lastKnownHeading = 0 # compass heading
+lastKnownSteeringAngle = 0 # relative bearing
 
-def positionSkate():
-	return
+# animation constants
+delay = int(1000 / animation_spec['fps']) # delay between frames in milliseconds
 
-def drawSkate(heading):
-	# given heading, length, speed	 
-	return
 
-def animate(frame): # called once for every frame
-	global line, begin, end, girth, speed
-	x = np.linspace(begin, end, girth)
+def drawSkate(): # based on position and heading
+	global lastKnownPosition, lastKnownHeading
+	bow,stern = nav.calcLineWithHeading(lastKnownPosition, lastKnownHeading, skate_spec['length'])
+	x,y = np.transpose([stern, bow])
+	return x,y
 
-	y = x * 2
-	line.set_data(x, y)
-  
-	begin += speed
-	end += speed
-	return line, # because blit=True, return a list of artists
+def positionSkate(prevPos, framenum):
+	x,y = np.transpose(prevPos)
+	y += framenum
+	newPos = [x,y]
+	return newPos
+
+def init(): # called once before first frame, but in fact is called twice
+	# set initial position of skateline
+	global skateline
+	x,y = drawSkate()
+	skateline.set_data(x, y)
+	return skateline,
+
+def animate(framenum): # called once for every frame
+	global skateline, lastKnownPosition
+	lastKnownPosition = positionSkate(lastKnownPosition, framenum)
+	x,y = drawSkate()
+	skateline.set_data(x, y)
+	return skateline, # because blit=True, return a list of artists
 
 # main
 cones = placeCones(arena_spec, event_spec)
 cones = chooseSides(cones)
+if isTest: cones = test1
 cones = calcCones(cones, skate_spec)
 route = buildRoute(cones, skate_spec)
 drawArena(cones, arena_spec)
 drawRoute(route, arena_spec, skate_spec)
-anim = FuncAnimation(plt.gcf(), animate, init_func=init, frames=range(1,200), interval=20, blit=True)
+
+anim = FuncAnimation(plt.gcf(), animate, init_func=init, frames=None, interval=delay, blit=True)
  
 for cone in cones: print(cone['center'], cone['enterleft'])
 for leg in route: print(leg)
 
 plt.show()
+

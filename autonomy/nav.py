@@ -44,7 +44,45 @@ arctan(negative slope) returns a negative theta
 as slope approaches vertical from the right it approaches infinity
 as slope approaches vertical from the left it approaches -infinity
 
-  ----slope----    arctan  -----theta----- heading   quadrant
+an angle can be expressed as radians or degrees
+let angle refer to the angle within a right triangle, always < 90 degrees or pi/2
+let theta refer to the obtuse angle relative to the right-side x axis
+
+slope = ratio dy/dx = tan(angle)   # tan() returns a ratio
+angle = arctan(dy/dx)              # arctan() returns an angle in radians
+
+-90 degrees < angle < +90 degrees 
+ -1.57 rads < angle < +1.57 rads      # pi/2 = 1.57
+
+if dy/dx is negative, arctan(dy/dx) is negative (in quadrants 2 and 4)
+
+
+sides -> ratio -> angle -> theta -> heading
+dx,dy -> dy/dx -> arctan() -> theta -> heading
+sides = dx,dy
+ratio = dy/dx
+angle = arctan(ratio)
+theta = thetaFromAngle(angle,dx,dy)
+heading = headingFromTheta(theta)
+where
+     angle is between +-pi/2 radians, oriented to right triangle
+     theta is between +=2pi radians, oriented to horizontal axis pointing right
+     heading is between 0-360 degrees, oriented to straight up north
+
+units conventions:
+	heading and bearing are always in compass degrees
+	relative bearing is always in degrees
+	theta and angle are always in radians
+
+
+angle to heading
+angle to theta
+theta to angle
+theta to heading
+heading to angle
+heading to theta
+
+  ----slope----    angle   -----theta----- heading   quadrant
                            rads   *pi degr 
   inf +dy / 0dx     1.57   1.57  0.50   90       0   vertical north 
     1 +dy / +dx     0.79   0.79  0.25   45      45   ur quadrant 1 
@@ -61,16 +99,44 @@ import matplotlib.pyplot as plt
 import matplotlib
 import math
 
-def theta2heading(theta):
+def thetaFromHeading(heading):
+	return compass2radians(heading)
+
+def reckon(startpos, heading, distance):
+	# dead reckoning, return endpos
+
+	# soh cah toa
+	# dy is opposite
+	# dx is adjacent
+	# distance is hypotenuse
+	# theta and angle can be derived from heading
+
+	theta = thetaFromHeading(heading)
+	angle = angleFromTheta(theta)
+	slope = tan(angle)     # toa: tan(a) = oppo/adj = dy/dx
+	dy = sin(a) * distance # soh : sin(a) = oppo/hypo : sin(angle) = dy/distance
+	dx = slope * dy        # slope = dy/dx
+	endpos = [dx,dy]
+	return endpos
+
+def calcLineWithHeading(center, heading, length):
+	half = length / 2
+	theta = thetaFromHeading(heading)
+	dx = np.sin(theta) * half
+	dy = np.cos(theta) * half
+	A = center + np.array([dx,dy])
+	B = center - np.array([dx,dy])
+	return [A,B]
+
+
+def headingFromTheta(theta):
+	# not tested
 	h = 360 - theta + 90
 	if h >= 360:
 		h -= 360
 	return h
 
-def rad2pi(rad):
-	p = rad / np.pi
-	return p
-
+# rename to thetaFromAngle()
 def arctan2theta(atan, dx, dy): 
 	# combine arctan to make obtuse angle depending on quadrant
 	if dx > 0 and dy < 0:  # quadrant 4
@@ -81,6 +147,7 @@ def arctan2theta(atan, dx, dy):
 		theta = atan 
 	return theta
 
+# rename to headingFromTheta
 def radian2compass(radians): 
 	degr = math.degrees(radians)
 	degr = 90 - degr
@@ -88,6 +155,7 @@ def radian2compass(radians):
 		degr = 360 + degr
 	return degr
 
+# rename to thetaFromHeading
 def compass2radians(degr): 
 	degr = 360 + 90 - degr
 	if degr > 360:
@@ -95,6 +163,7 @@ def compass2radians(degr):
 	rads = math.radians(degr)
 	return rads
 
+# rename to slopeFromLine
 def lineSlope(A,B):
 	dy = (B[1] - A[1])
 	dx = (B[0] - A[0])
@@ -102,6 +171,7 @@ def lineSlope(A,B):
 	slope = dy / dx
 	return slope, dy, dx
 
+# rename to headingFromLine
 def lineHeading(A,B):  # calc compass heading of a line
 	slope, dy, dx = lineSlope(A,B)
 	atan = np.arctan(slope)
@@ -110,11 +180,13 @@ def lineHeading(A,B):  # calc compass heading of a line
 	heading = radian2compass(theta)
 	return heading
 
+# rename to cartFromPolar
 def polar2cart(r, theta, center):
 	x = r * np.cos(theta) + center[0]
 	y = r * np.sin(theta) + center[1]
 	return x, y
 
+# linePerpendicularToLine
 def calcPerpendicular(A,B,r):
 		# calculate a line segment LR 
 		#     perpendicular to AB
