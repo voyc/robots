@@ -1,13 +1,23 @@
 ''' nav.py
 
-radians - 2pi to a circle, oriented at 3 o'clock
-compass degrees - 360 to a circle, oriented to 12 o'clock
 
-directions in compass degrees:
-	Heading - direction the aircraft is pointing
-	Course - direction the aircraft is moving, may be different from heading due to drift
+Terms
+
+	Heading - direction the vehicle is pointing
+	Course - direction the vehicle is moving, may be different from heading due to drift
 	Bearing - direction to destination or navigational aid
 	Relative bearing - angle between heading and bearing
+
+	angle - the angle within the right triangle, always < 90 degrees (in radians)
+	theta - the obtuse angle indicating direction within the circle (in radians)
+
+units conventions:
+	radians - 2pi to a circle, oriented at 3 o'clock
+	compass degrees - 360 to a circle, oriented to 12 o'clock
+
+	heading, course and bearing are given in compass degrees
+	relative bearing is given in degrees
+	angle and theta are given in radians
 
 trigonometry functions, soh cah toa
 	sine
@@ -69,19 +79,6 @@ where
      theta is between +=2pi radians, oriented to horizontal axis pointing right
      heading is between 0-360 degrees, oriented to straight up north
 
-units conventions:
-	heading and bearing are always in compass degrees
-	relative bearing is always in degrees
-	theta and angle are always in radians
-
-
-angle to heading
-angle to theta
-theta to angle
-theta to heading
-heading to angle
-heading to theta
-
   ----slope----    angle   -----theta----- heading   quadrant
                            rads   *pi degr 
   inf +dy / 0dx     1.57   1.57  0.50   90       0   vertical north 
@@ -99,9 +96,6 @@ import matplotlib.pyplot as plt
 import matplotlib
 import math
 
-def thetaFromHeading(heading):
-	return compass2radians(heading)
-
 def reckon(startpos, heading, distance):
 	# dead reckoning, return endpos
 
@@ -113,55 +107,77 @@ def reckon(startpos, heading, distance):
 
 	theta = thetaFromHeading(heading)
 	angle = angleFromTheta(theta)
-	slope = tan(angle)     # toa: tan(a) = oppo/adj = dy/dx
-	dy = sin(a) * distance # soh : sin(a) = oppo/hypo : sin(angle) = dy/distance
-	dx = slope * dy        # slope = dy/dx
-	endpos = [dx,dy]
+	dy = np.sin(angle) * distance # soh : sin(a) = oppo/hypo : sin(angle) = dy/distance
+	dx = np.cos(angle) * distance # cah : cos(a) = adj/hypo  : sin(angle) = dx/distance
+	endpos = startpos + np.array([dx,dy])
 	return endpos
 
 def calcLineWithHeading(center, heading, length):
 	half = length / 2
 	theta = thetaFromHeading(heading)
-	dx = np.sin(theta) * half
-	dy = np.cos(theta) * half
+	dy = np.sin(theta) * half
+	dx = np.cos(theta) * half
 	A = center + np.array([dx,dy])
 	B = center - np.array([dx,dy])
 	return [A,B]
 
+'''
+angle vs theta
+	both are given in radians
 
-def headingFromTheta(theta):
-	# not tested
-	h = 360 - theta + 90
-	if h >= 360:
-		h -= 360
-	return h
+	angle can indicate one of four thetas, depending on quadrant
+	dx,dy are required to determine quadrant
 
-# rename to thetaFromAngle()
-def arctan2theta(atan, dx, dy): 
+	conversion function:
+		theta = thetaFromAngle(angle, dx, dy)
+		angle = angleFromTheta(theta)
+'''
+
+def thetaFromAngle(angle, dx, dy): 
 	# combine arctan to make obtuse angle depending on quadrant
 	if dx > 0 and dy < 0:  # quadrant 4
-		theta = (2 * np.pi) + atan
+		theta = (2 * np.pi) + angle
 	elif dx < 0:  # quadrant 2 & 3
-		theta = atan + np.pi
+		theta = angle + np.pi
 	else:  # quadrant 1
-		theta = atan 
+		theta = angle 
 	return theta
 
-# rename to headingFromTheta
-def radian2compass(radians): 
-	degr = math.degrees(radians)
+def angleFromTheta(theta): 
+	for i in range(4):
+		angle = theta - (i * 0.5 * np.pi) 
+		if angle > 0: break;
+	return angle
+
+'''
+heading vs theta
+	heading and theta both indicate direction within a circle
+
+	heading is given in compass degrees, 0 to 360, clockwise
+	theta is given in radians, 0 to 2pi, counter-clockwise
+	
+	theta is used in the matplotlib Arc() function
+	heading is used by humans
+
+	conversion functions:
+		theta = thetaFromHeading(heading)
+		heading = headingFromTheta(theta)
+'''
+
+def headingFromTheta(theta):
+	degr = math.degrees(theta)
 	degr = 90 - degr
 	if degr < 0:
 		degr = 360 + degr
-	return degr
+	heading = degr
+	return heading 
 
-# rename to thetaFromHeading
-def compass2radians(degr): 
-	degr = 360 + 90 - degr
+def thetaFromHeading(heading):
+	degr = 360 + 90 - heading
 	if degr > 360:
 		degr -= 360
-	rads = math.radians(degr)
-	return rads
+	theta = math.radians(degr)
+	return theta
 
 # rename to slopeFromLine
 def lineSlope(A,B):
@@ -175,12 +191,12 @@ def lineSlope(A,B):
 def lineHeading(A,B):  # calc compass heading of a line
 	slope, dy, dx = lineSlope(A,B)
 	atan = np.arctan(slope)
-	theta = arctan2theta(atan, dx, dy)
+	theta = thetaFromAngle(atan, dx, dy)
 	degrees = math.degrees(theta)
-	heading = radian2compass(theta)
+	heading = headingFromTheta(theta)
 	return heading
 
-# rename to cartFromPolar
+# rename to cartFromPolar, and change order of arguments
 def polar2cart(r, theta, center):
 	x = r * np.cos(theta) + center[0]
 	y = r * np.sin(theta) + center[1]
@@ -194,6 +210,7 @@ def calcPerpendicular(A,B,r):
 		#     intersecting B
 		#     with L on the left, and R on the right
 		# see https://stackoverflow.com/questions/57065080/draw-perpendicular-line-of-fixed-length-at-a-point-of-another-line
+		# return two points, in both cartesian and polar coordinates
 
 		# calc slope of AB
 		slopeAB = (B[1] - A[1]) / (B[0] - A[0])
@@ -221,13 +238,13 @@ def calcPerpendicular(A,B,r):
 			thetaL = np.arctan(dy/dx)
 			thetaR = thetaL + math.pi 
 
-		return L, R, thetaL, thetaR, left2right, lo2hi
+		return L, R, thetaL, thetaR
 
 if __name__ == '__main__':
 	def test(A,B,r):
 		x,y = np.transpose([A,B])
 		plt.plot(x,y, color='black', lw=1)
-		L, R, thetaL, thetaR,_,_ = calcPerpendicular(A, B, r)
+		L, R, thetaL, thetaR = calcPerpendicular(A, B, r)
 		E = polar2cart(r, thetaL, B)
 		F = polar2cart(r, thetaR, B)
 		plt.scatter(E[0], E[1], s=100, c='cyan')
@@ -244,10 +261,10 @@ if __name__ == '__main__':
 		slope, dy, dx = lineSlope(A,B)
 		heading = lineHeading(A,B)
 		atan = np.arctan(slope)
-		theta = arctan2theta(atan, dx, dy)
+		theta = thetaFromAngle(atan, dx, dy)
 		degrees = math.degrees(theta)
-		heading = radian2compass(theta)
-		theta2 = compass2radians(heading)
+		heading = headingFromTheta(theta)
+		theta2 = thetaFromHeading(heading)
 		print(f'{A}\t{B}\t{slope}\t{round(atan,2)}\t{round(theta,2)}\t{round(degrees)}\t{round(heading)}\t{theta2}')
 
 	r = 50

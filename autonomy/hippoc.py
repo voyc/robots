@@ -169,7 +169,7 @@ def calcCones(cones, skate):
 		# entry point
 		A = prevcone['center']
 		B = cone['center']
-		L, R, thetaL, thetaR,_,_ = nav.calcPerpendicular(A, B, r)
+		L, R, thetaL, thetaR = nav.calcPerpendicular(A, B, r)
 		entry = {
 			'L': L,
 			'R': R,
@@ -180,7 +180,7 @@ def calcCones(cones, skate):
 		# exit point
 		A = nextcone['center']
 		B = cone['center']
-		L, R, thetaL, thetaR,_,_ = nav.calcPerpendicular(A,B,r)
+		L, R, thetaL, thetaR = nav.calcPerpendicular(A,B,r)
 		exit = {
 			'L': L,
 			'R': R,
@@ -301,12 +301,11 @@ skateline, = plt.gca().plot([], [], lw=lw, color=color)
 # animation variables
 speed = kmh2cps(skate_spec['avgspeed'])
 lastKnownPosition = arena_spec['gate']
-lastKnownHeading = 0 # compass heading
+lastKnownHeading = 318 # compass heading
 lastKnownSteeringAngle = 0 # relative bearing
 
 # animation constants
 delay = int(1000 / animation_spec['fps']) # delay between frames in milliseconds
-
 
 def drawSkate(): # based on position and heading
 	global lastKnownPosition, lastKnownHeading
@@ -318,6 +317,7 @@ def positionSkate(prevPos, framenum):
 	x,y = np.transpose(prevPos)
 	y += framenum
 	newPos = [x,y]
+	newPos = nav.reckon(lastKnownPosition, lastKnownHeading, speed)
 	return newPos
 
 def init(): # called once before first frame, but in fact is called twice
