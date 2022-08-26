@@ -3,4 +3,5 @@ html/index.php
 html/min.js
 html/min.css
 html/robots.txt
+autonomy/temp_*
 __pycache__

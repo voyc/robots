@@ -57,11 +57,11 @@ from matplotlib.animation import FuncAnimation
 import copy
 
 isTest = True 
-test1 =	[{'center':[1704.5,  667. ], 'enterleft':True }, 
-	 {'center':[3588.5, 1410. ], 'enterleft':True }, # +slope, +dy, +dx, up  , to the right, quadrant 1
-	 {'center':[1294.5, 3333. ], 'enterleft':True }, # -slope, +dy, -dx, up  , to the left , quadrant 2
-	 {'center':[2928.5, 2561. ], 'enterleft':True }, # -slope, -dy, +dx, down, to the right, quadrant 4
-	 {'center':[ 411.5,  787. ], 'enterleft':True }] # +slope, -dy, -dx, down, to the left , quadrant 3
+test1 =	[{'center':[1704.5,  667. ], 'rdir':'ccw' }, 
+	 {'center':[3588.5, 1410. ], 'rdir':'ccw' }, # +slope, +dy, +dx, up  , to the right, quadrant 1
+	 {'center':[1294.5, 3333. ], 'rdir':'ccw' }, # -slope, +dy, -dx, up  , to the left , quadrant 2
+	 {'center':[2928.5, 2561. ], 'rdir':'ccw' }, # -slope, -dy, +dx, down, to the right, quadrant 4
+	 {'center':[ 411.5,  787. ], 'rdir':'ccw' }] # +slope, -dy, -dx, down, to the left , quadrant 3
 
 # all measurements are in cm's, and 1 cm == 1 pixel
 # speed is in kph, and internally changed to cps
@@ -85,7 +85,7 @@ skate_spec = {
 	'turning_radius': 200,
 	'length': 70,
 	'width':  20,
-	'avgspeed': 15, # kmh
+	'avgspeed': 15, # kmh, realistically... 15
 	'color': 'red',
 }
 
@@ -151,10 +151,9 @@ def placeCones(arena, event):
 	return cones 
 		
 def chooseSides(cones):
-	# add enterleft choice to each cone
 	for cone in cones:
-		enterleft = np.random.choice([True,False])
-		cone['enterleft'] = enterleft
+		rdir = np.random.choice(['ccw','cw'])
+		cone['rdir'] = rdir
 	return cones
 	
 def calcCones(cones, skate):
@@ -169,7 +168,9 @@ def calcCones(cones, skate):
 		# entry point
 		A = prevcone['center']
 		B = cone['center']
-		L, R, thetaL, thetaR = nav.calcPerpendicular(A, B, r)
+		L, R = nav.linePerpendicular(A, B, r)
+		thetaL,_ = nav.thetaFromPoint(L,B)
+		thetaR,_ = nav.thetaFromPoint(R,B)
 		entry = {
 			'L': L,
 			'R': R,
@@ -180,7 +181,9 @@ def calcCones(cones, skate):
 		# exit point
 		A = nextcone['center']
 		B = cone['center']
-		L, R, thetaL, thetaR = nav.calcPerpendicular(A,B,r)
+		L, R = nav.linePerpendicular(A,B,r)
+		thetaL,_ = nav.thetaFromPoint(L,B)
+		thetaR,_ = nav.thetaFromPoint(R,B)
 		exit = {
 			'L': L,
 			'R': R,
@@ -190,6 +193,17 @@ def calcCones(cones, skate):
 	
 		cone['entry'] = entry
 		cone['exit'] = exit
+
+		if cone['rdir'] == 'cw':
+			cone['entrypoint'] = cone['entry']['L']
+			cone['exitpoint'] = cone['exit']['R']
+			cone['entrytheta'] = cone['entry']['thetaL']
+			cone['exittheta'] = cone['exit']['thetaR']
+		else:
+			cone['entrypoint'] = cone['entry']['R']
+			cone['exitpoint'] = cone['exit']['L']
+			cone['entrytheta'] = cone['entry']['thetaR']
+			cone['exittheta'] = cone['exit']['thetaL']
 	return cones
 	
 def buildRoute(cones, skate):
@@ -199,37 +213,38 @@ def buildRoute(cones, skate):
 	for i in range(0,len(cones)):
 		cone = cones[i]
 	
-		if cone['enterleft']:  # CW L to R (Arc always goes CCW)
-			theta1 = cone['exit']['thetaR'] 
-			theta2 = cone['entry']['thetaL']
-			entrypoint = cone['entry']['L']
-			exitpoint = cone['exit']['R']
-		else:  # CCW R to L
-			theta1 = cone['entry']['thetaR']
-			theta2 = cone['exit']['thetaL']
-			entrypoint = cone['entry']['R']
-			exitpoint = cone['exit']['L']
+		#if cone['rdir'] == 'cw':  # CW L to R (Arc always goes CCW)
+		#	theta1 = cone['entry']['thetaL']
+		#	theta2 = cone['exit']['thetaR'] 
+		#	entrypoint = cone['entry']['L']
+		#	exitpoint = cone['exit']['R']
+		#else:  # CCW R to L
+		#	theta1 = cone['entry']['thetaR']
+		#	theta2 = cone['exit']['thetaL']
+		#	entrypoint = cone['entry']['R']
+		#	exitpoint = cone['exit']['L']
 	
-		heading = nav.lineHeading(prevexitpoint, entrypoint)
+		heading = nav.headingOfLine(prevexitpoint, cone['entrypoint'])
 	
 		route.append({
 			'shape': 'line',
 			'from': prevexitpoint,
-			'to': entrypoint,
+			'to': cone['entrypoint'],
 			'heading': heading,
 		})
 	
 		route.append({
 			'shape': 'arc',
-			'from': theta1,
-			'to': theta2,
+			'from': cone['entrytheta'],
+			'to': cone['exittheta'],
 			'center': cone['center'],
+			'rdir': cone['rdir'],
 		})
 		
-		prevexitpoint = exitpoint
+		prevexitpoint = cone['exitpoint']
 	
 	# back to starting gate
-	heading = nav.lineHeading(prevexitpoint, gate)
+	heading = nav.headingOfLine(prevexitpoint, gate)
 	route.append({
 		'shape': 'line',
 		'from': prevexitpoint,
@@ -238,19 +253,28 @@ def buildRoute(cones, skate):
 	})
 	return route
 
+'''
+drawing routines
+'''
+def drawPoint(pt, color='black'): 
+	x,y = np.transpose(pt); 
+	plt.scatter(x,y,color=color)
+
+def drawLine(line, color='black'): 
+	x,y = np.transpose(line); 
+	plt.plot(x,y, color=color, lw=1)
+
+def drawArc(pt, r, theta1, theta2, rdir, color='black'): 
+	color = 'red'
+	t1 = theta1
+	t2 = theta2
+	if rdir == 'cw': 
+		t1 = theta2
+		t2 = theta1
+	a = matplotlib.patches.Arc(pt, r*2, r*2, 0, math.degrees(t1), math.degrees(t2), color=color)
+	plt.gca().add_patch(a)
+
 def drawRoute(route, arena, skate):
-	def drawLine(line, color='black'): 
-		x,y = np.transpose(line); 
-		plt.plot(x,y, color=color, lw=1)
-
-	def drawPoint(pt, color='black'): 
-		x,y = np.transpose(pt); 
-		plt.scatter(x,y,color=color)
-
-	def drawArc(pt, r, theta1, theta2, color='black'): 
-		a = matplotlib.patches.Arc(pt, r*2, r*2, 0, math.degrees(theta1), math.degrees(theta2), color=color)
-		plt.gca().add_patch(a)
-
 	radius = skate['turning_radius']
 	color = arena['routecolor']
 	for leg in route:
@@ -264,7 +288,7 @@ def drawRoute(route, arena, skate):
 			drawLine([leg['from'], leg['to']], color)
 
 		elif leg['shape'] == 'arc':
-			drawArc(leg['center'], radius, leg['from'], leg['to'], color)
+			drawArc(leg['center'], radius, leg['from'], leg['to'], leg['rdir'], color)
 
 def drawArena(cones, arena):
 	# draw cones
@@ -273,9 +297,13 @@ def drawArena(cones, arena):
 	i = 0
 	for cone in cones:
 		pt = cone['center']
-		plt.text( pt[0], pt[1], str(i+1), fontsize='14', ha='center', va='center', color=color)
-		#c = plt.Circle(pt, radius, fill=False); plt.gca().add_patch(c)
 		i += 1
+		plt.text( pt[0], pt[1], str(i), fontsize='14', ha='center', va='center', color=color)
+
+		#c = plt.Circle(pt, radius, fill=False); plt.gca().add_patch(c)
+
+		drawPoint(cone['entrypoint'], color='green')
+		drawPoint(cone['exitpoint'], color='red')
 
 	# draw gate
 	x,y = np.transpose(arena_spec['gate']); 
@@ -294,7 +322,7 @@ def drawArena(cones, arena):
 
 # a line2D artist object to represent the skate, used by FuncAnimation
 color = skate_spec['color']
-points_per_pixel = 7  # linewidth is given in "points"
+points_per_pixel = 4  # linewidth is given in "points", officially 7
 lw = int(skate_spec['width'] / points_per_pixel)
 skateline, = plt.gca().plot([], [], lw=lw, color=color)
 
@@ -310,42 +338,77 @@ delay = int(1000 / animation_spec['fps']) # delay between frames in milliseconds
 
 def nextLeg():
 	global legndx, lastKnownPosition, lastKnownHeading
-	legndx += 2
+	legndx += 1
 	if legndx >= len(route):
 		legndx = 0
-	lastKnownHeading = route[legndx]['heading']
-	lastKnownPosition = route[legndx]['from']
+	if route[legndx]['shape'] == 'line':
+		lastKnownHeading = route[legndx]['heading']
+		lastKnownPosition = route[legndx]['from']
 	return legndx
 
-def drawSkate(): # based on position and heading
+def plotSkate(): # based on position and heading
+	# FuncAnimation does the drawing
+	# here we calculate the x,y for the line object
 	global lastKnownPosition, lastKnownHeading
-	bow,stern = nav.calcLineWithHeading(lastKnownPosition, lastKnownHeading, skate_spec['length'])
+	bow,stern = nav.lineFromHeading(lastKnownPosition, lastKnownHeading, skate_spec['length'])
 	x,y = np.transpose([stern, bow])
 	return x,y
 
-def positionSkate(prevpos, framenum):
-	global lastKnownPosition, lastKnownHeading
-	start = route[legndx]['from']
-	end = route[legndx]['to']
-	newpos = nav.reckon(lastKnownPosition, lastKnownHeading, speed)
+counter = 0
 
-	ispast = nav.isPointPast(start, end, newpos)
-	if ispast:
-		nextLeg()
-		newpos = nav.reckon(lastKnownPosition, lastKnownHeading, speed)
+def positionSkate(framenum):
+	global lastKnownPosition, lastKnownHeading
+	shape = route[legndx]['shape']
+	newpos = []
+	distance = speed
+	if shape == 'line':
+		start = route[legndx]['from']
+		end = route[legndx]['to']
+		newpos = nav.reckon(lastKnownPosition, lastKnownHeading, distance)
+		ispast = nav.isPointPast(start, end, newpos)
+		if ispast:
+			nextLeg()
+			newpos = nav.reckon(lastKnownPosition, lastKnownHeading, speed)
+	elif shape == 'arc':
+		radius = skate_spec['turning_radius']
+		center = route[legndx]['center']
+		rdir = route[legndx]['rdir']
+		x,y = np.transpose(lastKnownPosition)
+		theta1 = nav.thetaFromPoint(x,y,center,radius)
+		theta2 = nav.reckonArc(theta1, distance, radius, rdir)
+		x,y = nav.xyFromTheta(center, theta2, radius)
+		newpos = [x,y]
+		global counter
+		counter += 1
+		#if counter >= 10: quit()
 	return newpos
+'''
+when slope is positive, the resulting newpos vacillates between quadrants 1 and 3
+in either case, it is going ccw
+'''
 
 def init(): # called once before first frame, but in fact is called twice
 	# set initial position of skateline
 	global skateline
-	x,y = drawSkate()
+	x,y = plotSkate()
 	skateline.set_data(x, y)
 	return skateline,
 
+'''
+this animation handles the line legs
+now we need to also handle the arc legs
+the current method works when steering_angle is 0
+when steering is <> 0, then heading is changing (as well as position) 
+first calc the new heading
+then calc the new position (already done)
+treat steering_angle as a bearing, that is, an angle in degrees, add it to the previous heading
+    to get the new heading
+    lastKnownHeading + steering_angle = newHeading
+'''
 def animate(framenum): # called once for every frame
 	global skateline, lastKnownPosition
-	lastKnownPosition = positionSkate(lastKnownPosition, framenum)
-	x,y = drawSkate()
+	lastKnownPosition = positionSkate(framenum)
+	x,y = plotSkate()
 	skateline.set_data(x, y)
 	return skateline, # because blit=True, return a list of artists
 
@@ -358,9 +421,10 @@ route = buildRoute(cones, skate_spec)
 drawArena(cones, arena_spec)
 drawRoute(route, arena_spec, skate_spec)
 
-anim = FuncAnimation(plt.gcf(), animate, init_func=init, frames=None, interval=delay, blit=True)
+#anim = FuncAnimation(plt.gcf(), animate, init_func=init, frames=None, interval=delay, blit=True)
  
-for cone in cones: print(cone['center'], cone['enterleft'])
+print(cones)
+for cone in cones: print(cone['center'], cone['rdir'])
 for leg in route: print(leg)
 
 plt.show()
