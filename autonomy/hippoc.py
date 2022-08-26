@@ -213,7 +213,6 @@ def drawLine(line, color='black'):
 	plt.plot(x,y, color=color, lw=1)
 
 def drawArc(pt, r, theta1, theta2, rdir, color='black'): 
-	color = 'red'
 	t1 = theta1
 	t2 = theta2
 	if rdir == 'cw': 
@@ -238,7 +237,7 @@ def drawRoute(route, arena, skate):
 		elif leg['shape'] == 'arc':
 			drawArc(leg['center'], radius, leg['from'], leg['to'], leg['rdir'], color)
 
-def drawArena(cones, arena):
+def drawArena(cones, arena, test=False):
 	# draw cones
 	color = arena['conecolor'] 
 	radius = skate_spec['turning_radius']
@@ -248,10 +247,10 @@ def drawArena(cones, arena):
 		i += 1
 		plt.text( pt[0], pt[1], str(i), fontsize='14', ha='center', va='center', color=color)
 
-		#c = plt.Circle(pt, radius, fill=False); plt.gca().add_patch(c)
-
-		drawPoint(cone['entrypoint'], color='green')
-		drawPoint(cone['exitpoint'], color='red')
+		if test:
+			#c = plt.Circle(pt, radius, fill=False); plt.gca().add_patch(c)
+			drawPoint(cone['entrypoint'], color='green')
+			drawPoint(cone['exitpoint'], color='red')
 
 	# draw gate
 	x,y = np.transpose(arena_spec['gate']); 

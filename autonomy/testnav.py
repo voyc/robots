@@ -152,9 +152,16 @@ class TestNav(unittest.TestCase):
 		import matplotlib.pyplot as plt  
 		import matplotlib
 		import math
+		import hippoc
+		from PIL import Image
+		from PIL import ImageChops
+		from PIL import ImageStat
 
-		fname = 'temp_drawperps.png'
+		name = 'drawperps'
+		testname = f'xtemp_{name}.png'
+		refname = f'ref_{name}.png'
 		r = 70
+
 		for test in drawperps:
 			A, B = test
 	
@@ -183,7 +190,16 @@ class TestNav(unittest.TestCase):
 		plt.ylim(0,1000)
 		plt.autoscale(False)
 		plt.gca().set_aspect('equal', anchor='C')
-		plt.savefig(fname)
+
+		plt.savefig(testname)
+
+		im1 = Image.open(testname)
+		im2 = Image.open(refname)
+		diff = ImageChops.difference(im1, im2)
+		stat = ImageStat.Stat(diff)
+		ratio = (sum(stat.mean) / (len(stat.mean) * 255)) * 100 
+		self.assertEqual(ratio, 0)
+
 		if not runquiet:
 			plt.show()
 
@@ -195,17 +211,30 @@ class TestNav(unittest.TestCase):
 		import matplotlib
 		import math
 		import hippoc
+		from PIL import Image
+		from PIL import ImageChops
+		from PIL import ImageStat
 
-		fname = 'temp_drawarena.png'
+		name = 'drawarena'
+		testname = f'xtemp_{name}.png'
+		refname = f'ref_{name}.png'
 
 		cones = conesfreestyle
 		
 		cones = hippoc.calcCones(cones, hippoc.skate_spec)
 		route = hippoc.buildRoute(cones, hippoc.skate_spec)
-		hippoc.drawArena(cones, hippoc.arena_spec)
+		hippoc.drawArena(cones, hippoc.arena_spec, test=True)
 		hippoc.drawRoute(route, hippoc.arena_spec, hippoc.skate_spec)
 
-		plt.savefig(fname)
+		plt.savefig(testname)
+
+		im1 = Image.open(testname)
+		im2 = Image.open(refname)
+		diff = ImageChops.difference(im1, im2)
+		stat = ImageStat.Stat(diff)
+		ratio = (sum(stat.mean) / (len(stat.mean) * 255)) * 100 
+		self.assertEqual(ratio, 0)
+
 		if not runquiet:
 			plt.show()
 
