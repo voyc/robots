@@ -173,6 +173,10 @@ def buildRoute(cones, skate):
 		#	exitpoint = cone['exit']['L']
 	
 		heading = nav.headingOfLine(prevexitpoint, cone['entrypoint'])
+		theta = nav.thetaFromHeading(heading)
+		piscalar = round(theta / np.pi, 2)
+		angle,q = nav.angleFromTheta(theta)
+		print(heading,theta,piscalar,angle,q)
 	
 		route.append({
 			'shape': 'line',
@@ -271,7 +275,7 @@ def drawArena(cones, arena, test=False):
 
 # a line2D artist object to represent the skate, used by FuncAnimation
 color = skate_spec['color']
-points_per_pixel = 4  # linewidth is given in "points", officially 7
+points_per_pixel = 4  # linewidth is given in "points"
 lw = int(skate_spec['width'] / points_per_pixel)
 skateline, = plt.gca().plot([], [], lw=lw, color=color)
 
@@ -287,7 +291,7 @@ delay = int(1000 / animation_spec['fps']) # delay between frames in milliseconds
 
 def nextLeg():
 	global legndx, lastKnownPosition, lastKnownHeading
-	legndx += 1
+	legndx += 2
 	if legndx >= len(route):
 		legndx = 0
 	if route[legndx]['shape'] == 'line':
@@ -300,8 +304,7 @@ def plotSkate(): # based on position and heading
 	# here we calculate the x,y for the line object
 	global lastKnownPosition, lastKnownHeading
 	bow,stern = nav.lineFromHeading(lastKnownPosition, lastKnownHeading, skate_spec['length'])
-	x,y = np.transpose([stern, bow])
-	return x,y
+	return bow,stern
 
 counter = 0
 
@@ -313,42 +316,44 @@ def positionSkate(framenum):
 	if shape == 'line':
 		start = route[legndx]['from']
 		end = route[legndx]['to']
-		newpos = nav.reckon(lastKnownPosition, lastKnownHeading, distance)
+		newpos = nav.reckonLine(lastKnownPosition, lastKnownHeading, distance)
 		ispast = nav.isPointPast(start, end, newpos)
 		if ispast:
 			nextLeg()
-			newpos = nav.reckon(lastKnownPosition, lastKnownHeading, speed)
+			newpos = nav.reckonLine(lastKnownPosition, lastKnownHeading, speed)
 	elif shape == 'arc':
 		radius = skate_spec['turning_radius']
 		center = route[legndx]['center']
 		rdir = route[legndx]['rdir']
-		x,y = np.transpose(lastKnownPosition)
-		theta1 = nav.thetaFromPoint(x,y,center,radius)
+		theta1,_ = nav.thetaFromPoint(lastKnownPosition,center)
 		theta2 = nav.reckonArc(theta1, distance, radius, rdir)
-		x,y = nav.xyFromTheta(center, theta2, radius)
+		x,y = nav.pointFromTheta(center, theta2, radius)
 		newpos = [x,y]
 		global counter
 		counter += 1
-		#if counter >= 10: quit()
+		if counter >= 9: quit()
 	return newpos
 
 def init(): # called once before first frame, but in fact is called twice
 	# set initial position of skateline
 	global skateline
-	x,y = plotSkate()
-	skateline.set_data(x, y)
+	A,B = plotSkate()
+	x,y = np.transpose([A,B])
+	skateline.set_data(x,y)
 	return skateline,
 
 def animate(framenum): # called once for every frame
 	global skateline, lastKnownPosition
 	lastKnownPosition = positionSkate(framenum)
-	x,y = plotSkate()
-	skateline.set_data(x, y)
+	A,B = plotSkate()
+	x,y = np.transpose([A,B])
+	skateline.set_data(x,y)
 	return skateline, # because blit=True, return a list of artists
 
 if __name__ == '__main__':
 	global runquiet
 	runquiet = True
+	logging.basicConfig(format='%(message)s')
 	if not set(['--quiet', '-q']) & set(sys.argv):
 		runquiet = False
 		logging.getLogger('').setLevel(logging.INFO)
@@ -356,16 +361,18 @@ if __name__ == '__main__':
 	# main
 	cones = placeCones(arena_spec, event_spec)
 	cones = chooseSides(cones)
+
+	cones = nav.conesfreestyle
 	cones = calcCones(cones, skate_spec)
 	route = buildRoute(cones, skate_spec)
 	drawArena(cones, arena_spec)
 	drawRoute(route, arena_spec, skate_spec)
 	
-	#anim = FuncAnimation(plt.gcf(), animate, init_func=init, frames=None, interval=delay, blit=True)
+	anim = FuncAnimation(plt.gcf(), animate, init_func=init, frames=None, interval=delay, blit=True)
 	 
 	#logging.info(cones)
 	for cone in cones: logging.info(str(cone['center']) + '\t' + cone['rdir'])
-	for leg in route: logging.info(leg)
+	for leg in route: logging.info(str(leg['shape'] + '\t' + str(leg['from'])))
 	
 	plt.show()
 

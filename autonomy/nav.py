@@ -151,12 +151,10 @@ def isPointPast(A,B,C):
 	return (ac > ab)
 
 
-def reckon(startpos, heading, distance):
-	# dead reckoning, return endpos
+def reckonLine(startpos, heading, distance):
+	# dead reckoning, return new position along a line
 	theta = thetaFromHeading(heading)
-	angle,_ = angleFromTheta(theta)
-	dy = np.sin(angle) * distance # soh : sin(a) = oppo/hypo : sin(angle) = dy/distance
-	dx = np.cos(angle) * distance # cah : cos(a) = adj/hypo  : sin(angle) = dx/distance
+	dx,dy = vectorFromTheta(theta, distance)
 	endpos = startpos + np.array([dx,dy])
 	return endpos
 
@@ -176,6 +174,14 @@ def reckonArc(theta1, distance, r, wise):  # no center?
 	thetadiff *= rot
 	theta2 =  theta1 + thetadiff
 	return theta2
+
+conesfreestyle = [
+	{'center':[1704.5,  667. ], 'rdir':'ccw' }, 
+	{'center':[3588.5, 1410. ], 'rdir':'ccw' }, # +slope, +dy, +dx, up  , to the right, quadrant 1
+	{'center':[1294.5, 3333. ], 'rdir':'ccw' }, # -slope, +dy, -dx, up  , to the left , quadrant 2
+	{'center':[2928.5, 2561. ], 'rdir':'ccw' }, # -slope, -dy, +dx, down, to the right, quadrant 4
+	{'center':[ 411.5,  787. ], 'rdir':'ccw' }, # +slope, -dy, -dx, down, to the left , quadrant 3
+]
 
 if __name__ == '__main__':
 	pass

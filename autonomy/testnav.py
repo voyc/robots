@@ -219,6 +219,8 @@ class TestNav(unittest.TestCase):
 		testname = f'xtemp_{name}.png'
 		refname = f'ref_{name}.png'
 
+		plt.gcf().clear()
+
 		cones = conesfreestyle
 		
 		cones = hippoc.calcCones(cones, hippoc.skate_spec)
@@ -333,6 +335,7 @@ conesfreestyle = [
 if __name__ == '__main__':
 	global runquiet
 	runquiet = True
+	logging.basicConfig(format='%(message)s')
 	if not set(['--quiet', '-q']) & set(sys.argv):
 		runquiet = False
 		logging.getLogger('').setLevel(logging.INFO)
