@@ -1,51 +1,4 @@
-''' hippoc.py
-
-skateboard cones
-
-three events:
-	barrel racing
-	slalom https://www.youtube.com/watch?v=sYSr-Sft4Zk
-	freestyle
-
-The aesthetic control available:
-- choose order of barrels
-- choose direction around each barrel, cw or ccw
-
-One brain part executing.  Tactics.
-One brain part planning future.  Strategy.
-Aesthetics can be found in both: strategy and tactics.
-
-arena of 5 cones
-strategy - 
-  next three barrels: choose barrel and side
-  draw route
-tactics - ? 
-  for a given speed, move ahead n pixels
-  am i on the line
-  adjust to get back to the line
-
-stay between the lines
-stay on the line
-aim at a spot
-constantly self correct
-
-enter on the left, go clockwise around the cone
-enter on the right, go counter-clockwise
-
-calculations and drawing should be separate
-calc, draw, navigate
-
-todo
-- collision avoidance 
-	- run through one cone on the way to another
-	- pass by with slight bend
-	- circle, go clear around before continuing same direction
-- implement barrel racing
-- implement slalom
-- implement incremental routing, three ahead
-- implement animation, skate following path
-- save plot into cv image ?
-'''
+''' hippoc.py '''
 
 import numpy as np
 import matplotlib.pyplot as plt  
@@ -55,13 +8,8 @@ import math
 import nav
 from matplotlib.animation import FuncAnimation 
 import copy
-
-isTest = True 
-test1 =	[{'center':[1704.5,  667. ], 'rdir':'ccw' }, 
-	 {'center':[3588.5, 1410. ], 'rdir':'ccw' }, # +slope, +dy, +dx, up  , to the right, quadrant 1
-	 {'center':[1294.5, 3333. ], 'rdir':'ccw' }, # -slope, +dy, -dx, up  , to the left , quadrant 2
-	 {'center':[2928.5, 2561. ], 'rdir':'ccw' }, # -slope, -dy, +dx, down, to the right, quadrant 4
-	 {'center':[ 411.5,  787. ], 'rdir':'ccw' }] # +slope, -dy, -dx, down, to the left , quadrant 3
+import sys
+import logging
 
 # all measurements are in cm's, and 1 cm == 1 pixel
 # speed is in kph, and internally changed to cps
@@ -320,6 +268,8 @@ def drawArena(cones, arena):
 	plt.gca().spines['left'].set_color(color)
 	plt.gca().spines['right'].set_color(color)
 
+#--------------- above is library functions, below is animation, implemented as global -----------------# 
+
 # a line2D artist object to represent the skate, used by FuncAnimation
 color = skate_spec['color']
 points_per_pixel = 4  # linewidth is given in "points", officially 7
@@ -382,10 +332,6 @@ def positionSkate(framenum):
 		counter += 1
 		#if counter >= 10: quit()
 	return newpos
-'''
-when slope is positive, the resulting newpos vacillates between quadrants 1 and 3
-in either case, it is going ccw
-'''
 
 def init(): # called once before first frame, but in fact is called twice
 	# set initial position of skateline
@@ -394,17 +340,6 @@ def init(): # called once before first frame, but in fact is called twice
 	skateline.set_data(x, y)
 	return skateline,
 
-'''
-this animation handles the line legs
-now we need to also handle the arc legs
-the current method works when steering_angle is 0
-when steering is <> 0, then heading is changing (as well as position) 
-first calc the new heading
-then calc the new position (already done)
-treat steering_angle as a bearing, that is, an angle in degrees, add it to the previous heading
-    to get the new heading
-    lastKnownHeading + steering_angle = newHeading
-'''
 def animate(framenum): # called once for every frame
 	global skateline, lastKnownPosition
 	lastKnownPosition = positionSkate(framenum)
@@ -412,20 +347,26 @@ def animate(framenum): # called once for every frame
 	skateline.set_data(x, y)
 	return skateline, # because blit=True, return a list of artists
 
-# main
-cones = placeCones(arena_spec, event_spec)
-cones = chooseSides(cones)
-if isTest: cones = test1
-cones = calcCones(cones, skate_spec)
-route = buildRoute(cones, skate_spec)
-drawArena(cones, arena_spec)
-drawRoute(route, arena_spec, skate_spec)
+if __name__ == '__main__':
+	global runquiet
+	runquiet = True
+	if not set(['--quiet', '-q']) & set(sys.argv):
+		runquiet = False
+		logging.getLogger('').setLevel(logging.INFO)
 
-#anim = FuncAnimation(plt.gcf(), animate, init_func=init, frames=None, interval=delay, blit=True)
- 
-print(cones)
-for cone in cones: print(cone['center'], cone['rdir'])
-for leg in route: print(leg)
-
-plt.show()
+	# main
+	cones = placeCones(arena_spec, event_spec)
+	cones = chooseSides(cones)
+	cones = calcCones(cones, skate_spec)
+	route = buildRoute(cones, skate_spec)
+	drawArena(cones, arena_spec)
+	drawRoute(route, arena_spec, skate_spec)
+	
+	#anim = FuncAnimation(plt.gcf(), animate, init_func=init, frames=None, interval=delay, blit=True)
+	 
+	#logging.info(cones)
+	for cone in cones: logging.info(str(cone['center']) + '\t' + cone['rdir'])
+	for leg in route: logging.info(leg)
+	
+	plt.show()
 

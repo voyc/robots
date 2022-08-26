@@ -2,17 +2,13 @@
 
 import unittest
 import sys
-
-def qprint(s):
-	if not runquiet:
-		print(s)
+import logging
 
 class TestNav(unittest.TestCase):
 	def test_a_vectors(self):
 		import numpy as np
 		import nav
-		qprint('')
-		qprint(f'dx\tdy\tslope\tangle\tquad\ttheta\t*pi\tdegr\thead\ttheta\tquad\tangle\tslope')
+		logging.info(f'\ndx\tdy\tslope\tangle\tquad\ttheta\t*pi\tdegr\thead\ttheta\tquad\tangle\tslope')
 		for test in vectors:
 			tvector, tslope, tlength, tangle, ttheta, tquad, thead = test
 			dx,dy = tvector
@@ -53,13 +49,12 @@ class TestNav(unittest.TestCase):
 			rpslope = round(pslope,2)
 			self.assertEqual( rpslope, tslope)
 
-			qprint(f'{dx}\t{dy}\t{rslope}\t{rangle}\t{quad}\t{rtheta}\t{piscalar}\t{degr}\t{rhead}\t{rptheta}\t{pquad}\t{rpangle}\t{rpslope}')
+			logging.info(f'{dx}\t{dy}\t{rslope}\t{rangle}\t{quad}\t{rtheta}\t{piscalar}\t{degr}\t{rhead}\t{rptheta}\t{pquad}\t{rpangle}\t{rpslope}')
 
 	def test_b_headings(self):
 		import numpy as np
 		import nav
-		qprint('')
-		qprint(f'head\ttheta\tquad\tangle')
+		logging.info(f'\nhead\ttheta\tquad\tangle')
 		for test in headings:
 			thead, ttheta, tquad, tangle = test
 
@@ -73,14 +68,13 @@ class TestNav(unittest.TestCase):
 			self.assertEqual( quad, tquad)
 			self.assertEqual( rangle, tangle)
 
-			qprint(f'{thead}\t{rtheta}\t{quad}\t{rangle}')
+			logging.info(f'{thead}\t{rtheta}\t{quad}\t{rangle}')
 
 
 	def test_c_lines(self):
 		import numpy as np
 		import nav
-		qprint('')
-		qprint(f'dx\tdy\tslope\tlength\thead')
+		logging.info(f'\ndx\tdy\tslope\tlength\thead')
 		for test in vectors:
 			tvector, tslope, tlength, tangle, ttheta, tquad, thead = test
 			dx,dy = tvector
@@ -97,13 +91,12 @@ class TestNav(unittest.TestCase):
 			rhead = round(head,2)
 			#self.assertEqual(rhead, thead)
 
-			qprint(f'[0,0],\t[{dx},{dy}]\t{rslope}\t{rlength}\t{rhead}')
+			logging.info(f'[0,0],\t[{dx},{dy}]\t{rslope}\t{rlength}\t{rhead}')
 
 	def test_d_lines(self):
 		import numpy as np
 		import nav
-		qprint('')
-		qprint(f'line AB\t\t\tslope\tlength\thead\tperp line LR\t\tslope\thead')
+		logging.info(f'\nline AB\t\t\tslope\tlength\thead\tperp line LR\t\tslope\thead')
 		for test in lines:
 			tA, tB, tslope, tlength, thead, tL, tR, tslopeLR, theadLR = test
 			r = 50
@@ -132,13 +125,12 @@ class TestNav(unittest.TestCase):
 			rphead = round(phead,2)
 			self.assertEqual(rphead, theadLR)
 
-			qprint(f'{tA},{tB}\t{rslope}\t{rlength}\t{rhead}\t{rL},{rR}\t{rpslope}\t{rphead}')
+			logging.info(f'{tA},{tB}\t{rslope}\t{rlength}\t{rhead}\t{rL},{rR}\t{rpslope}\t{rphead}')
 
 	def test_e_points(self):
 		import numpy as np
 		import nav
-		qprint('')
-		qprint(f'point\t\ttheta\tpoint')
+		logging.info(f'\npoint\t\ttheta\tpoint')
 		
 		center = [0,0]
 		for test in points:
@@ -152,7 +144,7 @@ class TestNav(unittest.TestCase):
 			rB = (int(B[0]),int(B[1]))
 			self.assertEqual(rB, A)
 
-			qprint(f'{A}\t{rtheta}\t{rB}')
+			logging.info(f'{A}\t{rtheta}\t{rB}')
 	
 	def test_f_drawperps(self):
 		import numpy as np
@@ -160,7 +152,8 @@ class TestNav(unittest.TestCase):
 		import matplotlib.pyplot as plt  
 		import matplotlib
 		import math
-		
+
+		fname = 'temp_drawperps.png'
 		r = 70
 		for test in drawperps:
 			A, B = test
@@ -190,11 +183,31 @@ class TestNav(unittest.TestCase):
 		plt.ylim(0,1000)
 		plt.autoscale(False)
 		plt.gca().set_aspect('equal', anchor='C')
-		plt.savefig('drawperps.png')
+		plt.savefig(fname)
 		if not runquiet:
 			plt.show()
 
 
+	def test_g_drawarena(self):
+		import numpy as np
+		import nav
+		import matplotlib.pyplot as plt  
+		import matplotlib
+		import math
+		import hippoc
+
+		fname = 'temp_drawarena.png'
+
+		cones = conesfreestyle
+		
+		cones = hippoc.calcCones(cones, hippoc.skate_spec)
+		route = hippoc.buildRoute(cones, hippoc.skate_spec)
+		hippoc.drawArena(cones, hippoc.arena_spec)
+		hippoc.drawRoute(route, hippoc.arena_spec, hippoc.skate_spec)
+
+		plt.savefig(fname)
+		if not runquiet:
+			plt.show()
 
 inf = float('inf') # copied from nav.py
 
@@ -280,11 +293,20 @@ drawperps = [ # A           B
 	[(100, 900), (900, 100), ],
 ]
 
-if __name__ == '__main__':
+conesfreestyle = [
+	{'center':[1704.5,  667. ], 'rdir':'ccw' }, 
+	{'center':[3588.5, 1410. ], 'rdir':'ccw' }, # +slope, +dy, +dx, up  , to the right, quadrant 1
+	{'center':[1294.5, 3333. ], 'rdir':'ccw' }, # -slope, +dy, -dx, up  , to the left , quadrant 2
+	{'center':[2928.5, 2561. ], 'rdir':'ccw' }, # -slope, -dy, +dx, down, to the right, quadrant 4
+	{'center':[ 411.5,  787. ], 'rdir':'ccw' }, # +slope, -dy, -dx, down, to the left , quadrant 3
+]
 
+if __name__ == '__main__':
 	global runquiet
-	runquiet = False
-	if 'quiet' in sys.argv:
-		runquiet = True
+	runquiet = True
+	if not set(['--quiet', '-q']) & set(sys.argv):
+		runquiet = False
+		logging.getLogger('').setLevel(logging.INFO)
 
 	unittest.main(argv=['ignored'], exit=False) # run methods named "test_..." in alphabetical order
+
