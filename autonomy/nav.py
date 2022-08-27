@@ -207,9 +207,9 @@ def isThetaPastArc(a, b, c, center, r, rdir):
 
 # --------------- drawing --------------- #
 
-def drawPoint(pt, color='black'): 
-	x,y = np.transpose(pt); 
-	plt.scatter(x,y,color=color, s=5)
+def drawPoint(pt, color='black', size=36): 
+	x,y = pt #np.transpose(pt); 
+	plt.scatter(x,y,c=color, s=size)
 
 def drawLine(line, color='black'): 
 	x,y = np.transpose(line); 

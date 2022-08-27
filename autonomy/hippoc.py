@@ -208,22 +208,6 @@ def buildRoute(cones, skate):
 '''
 drawing routines
 '''
-#def drawPoint(pt, color='black'): 
-#	x,y = np.transpose(pt); 
-#	plt.scatter(x,y,color=color)
-#
-#def drawLine(line, color='black'): 
-#	x,y = np.transpose(line); 
-#	plt.plot(x,y, color=color, lw=1)
-#
-#def drawArc(pt, r, theta1, theta2, rdir, color='black'): 
-#	t1 = theta1
-#	t2 = theta2
-#	if rdir == 'cw': 
-#		t1 = theta2
-#		t2 = theta1
-#	a = matplotlib.patches.Arc(pt, r*2, r*2, 0, math.degrees(t1), math.degrees(t2), color=color)
-#	plt.gca().add_patch(a)
 
 def drawRoute(route, arena, skate):
 	radius = skate['turning_radius']

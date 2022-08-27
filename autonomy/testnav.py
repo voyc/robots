@@ -164,23 +164,21 @@ class TestNav(unittest.TestCase):
 
 		for test in drawperps:
 			A, B = test
-	
-			x,y = np.transpose([A,B])
-			plt.plot(x,y, color='black', lw=1)
+			nav.drawLine([A,B])
 
 			L,R = nav.linePerpendicular(A, B, r)
-
 			thetaL,_ = nav.thetaFromPoint(L, B)
 			thetaR,_ = nav.thetaFromPoint(R, B)
 			E = nav.pointFromTheta(B, thetaL, r)
 			F = nav.pointFromTheta(B, thetaR, r)
 
-			plt.scatter(E[0], E[1], s=100, c='cyan')
-			plt.scatter(F[0], F[1], s=100, c='pink')
-			plt.scatter(A[0], A[1], c='yellow')
-			plt.scatter(B[0], B[1], c='green')
-			plt.scatter(L[0], L[1], c='blue')
-			plt.scatter(R[0], R[1], c='red')
+			nav.drawPoint(E, size=100, color='cyan')
+			nav.drawPoint(F, size=100, color='pink')
+			nav.drawPoint(A, color='yellow')
+			nav.drawPoint(B, color='green')
+			nav.drawPoint(L, color='blue')
+			nav.drawPoint(R, color='red')
+
 			a = matplotlib.patches.Arc(B, r*2, r*2, 0, math.degrees(thetaR), math.degrees(thetaL), color='chartreuse')
 			plt.gca().add_patch(a)
 			a = matplotlib.patches.Arc(B, r*2, r*2, 0, math.degrees(thetaL), math.degrees(thetaR), color='orange')
@@ -245,6 +243,15 @@ class TestNav(unittest.TestCase):
 		import nav
 		import matplotlib.pyplot as plt
 		import math
+		from PIL import Image
+		from PIL import ImageChops
+		from PIL import ImageStat
+
+		name = 'drawarcs'
+		testname = f'xtemp_{name}.png'
+		refname = f'ref_{name}.png'
+
+		plt.gcf().clear()
 
 		r = 50
 		center = [0,0]
@@ -262,9 +269,6 @@ class TestNav(unittest.TestCase):
 			lend = math.degrees(nav.lengthOfArcTheta(tt1, tt2, r, trdir))
 			rlen  = int(len)
 			rlend = round(lend,1)
-
-			#plt.gcf().clear()
-			
 
 			p1 = nav.pointFromTheta(center, tt1, r)
 			nav.drawPoint(p1,color='green')
@@ -294,6 +298,15 @@ class TestNav(unittest.TestCase):
 		r += 100 
 		for t in [41,42]:
 			testone(t, arcs[t-1])
+
+		plt.savefig(testname)
+
+		im1 = Image.open(testname)
+		im2 = Image.open(refname)
+		diff = ImageChops.difference(im1, im2)
+		stat = ImageStat.Stat(diff)
+		ratio = (sum(stat.mean) / (len(stat.mean) * 255)) * 100 
+		self.assertEqual(ratio, 0)
 
 		if not runquiet:
 			plt.show()
