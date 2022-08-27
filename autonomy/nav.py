@@ -8,9 +8,9 @@ for documentation:
 '''
 
 import numpy as np
-import matplotlib.pyplot as plt  
-import matplotlib
 import math
+import matplotlib
+import matplotlib.pyplot as plt
 
 inf = float('inf')   # note: -inf == float('-inf')
 
@@ -38,6 +38,10 @@ def quadFromTheta(theta):
 	elif piscalar < 1.0: quad = 2
 	elif piscalar < 1.5: quad = 3
 	elif piscalar < 2.0: quad = 4
+#	else: 
+#		print('piscalar is ', piscalar)
+#		quad = 4
+#	
 	return quad
 
 def angleFromSlope(slope):
@@ -53,7 +57,10 @@ def thetaFromAngle(angle, dx, dy):
 	if q == 1: theta = angle
 	if q == 2: theta = angle + np.pi
 	if q == 3: theta = angle + np.pi
-	if q == 4: theta = (2 * np.pi) + angle
+	if q == 4: theta = (2 * np.pi) + angle   
+	if theta > (2*np.pi):
+		print('thetaFromAngle',angle,dx,dy,theta,q)
+		quit()
 	return theta
 
 def headingFromTheta(theta):
@@ -144,7 +151,7 @@ def linePerpendicular(A,B,r):
 
 #---------- functions above this line are in unit test ----------------#
 
-def isPointPast(A,B,C):
+def isPointPastLine(A,B,C):
 	# is pt C past the line from A to B, yes or no
 	ab = lengthOfLine(A,B)
 	ac = lengthOfLine(A,C)
@@ -158,11 +165,25 @@ def reckonLine(startpos, heading, distance):
 	endpos = startpos + np.array([dx,dy])
 	return endpos
 
-def lengthOfArc(theta1, theta2, r):
-	# https://www.codespeedy.com/python-program-to-calculate-arc-length-of-an-angle/
-	# percentage of arc * length of circumference
-	lenarc = ((theta2 - theta1) / (2 * math.pi)) * (2*np.pi*r) 
+def lengthOfArc(tfrom, tto, r, rdir):
+	tcircle = 2*np.pi
+	lencircle = 2 * np.pi * r  # circumference
+	tarc = lengthOfArcTheta(tfrom, tto, r, rdir)
+	lenarc =  (tarc/tcircle) * lencircle  # tarc/tcircle = lenarc/lencircle
 	return lenarc
+
+def lengthOfArcTheta(tfrom, tto, r, rdir):
+	if rdir == 'ccw':
+		tdiff = tto - tfrom
+		if tdiff < 0:
+			tdiff += 2*np.pi
+	elif rdir == 'cw':
+		tdiff = tfrom - tto
+		if tdiff <= 0:  # if to and from are same point, cw goes all the way around
+			tdiff += 2*np.pi
+	else:
+		tdiff = 42
+	return tdiff
 
 def reckonArc(theta1, distance, r, wise):  # no center?
 	# find next theta given distance, distance == arc length
@@ -173,7 +194,43 @@ def reckonArc(theta1, distance, r, wise):  # no center?
 	thetadiff =  distance/r
 	thetadiff *= rot
 	theta2 =  theta1 + thetadiff
+	if (theta2/np.pi) > 2:
+		theta2 -= (2*np.pi)
+		#print(theta1, thetadiff, theta2)
+		#quit()
 	return theta2
+
+def isThetaPastArc(a, b, c, center, r, rdir):
+	ab = lengthOfArcTheta(a, b, r, rdir)
+	ac = lengthOfArcTheta(a, c, r, rdir)
+	return ac > ab
+
+# --------------- drawing --------------- #
+
+def drawPoint(pt, color='black'): 
+	x,y = np.transpose(pt); 
+	plt.scatter(x,y,color=color, s=5)
+
+def drawLine(line, color='black'): 
+	x,y = np.transpose(line); 
+	plt.plot(x,y, color=color, lw=1)
+
+def drawCircle( center, r, color='black'):
+	c = plt.Circle(center, r, fill=False); 
+	plt.gca().add_patch(c)
+
+def drawArc(tfrom, tto, rdir, center, r, color='black'): 
+	t1 = tfrom
+	t2 = tto
+	if rdir == 'cw': 
+		t1 = tto
+		t2 = tfrom
+		if t1 == t2:
+			t2 -= .001
+	a = matplotlib.patches.Arc(center, r*2, r*2, 0, math.degrees(t1), math.degrees(t2), color=color)
+	plt.gca().add_patch(a)
+
+# --------------- test data ------------- #
 
 conesfreestyle = [
 	{'center':[1704.5,  667. ], 'rdir':'ccw' }, 

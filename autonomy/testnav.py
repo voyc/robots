@@ -240,6 +240,66 @@ class TestNav(unittest.TestCase):
 		if not runquiet:
 			plt.show()
 
+	def test_h_arcs(self):
+		import numpy as np
+		import nav
+		import matplotlib.pyplot as plt
+		import math
+
+		r = 50
+		center = [0,0]
+		nav.drawCircle(center, r) 
+
+		def testone(n, test):
+			nonlocal r, center
+			tt1, tt2, trdir, tlen = test
+			r += 50 
+			
+			pi1 = round(tt1/np.pi,2)
+			pi2 = round(tt2/np.pi,2)
+
+			len  = nav.lengthOfArc(tt1, tt2, r, trdir)
+			lend = math.degrees(nav.lengthOfArcTheta(tt1, tt2, r, trdir))
+			rlen  = int(len)
+			rlend = round(lend,1)
+
+			#plt.gcf().clear()
+			
+
+			p1 = nav.pointFromTheta(center, tt1, r)
+			nav.drawPoint(p1,color='green')
+			p2 = nav.pointFromTheta(center, tt2, r)
+			nav.drawPoint(p2,color='red')
+
+			color = 'red' if trdir == 'ccw' else 'green'
+			nav.drawArc(tt1, tt2, trdir, center, r, color=color)
+
+			logging.info(f'{n}\t{tt1}\t{tt2}\t{pi1}\t{pi2}\t{trdir}\t{rlend}\t{rlen}')
+
+		logging.info(f'\nn\tt1\tt2\tpi\tpi\trdir\tlend\tlen')
+		
+
+		plt.xlim(-1050, 1050)
+		plt.ylim(-1050, 1050)
+		plt.autoscale(False)
+		plt.gca().set_aspect('equal', anchor='C')
+
+		for t in [1,2,7,8]:
+			testone(t, arcs[t-1])
+
+		r += 100 
+		for t in [5,6,19,20]:
+			testone(t, arcs[t-1])
+
+		r += 100 
+		for t in [41,42]:
+			testone(t, arcs[t-1])
+
+		if not runquiet:
+			plt.show()
+
+# ---------------- test data ------------------#
+	
 inf = float('inf') # copied from nav.py
 
 vectors = [
@@ -306,6 +366,51 @@ lines = [#   A         B         slope  length    head     L          R        s
 	[[100, 900], [900, 100], -1.0 , 1131.37, 135.0 , (935, 135),(864, 64),   1.0 , 225.0 ],  # lr
 ]
 
+arcs = [
+	[0.927, 2.356, 'ccw', 0,],  #  1 * from q1 to qr2
+	[0.927, 2.356, 'cw' , 0,],  #  2 * ditto
+	[0.927, 3.927, 'ccw', 0,],  #  3
+	[0.927, 3.927, 'cw' , 0,],  #  4
+	[0.927, 5.498, 'ccw', 0,],  #  5 ** from q1 to q4
+	[0.927, 5.498, 'cw' , 0,],  #  6 ** ditto
+	[2.356, 0.927, 'ccw', 0,],  #  7 * from q2 to q1
+	[2.356, 0.927, 'cw' , 0,],  #  8 * ditto
+	[2.356, 3.927, 'ccw', 0,],  #  9
+	[2.356, 3.927, 'cw' , 0,],  # 10
+	[2.356, 5.498, 'ccw', 0,],  # 11
+	[2.356, 5.498, 'cw' , 0,],  # 12
+	[3.927, 0.927, 'ccw', 0,],  # 13
+	[3.927, 0.927, 'cw' , 0,],  # 14
+	[3.927, 2.356, 'ccw', 0,],  # 15
+	[3.927, 2.356, 'cw' , 0,],  # 16
+	[3.927, 5.498, 'ccw', 0,],  # 17
+	[3.927, 5.498, 'cw' , 0,],  # 18 
+	[5.498, 0.927, 'ccw', 0,],  # 19 ** from q4 to q1
+	[5.498, 0.927, 'cw' , 0,],  # 20 ** ditto
+	[5.498, 2.356, 'ccw', 0,],  # 21
+	[5.498, 2.356, 'cw' , 0,],  # 22
+	[5.498, 3.927, 'ccw', 0,],  # 23
+	[5.498, 3.927, 'cw' , 0,],  # 24
+	[5.498, 0.000, 'ccw', 0,],  # 25
+	[5.498, 0.000, 'cw' , 0,],  # 26
+	[2.356, 1.571, 'ccw', 0,],  # 27
+	[2.356, 1.571, 'cw' , 0,],  # 28
+	[3.927, 3.142, 'ccw', 0,],  # 29
+	[3.927, 3.142, 'cw' , 0,],  # 30
+	[0.927, 4.712, 'ccw', 0,],  # 31
+	[0.927, 4.712, 'cw' , 0,],  # 32
+	[0.000, 5.498, 'ccw', 0,],  # 33
+	[0.000, 5.498, 'cw' , 0,],  # 34
+	[1.571, 2.356, 'ccw', 0,],  # 35
+	[1.571, 2.356, 'cw' , 0,],  # 36
+	[3.142, 3.927, 'ccw', 0,],  # 37
+	[3.142, 3.927, 'cw' , 0,],  # 38
+	[4.712, 0.927, 'ccw', 0,],  # 39
+	[4.712, 0.927, 'cw' , 0,],  # 40
+	[5.498, 5.498, 'ccw', 0,],  # 41 *** from and to are same point, ccw go nowhere
+	[5.498, 5.498, 'cw' , 0,],  # 42 ***                             cw go all the way around
+]
+
 points = [#  pt      
 	[(100, 100), 0.79, ],
 	[(800, 300), 0.36, ],
@@ -316,6 +421,7 @@ points = [#  pt
 	[(100, 300), 1.25, ],
 	[(900, 100), 0.11, ],
 ]
+
 
 drawperps = [ # A           B     
 	[(100, 100), (900, 900), ],

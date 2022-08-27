@@ -208,22 +208,22 @@ def buildRoute(cones, skate):
 '''
 drawing routines
 '''
-def drawPoint(pt, color='black'): 
-	x,y = np.transpose(pt); 
-	plt.scatter(x,y,color=color)
-
-def drawLine(line, color='black'): 
-	x,y = np.transpose(line); 
-	plt.plot(x,y, color=color, lw=1)
-
-def drawArc(pt, r, theta1, theta2, rdir, color='black'): 
-	t1 = theta1
-	t2 = theta2
-	if rdir == 'cw': 
-		t1 = theta2
-		t2 = theta1
-	a = matplotlib.patches.Arc(pt, r*2, r*2, 0, math.degrees(t1), math.degrees(t2), color=color)
-	plt.gca().add_patch(a)
+#def drawPoint(pt, color='black'): 
+#	x,y = np.transpose(pt); 
+#	plt.scatter(x,y,color=color)
+#
+#def drawLine(line, color='black'): 
+#	x,y = np.transpose(line); 
+#	plt.plot(x,y, color=color, lw=1)
+#
+#def drawArc(pt, r, theta1, theta2, rdir, color='black'): 
+#	t1 = theta1
+#	t2 = theta2
+#	if rdir == 'cw': 
+#		t1 = theta2
+#		t2 = theta1
+#	a = matplotlib.patches.Arc(pt, r*2, r*2, 0, math.degrees(t1), math.degrees(t2), color=color)
+#	plt.gca().add_patch(a)
 
 def drawRoute(route, arena, skate):
 	radius = skate['turning_radius']
@@ -236,10 +236,10 @@ def drawRoute(route, arena, skate):
 		#drawPoint(exitpoint, color='red')
 	
 		if leg['shape'] == 'line':
-			drawLine([leg['from'], leg['to']], color)
+			nav.drawLine([leg['from'], leg['to']], color)
 
 		elif leg['shape'] == 'arc':
-			drawArc(leg['center'], radius, leg['from'], leg['to'], leg['rdir'], color)
+			nav.drawArc(leg['from'], leg['to'], leg['rdir'], leg['center'], radius, color)
 
 def drawArena(cones, arena, test=False):
 	# draw cones
@@ -253,8 +253,8 @@ def drawArena(cones, arena, test=False):
 
 		if test:
 			#c = plt.Circle(pt, radius, fill=False); plt.gca().add_patch(c)
-			drawPoint(cone['entrypoint'], color='green')
-			drawPoint(cone['exitpoint'], color='red')
+			nav.drawPoint(cone['entrypoint'], color='green')
+			nav.drawPoint(cone['exitpoint'], color='red')
 
 	# draw gate
 	x,y = np.transpose(arena_spec['gate']); 
@@ -282,7 +282,7 @@ skateline, = plt.gca().plot([], [], lw=lw, color=color)
 # animation variables
 speed = kmh2cps(skate_spec['avgspeed'])
 lastKnownPosition = arena_spec['gate']
-lastKnownHeading = 318 # compass heading
+lastKnownHeading = 0 # compass heading
 lastKnownSteeringAngle = 0 # relative bearing2
 legndx = 0
 
@@ -291,7 +291,7 @@ delay = int(1000 / animation_spec['fps']) # delay between frames in milliseconds
 
 def nextLeg():
 	global legndx, lastKnownPosition, lastKnownHeading
-	legndx += 2
+	legndx += 1
 	if legndx >= len(route):
 		legndx = 0
 	if route[legndx]['shape'] == 'line':
@@ -306,8 +306,6 @@ def plotSkate(): # based on position and heading
 	bow,stern = nav.lineFromHeading(lastKnownPosition, lastKnownHeading, skate_spec['length'])
 	return bow,stern
 
-counter = 0
-
 def positionSkate(framenum):
 	global lastKnownPosition, lastKnownHeading
 	shape = route[legndx]['shape']
@@ -317,7 +315,7 @@ def positionSkate(framenum):
 		start = route[legndx]['from']
 		end = route[legndx]['to']
 		newpos = nav.reckonLine(lastKnownPosition, lastKnownHeading, distance)
-		ispast = nav.isPointPast(start, end, newpos)
+		ispast = nav.isPointPastLine(start, end, newpos)
 		if ispast:
 			nextLeg()
 			newpos = nav.reckonLine(lastKnownPosition, lastKnownHeading, speed)
@@ -325,18 +323,23 @@ def positionSkate(framenum):
 		radius = skate_spec['turning_radius']
 		center = route[legndx]['center']
 		rdir = route[legndx]['rdir']
+		start = route[legndx]['from']
+		end = route[legndx]['to']
+		rdir = route[legndx]['rdir']
 		theta1,_ = nav.thetaFromPoint(lastKnownPosition,center)
 		theta2 = nav.reckonArc(theta1, distance, radius, rdir)
+		ispast = nav.isThetaPastArc(start,end,theta2, center,radius, rdir)
+		if ispast:
+			nextLeg()
+			#newpos = nav.reckonLine(lastKnownPosition, lastKnownHeading, speed)
 		x,y = nav.pointFromTheta(center, theta2, radius)
 		newpos = [x,y]
-		global counter
-		counter += 1
-		if counter >= 9: quit()
 	return newpos
 
 def init(): # called once before first frame, but in fact is called twice
 	# set initial position of skateline
-	global skateline
+	global lastKnownHeading, skateline
+	lastKnownHeading = route[0]['heading']
 	A,B = plotSkate()
 	x,y = np.transpose([A,B])
 	skateline.set_data(x,y)
