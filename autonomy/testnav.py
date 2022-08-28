@@ -219,10 +219,10 @@ class TestNav(unittest.TestCase):
 
 		plt.gcf().clear()
 
-		cones = conesfreestyle
+		cones = nav.conesfreestyle
 		
 		cones = hippoc.calcCones(cones, hippoc.skate_spec)
-		route = hippoc.buildRoute(cones, hippoc.skate_spec)
+		route = hippoc.plotRoute(cones, hippoc.skate_spec)
 		hippoc.drawArena(cones, hippoc.arena_spec, test=True)
 		hippoc.drawRoute(route, hippoc.arena_spec, hippoc.skate_spec)
 
@@ -442,14 +442,6 @@ drawperps = [ # A           B
 	[(800, 300), (200, 600), ],
 	[(900, 600), (100, 300), ],
 	[(100, 900), (900, 100), ],
-]
-
-conesfreestyle = [
-	{'center':[1704.5,  667. ], 'rdir':'ccw' }, 
-	{'center':[3588.5, 1410. ], 'rdir':'ccw' }, # +slope, +dy, +dx, up  , to the right, quadrant 1
-	{'center':[1294.5, 3333. ], 'rdir':'ccw' }, # -slope, +dy, -dx, up  , to the left , quadrant 2
-	{'center':[2928.5, 2561. ], 'rdir':'ccw' }, # -slope, -dy, +dx, down, to the right, quadrant 4
-	{'center':[ 411.5,  787. ], 'rdir':'ccw' }, # +slope, -dy, -dx, down, to the left , quadrant 3
 ]
 
 if __name__ == '__main__':

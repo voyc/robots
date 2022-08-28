@@ -13,7 +13,7 @@ import logging
 
 # all measurements are in cm's, and 1 cm == 1 pixel
 # speed is in kph, and internally changed to cps
-# x,y pixel positions in the arena are stand-ins for lng,lat coordinates
+# x,y pixel positions in the arena stand in for lng,lat coordinates
 
 arena_spec = {
 	'w':4000,
@@ -33,7 +33,7 @@ skate_spec = {
 	'turning_radius': 200,
 	'length': 70,
 	'width':  20,
-	'avgspeed': 55, # kmh, realistically... 15
+	'avgspeed': 15, # kmh, realistic:15  # bugs appear above 30
 	'color': 'red',
 }
 
@@ -117,91 +117,61 @@ def calcCones(cones, skate):
 		A = prevcone['center']
 		B = cone['center']
 		L, R = nav.linePerpendicular(A, B, r)
-		thetaL,_ = nav.thetaFromPoint(L,B)
-		thetaR,_ = nav.thetaFromPoint(R,B)
 		entry = {
 			'L': L,
 			'R': R,
-			'thetaL': thetaL,
-			'thetaR': thetaR
 		}
 	
 		# exit point
 		A = nextcone['center']
 		B = cone['center']
 		L, R = nav.linePerpendicular(A,B,r)
-		thetaL,_ = nav.thetaFromPoint(L,B)
-		thetaR,_ = nav.thetaFromPoint(R,B)
 		exit = {
 			'L': L,
 			'R': R,
-			'thetaL': thetaL,
-			'thetaR': thetaR
 		}
 	
-		cone['entry'] = entry
-		cone['exit'] = exit
-
 		if cone['rdir'] == 'cw':
-			cone['entrypoint'] = cone['entry']['L']
-			cone['exitpoint'] = cone['exit']['R']
-			cone['entrytheta'] = cone['entry']['thetaL']
-			cone['exittheta'] = cone['exit']['thetaR']
+			cone['entry'] = entry['L']
+			cone['exit']  = exit['R']
 		else:
-			cone['entrypoint'] = cone['entry']['R']
-			cone['exitpoint'] = cone['exit']['L']
-			cone['entrytheta'] = cone['entry']['thetaR']
-			cone['exittheta'] = cone['exit']['thetaL']
+			cone['entry'] = entry['R']
+			cone['exit']  = exit['L']
 	return cones
 	
-def buildRoute(cones, skate):
+def plotRoute(cones, skate):
 	route = []
 	gate = arena_spec['gate']
-	prevexitpoint = gate
+	prevexit = gate
 	for i in range(0,len(cones)):
 		cone = cones[i]
 	
-		#if cone['rdir'] == 'cw':  # CW L to R (Arc always goes CCW)
-		#	theta1 = cone['entry']['thetaL']
-		#	theta2 = cone['exit']['thetaR'] 
-		#	entrypoint = cone['entry']['L']
-		#	exitpoint = cone['exit']['R']
-		#else:  # CCW R to L
-		#	theta1 = cone['entry']['thetaR']
-		#	theta2 = cone['exit']['thetaL']
-		#	entrypoint = cone['entry']['R']
-		#	exitpoint = cone['exit']['L']
-	
-		heading = nav.headingOfLine(prevexitpoint, cone['entrypoint'])
-		theta = nav.thetaFromHeading(heading)
-		piscalar = round(theta / np.pi, 2)
-		angle,q = nav.angleFromTheta(theta)
-		print(heading,theta,piscalar,angle,q)
+		heading = nav.headingOfLine(prevexit, cone['entry'])
 	
 		route.append({
 			'shape': 'line',
-			'from': prevexitpoint,
-			'to': cone['entrypoint'],
-			'heading': heading,
+			'from': prevexit,
+			'to': cone['entry'],
+			'bearing': heading,
 		})
 	
 		route.append({
 			'shape': 'arc',
-			'from': cone['entrytheta'],
-			'to': cone['exittheta'],
+			'from': cone['entry'],
+			'to': cone['exit'],
 			'center': cone['center'],
 			'rdir': cone['rdir'],
 		})
 		
-		prevexitpoint = cone['exitpoint']
+		prevexit = cone['exit']
 	
 	# back to starting gate
-	heading = nav.headingOfLine(prevexitpoint, gate)
+	heading = nav.headingOfLine(prevexit, gate)
 	route.append({
 		'shape': 'line',
-		'from': prevexitpoint,
+		'from': prevexit,
 		'to': gate,
-		'heading': heading,
+		'bearing': heading,
 	})
 	return route
 
@@ -213,17 +183,13 @@ def drawRoute(route, arena, skate):
 	radius = skate['turning_radius']
 	color = arena['routecolor']
 	for leg in route:
-	
-		#drawLine([cone['entry']['R'], cone['entry']['L']], 'green')
-		#drawLine([cone['exit']['R'], cone['exit']['L']], 'red')
-		#drawPoint(entrypoint, color='green')
-		#drawPoint(exitpoint, color='red')
-	
 		if leg['shape'] == 'line':
 			nav.drawLine([leg['from'], leg['to']], color)
 
 		elif leg['shape'] == 'arc':
-			nav.drawArc(leg['from'], leg['to'], leg['rdir'], leg['center'], radius, color)
+			tfrom,_ = nav.thetaFromPoint(leg['from'], leg['center'])
+			tto,_   = nav.thetaFromPoint(leg['to']  , leg['center'])
+			nav.drawArc(tfrom, tto, leg['rdir'], leg['center'], radius, color)
 
 def drawArena(cones, arena, test=False):
 	# draw cones
@@ -237,8 +203,8 @@ def drawArena(cones, arena, test=False):
 
 		if test:
 			#c = plt.Circle(pt, radius, fill=False); plt.gca().add_patch(c)
-			nav.drawPoint(cone['entrypoint'], color='green')
-			nav.drawPoint(cone['exitpoint'], color='red')
+			nav.drawPoint(cone['entry'], color='green')
+			nav.drawPoint(cone['exit'], color='red')
 
 	# draw gate
 	x,y = np.transpose(arena_spec['gate']); 
@@ -262,59 +228,70 @@ color = skate_spec['color']
 points_per_pixel = 4  # linewidth is given in "points"
 lw = int(skate_spec['width'] / points_per_pixel)
 skateline, = plt.gca().plot([], [], lw=lw, color=color)
-skatedot,  = plt.gca().plot([], [], 'bo') #, color='blue')
+skatedot,  = plt.gca().plot([], [], 'bo', markersize=4)
 
 # animation variables
 speed = kmh2cps(skate_spec['avgspeed'])
-lastKnownPosition = arena_spec['gate']
-lastKnownHeading = 0 # compass heading
-lastKnownSteeringAngle = 0 # relative bearing2
+lastKnown = {
+	'position': arena_spec['gate'],
+	'heading': 0,
+	'steering': 0,
+}
 legndx = 0
 
 # animation constants
 delay = int(1000 / animation_spec['fps']) # delay between frames in milliseconds
 
 def nextLeg():
-	global legndx, lastKnownPosition, lastKnownHeading
+	global legndx, lastKnown
 	legndx += 1
 	if legndx >= len(route):
 		legndx = 0
 	if route[legndx]['shape'] == 'line':
-		lastKnownHeading = route[legndx]['heading']
-		lastKnownPosition = route[legndx]['from']
+		lastKnown['heading'] = route[legndx]['bearing']
+		lastKnown['position'] = route[legndx]['from']
 	return legndx
 
 def plotSkate(): # based on position and heading
 	# FuncAnimation does the drawing
 	# here we calculate the x,y for the line object
-	global lastKnownPosition, lastKnownHeading
-	bow,stern = nav.lineFromHeading(lastKnownPosition, lastKnownHeading, skate_spec['length'])
+	global lastKnown
+	bow,stern = nav.lineFromHeading(lastKnown['position'], lastKnown['heading'], skate_spec['length'])
 	return bow,stern
 
 def positionSkate(framenum):
-	global lastKnownPosition, lastKnownHeading
+	global lastKnown
 	shape = route[legndx]['shape']
 	newpos = []
 	distance = speed
 	if shape == 'line':
-		newpos = nav.reckonLine(lastKnownPosition, lastKnownHeading, distance)
+		heading = lastKnown['heading']
+		steering = lastKnown['steering']
+		course = heading + steering
+		newpos = nav.reckonLine(lastKnown['position'], course, distance)
 		ispast = nav.isPointPastLine(route[legndx]['from'], route[legndx]['to'], newpos)
 		if ispast:
 			nextLeg()
+		#newheading = based on newpos ?  actual heading is  visual on skate
+		#steering = adjust based on relative bearing
+
 	elif shape == 'arc':
-		tfrom = route[legndx]['from']
-		tto = route[legndx]['to']
-		center = route[legndx]['center']
-		rdir = route[legndx]['rdir']
+		leg = route[legndx]
+		tfrom,_ = nav.thetaFromPoint(leg['from'], leg['center'])
+		tto,_   = nav.thetaFromPoint(leg['to'], leg['center'])
+		center = leg['center']
+		rdir = leg['rdir']
 		radius = skate_spec['turning_radius']
-		thetaOld,_ = nav.thetaFromPoint(lastKnownPosition,center)
+		thetaOld,_ = nav.thetaFromPoint(lastKnown['position'],center)
+
+		# hello? heading is not a factor in reckonArc
 		thetaNew = nav.reckonArc(thetaOld, distance, radius, rdir)
 		x,y = nav.pointFromTheta(center, thetaNew, radius)
 		newpos = [x,y]
 
 		newattitude = nav.linePerpendicular( center, newpos, radius)
 		B,A = newattitude
-		lastKnownHeading = nav.headingOfLine(A,B)
+		lastKnown['heading'] = nav.headingOfLine(A,B)
 
 		ispast = nav.isThetaPastArc(tfrom,tto,thetaNew, center,radius, rdir)
 		if ispast:
@@ -323,8 +300,8 @@ def positionSkate(framenum):
 
 def init(): # called once before first frame, but in fact is called twice
 	# set initial position of skateline
-	global lastKnownHeading, skateline, skatedot
-	lastKnownHeading = route[0]['heading']
+	global lastKnown, skateline, skatedot
+	lastKnown['heading'] = route[0]['bearing']
 	A,B = plotSkate()
 	x,y = np.transpose([A,B])
 	skateline.set_data(x,y)
@@ -332,8 +309,8 @@ def init(): # called once before first frame, but in fact is called twice
 	return # skatedot, skateline
 
 def animate(framenum): # called once for every frame
-	global skateline, skatedot, lastKnownPosition
-	lastKnownPosition = positionSkate(framenum)
+	global skateline, skatedot, lastKnown
+	lastKnown['position'] = positionSkate(framenum)
 	A,B = plotSkate()
 	x,y = np.transpose([A,B])
 	skateline.set_data(x,y)
@@ -351,18 +328,19 @@ if __name__ == '__main__':
 	# main
 	cones = placeCones(arena_spec, event_spec)
 	cones = chooseSides(cones)
-
 	#cones = nav.conesfreestyle
+	cones = nav.conestwobugs
+	for cone in cones: logging.info(cone)
+
 	cones = calcCones(cones, skate_spec)
-	route = buildRoute(cones, skate_spec)
+	#for cone in cones: logging.info(cone)
+
+	route = plotRoute(cones, skate_spec)
 	drawArena(cones, arena_spec)
 	drawRoute(route, arena_spec, skate_spec)
+	#for leg in route: logging.info(str(leg['shape'] + '\t' + str(leg['from'])))
 	
 	anim = FuncAnimation(plt.gcf(), animate, init_func=init, frames=None, interval=delay, blit=False)
-	 
-	#logging.info(cones)
-	for cone in cones: logging.info(str(cone['center']) + '\t' + cone['rdir'])
-	for leg in route: logging.info(str(leg['shape'] + '\t' + str(leg['from'])))
 	
 	plt.show()
 

@@ -38,10 +38,9 @@ def quadFromTheta(theta):
 	elif piscalar < 1.0: quad = 2
 	elif piscalar < 1.5: quad = 3
 	elif piscalar < 2.0: quad = 4
-#	else: 
-#		print('piscalar is ', piscalar)
-#		quad = 4
-#	
+	else: 
+		logging.error('error, not possible, piscalar is ', piscalar)
+		quit()
 	return quad
 
 def angleFromSlope(slope):
@@ -59,7 +58,7 @@ def thetaFromAngle(angle, dx, dy):
 	if q == 3: theta = angle + np.pi
 	if q == 4: theta = (2 * np.pi) + angle   
 	if theta > (2*np.pi):
-		print('thetaFromAngle',angle,dx,dy,theta,q)
+		logging.error('error, not possible, thetaFromAngle',angle,dx,dy,theta,q)
 		quit()
 	return theta
 
@@ -185,19 +184,17 @@ def lengthOfArcTheta(tfrom, tto, r, rdir):
 		tdiff = 42
 	return tdiff
 
-def reckonArc(theta1, distance, r, wise):  # no center?
+def reckonArc(theta1, distance, r, rdir):  # no center?
 	# find next theta given distance, distance == arc length
 	# ratio: distance / circumference = theta / 2pi
 	# distance / (2*np.pi*r) =  theta / (2*np.pi)
 	# (distance * 2*np.pi)/(np.pi*2*r) =  (theta / (2*np.pi))
-	rot = -1 if wise == 'cw' else 1 # rotational direction
+	rot = -1 if rdir == 'cw' else 1 # rotational direction
 	thetadiff =  distance/r
 	thetadiff *= rot
 	theta2 =  theta1 + thetadiff
 	if (theta2/np.pi) > 2:
 		theta2 -= (2*np.pi)
-		#print(theta1, thetadiff, theta2)
-		#quit()
 	return theta2
 
 def isThetaPastArc(a, b, c, center, r, rdir):
@@ -238,6 +235,14 @@ conesfreestyle = [
 	{'center':[1294.5, 3333. ], 'rdir':'ccw' }, # -slope, +dy, -dx, up  , to the left , quadrant 2
 	{'center':[2928.5, 2561. ], 'rdir':'ccw' }, # -slope, -dy, +dx, down, to the right, quadrant 4
 	{'center':[ 411.5,  787. ], 'rdir':'ccw' }, # +slope, -dy, -dx, down, to the left , quadrant 3
+]
+
+conestwobugs = [
+	{'center':[347.5 ,  953.5], 'rdir': 'ccw'},
+	{'center':[1533.5, 1228.5], 'rdir': 'ccw'}, # 3 circles, over 35 kph
+	{'center':[3652.5,  843.5], 'rdir': 'ccw'},
+	{'center':[1844.5, 3156.5], 'rdir': 'cw' }, # cw reverse heading
+	{'center':[3603.5, 2532.5], 'rdir': 'cw' }, # cw reverse heading, vibrate glitch
 ]
 
 if __name__ == '__main__':
