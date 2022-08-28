@@ -152,7 +152,6 @@ class TestNav(unittest.TestCase):
 		import matplotlib.pyplot as plt  
 		import matplotlib
 		import math
-		import hippoc
 		from PIL import Image
 		from PIL import ImageChops
 		from PIL import ImageStat

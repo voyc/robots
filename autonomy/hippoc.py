@@ -7,7 +7,6 @@ import mpmath
 import math
 import nav
 from matplotlib.animation import FuncAnimation 
-import copy
 import sys
 import logging
 
@@ -15,6 +14,7 @@ import logging
 # speed is in kph, and internally changed to cps
 # x,y pixel positions in the arena stand in for lng,lat coordinates
 
+# global read-only specifications
 arena_spec = {
 	'w':4000,
 	'h': 4000,
@@ -23,15 +23,13 @@ arena_spec = {
 	'conecolor': 'cyan',
 	'routecolor': 'black'
 }
-
 event_spec = {
 	'event': 'freestyle',
 	'num_cones': 5,
 }
-
 skate_spec = {
 	'turning_radius': 200,
-	'length': 70,
+	'length': 140, # 70,
 	'width':  20,
 	'avgspeed': 15, # kmh, realistic:15  # bugs appear above 30
 	'color': 'red',
@@ -207,8 +205,7 @@ def drawArena(cones, arena, test=False):
 			nav.drawPoint(cone['exit'], color='red')
 
 	# draw gate
-	x,y = np.transpose(arena_spec['gate']); 
-	plt.scatter(x,y, color=color)
+	nav.drawPoint(arena_spec['gate'], color=color)
 
 	# draw frame
 	plt.xlim(0,arena_spec['w'])
@@ -223,60 +220,65 @@ def drawArena(cones, arena, test=False):
 
 #--------------- above is library functions, below is animation, implemented as global -----------------# 
 
-# a line2D artist object to represent the skate, used by FuncAnimation
-color = skate_spec['color']
-points_per_pixel = 4  # linewidth is given in "points"
-lw = int(skate_spec['width'] / points_per_pixel)
-skateline, = plt.gca().plot([], [], lw=lw, color=color)
-skatedot,  = plt.gca().plot([], [], 'bo', markersize=4)
+# a line2D artist object to represent the skate, displayed by FuncAnimation
+skateline = plt.gca().scatter([0,0,0,0,0],[0,0,0,0,0], c=['r','r','r','r','b'])
 
-# animation variables
-speed = kmh2cps(skate_spec['avgspeed'])
+# driving variables
 lastKnown = {
 	'position': arena_spec['gate'],
 	'heading': 0,
-	'steering': 0,
+	'helm': 0,
+	'speed': kmh2cps(skate_spec['avgspeed']),
 }
-legndx = 0
+
+# globals
+cones = []
+route = []
+legn = 0
 
 # animation constants
 delay = int(1000 / animation_spec['fps']) # delay between frames in milliseconds
 
 def nextLeg():
-	global legndx, lastKnown
-	legndx += 1
-	if legndx >= len(route):
-		legndx = 0
-	if route[legndx]['shape'] == 'line':
-		lastKnown['heading'] = route[legndx]['bearing']
-		lastKnown['position'] = route[legndx]['from']
-	return legndx
+	global lastKnown, route, legn
+	legn += 1
+	if legn >= len(route):
+		legn = 0
+	if route[legn]['shape'] == 'line':
+		lastKnown['heading'] = route[legn]['bearing']
+		lastKnown['position'] = route[legn]['from']
+	return legn
 
 def plotSkate(): # based on position and heading
-	# FuncAnimation does the drawing
-	# here we calculate the x,y for the line object
-	global lastKnown
+	# FuncAnimation does the drawing; here we set the x,y values in the Artist object
+	global skateline # lastKnown
 	bow,stern = nav.lineFromHeading(lastKnown['position'], lastKnown['heading'], skate_spec['length'])
+
+	# add 4 dots between bow and stern
+	diff = (bow - stern) / 5
+	points = [0,0,0,0,0]
+	for i in range(5): points[i] = stern + (diff * i)
+	skateline.set_offsets(points) # re-displayed by FuncAnimation
 	return bow,stern
 
 def positionSkate(framenum):
 	global lastKnown
-	shape = route[legndx]['shape']
+	shape = route[legn]['shape']
 	newpos = []
-	distance = speed
+	distance = lastKnown['speed']
 	if shape == 'line':
 		heading = lastKnown['heading']
-		steering = lastKnown['steering']
-		course = heading + steering
+		helm = lastKnown['helm']
+		course = heading + helm
 		newpos = nav.reckonLine(lastKnown['position'], course, distance)
-		ispast = nav.isPointPastLine(route[legndx]['from'], route[legndx]['to'], newpos)
+		ispast = nav.isPointPastLine(route[legn]['from'], route[legn]['to'], newpos)
 		if ispast:
 			nextLeg()
 		#newheading = based on newpos ?  actual heading is  visual on skate
-		#steering = adjust based on relative bearing
+		#helm = adjust based on relative bearing
 
 	elif shape == 'arc':
-		leg = route[legndx]
+		leg = route[legn]
 		tfrom,_ = nav.thetaFromPoint(leg['from'], leg['center'])
 		tto,_   = nav.thetaFromPoint(leg['to'], leg['center'])
 		center = leg['center']
@@ -289,8 +291,9 @@ def positionSkate(framenum):
 		x,y = nav.pointFromTheta(center, thetaNew, radius)
 		newpos = [x,y]
 
-		newattitude = nav.linePerpendicular( center, newpos, radius)
-		B,A = newattitude
+		perp = nav.linePerpendicular( center, newpos, radius)
+		if rdir == 'cw': A,B = perp	
+		else: B,A = perp
 		lastKnown['heading'] = nav.headingOfLine(A,B)
 
 		ispast = nav.isThetaPastArc(tfrom,tto,thetaNew, center,radius, rdir)
@@ -298,24 +301,11 @@ def positionSkate(framenum):
 			nextLeg()
 	return newpos
 
-def init(): # called once before first frame, but in fact is called twice
-	# set initial position of skateline
-	global lastKnown, skateline, skatedot
-	lastKnown['heading'] = route[0]['bearing']
-	A,B = plotSkate()
-	x,y = np.transpose([A,B])
-	skateline.set_data(x,y)
-	skatedot.set_data([A[0],A[1]])
-	return # skatedot, skateline
-
 def animate(framenum): # called once for every frame
 	global skateline, skatedot, lastKnown
 	lastKnown['position'] = positionSkate(framenum)
 	A,B = plotSkate()
-	x,y = np.transpose([A,B])
-	skateline.set_data(x,y)
-	skatedot.set_data([A[0],A[1]])
-	return # skatedot, skateline # because blit=True, return a list of artists
+	return skateline, # when blit=True, return a list of artists
 
 if __name__ == '__main__':
 	global runquiet
@@ -328,19 +318,55 @@ if __name__ == '__main__':
 	# main
 	cones = placeCones(arena_spec, event_spec)
 	cones = chooseSides(cones)
+
 	#cones = nav.conesfreestyle
 	cones = nav.conestwobugs
 	for cone in cones: logging.info(cone)
 
 	cones = calcCones(cones, skate_spec)
-	#for cone in cones: logging.info(cone)
 
 	route = plotRoute(cones, skate_spec)
+
 	drawArena(cones, arena_spec)
 	drawRoute(route, arena_spec, skate_spec)
-	#for leg in route: logging.info(str(leg['shape'] + '\t' + str(leg['from'])))
-	
-	anim = FuncAnimation(plt.gcf(), animate, init_func=init, frames=None, interval=delay, blit=False)
+
+	lastKnown['heading'] = route[0]['bearing']
+
+	anim = FuncAnimation(plt.gcf(), animate, frames=None, interval=delay, blit=True)
 	
 	plt.show()
+
+'''
+bugs:
+	x cw reverse heading bug
+	x draw skate as series of big dots
+	- cw arc vibrate glitch
+	- ccw circle multiple times bug
+	- separate thinking and simulation
+
+
+FuncAnimation()
+	animate()
+		positionSkate()
+			reckon()
+			isPointPast()
+
+			getPosition()
+				if sim: 
+					reckon()
+					add random drift 
+				else: 
+					get position from camera 
+			if past:
+				nextLeg()
+			calc new heading = from prev posiion to current position
+			calc new bearing = from position to leg.to
+			calc relative bearing = angle between heading and bearing
+			calc helm = a percentage of relative bearing
+			
+			
+		plotSkate()
+			skateline.set_data()
+			skatedot.set_data()
+'''	
 
