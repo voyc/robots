@@ -31,7 +31,7 @@ skate_spec = {
 	'turning_radius': 200,
 	'length': 140, # 70,
 	'width':  20,
-	'avgspeed': 15, # kmh, realistic:15  # bugs appear above 30
+	'avgspeed': 35, # kmh, realistic:15  # bugs appear above 30
 	'color': 'red',
 }
 
@@ -340,8 +340,8 @@ if __name__ == '__main__':
 bugs:
 	x cw reverse heading bug
 	x draw skate as series of big dots
-	- cw arc vibrate glitch
-	- ccw circle multiple times bug
+	x reckon: cw q1 to q4: vibrate stall
+	- isThetaPast: ccw circle multiple times bug, q4 to q1?
 	- separate thinking and simulation
 
 
@@ -351,6 +351,9 @@ FuncAnimation()
 			reckon()
 			isPointPast()
 
+			get position from camera
+			if it fails,
+				get position from dead reckoning
 			getPosition()
 				if sim: 
 					reckon()

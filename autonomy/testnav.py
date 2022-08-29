@@ -270,6 +270,11 @@ class TestNav(unittest.TestCase):
 			rlend = round(lend,1)
 			self.assertEqual(rlen, tlen)
 
+			past = tt2 + .1
+			notpast = tt2 - .1
+			ispast = nav.isThetaPastArc(tt1,tt2,past   , center,r, trdir)
+			isnotpast = nav.isThetaPastArc(tt1,tt2,notpast, center,r, trdir)
+
 			p1 = nav.pointFromTheta(center, tt1, r)
 			nav.drawPoint(p1,color='green')
 			p2 = nav.pointFromTheta(center, tt2, r)
@@ -278,7 +283,7 @@ class TestNav(unittest.TestCase):
 			color = 'red' if trdir == 'ccw' else 'green'
 			nav.drawArc(tt1, tt2, trdir, center, r, color=color)
 
-			logging.info(f'{n}\t{tt1}\t{tt2}\t{pi1}\t{pi2}\t{trdir}\t{rlend}\t{rlen}')
+			logging.info(f'{n}\t{tt1}\t{tt2}\t{pi1}\t{pi2}\t{trdir}\t{rlend}\t{rlen}\t{ispast}\t{isnotpast}')
 
 		logging.info(f'\nn\tt1\tt2\tpi\tpi\trdir\tlend\tlen')
 		

@@ -174,14 +174,15 @@ def lengthOfArc(tfrom, tto, r, rdir):
 def lengthOfArcTheta(tfrom, tto, r, rdir):
 	if rdir == 'ccw':
 		tdiff = tto - tfrom
-		if tdiff < 0:
+		if tdiff < 0:  # if from == to, ccw goes nowhere
 			tdiff += 2*np.pi
 	elif rdir == 'cw':
 		tdiff = tfrom - tto
-		if tdiff <= 0:  # if to and from are same point, cw goes all the way around
+		if tdiff <= 0:  # if from == to, cw goes all the way around
 			tdiff += 2*np.pi
 	else:
-		tdiff = 42
+		logging.error('bad rdir')
+		quit()
 	return tdiff
 
 def reckonArc(theta1, distance, r, rdir):  # no center?
@@ -193,8 +194,10 @@ def reckonArc(theta1, distance, r, rdir):  # no center?
 	thetadiff =  distance/r
 	thetadiff *= rot
 	theta2 =  theta1 + thetadiff
-	if (theta2/np.pi) > 2:
+	if (theta2/np.pi) > 2:  # ccw q4 to q1
 		theta2 -= (2*np.pi)
+	if theta2 < 0:          # cw q1 to q4
+		theta2 = (2*np.pi) + theta2 
 	return theta2
 
 def isThetaPastArc(a, b, c, center, r, rdir):
@@ -238,12 +241,20 @@ conesfreestyle = [
 ]
 
 conestwobugs = [
-	{'center':[347.5 ,  953.5], 'rdir': 'ccw'},
-	{'center':[1533.5, 1228.5], 'rdir': 'ccw'}, # 3 circles, over 35 kph
+	{'center':[347.5 ,  953.5], 'rdir': 'ccw'}, 
+	{'center':[1533.5, 1228.5], 'rdir': 'ccw'}, # ccw 3 circles, over 35 kph
 	{'center':[3652.5,  843.5], 'rdir': 'ccw'},
-	{'center':[1844.5, 3156.5], 'rdir': 'cw' }, # cw reverse heading
-	{'center':[3603.5, 2532.5], 'rdir': 'cw' }, # cw reverse heading, vibrate glitch
+	{'center':[1844.5, 3156.5], 'rdir': 'cw' },
+	{'center':[3603.5, 2532.5], 'rdir': 'cw' }, # cw q1 to q4 vibrate glitch 
 ]
+
+'''
+{'center': array([3006.5, 2064.5]), 'rdir': 'cw'}
+{'center': array([3399.5,  580.5]), 'rdir': 'ccw'}
+{'center': array([600.5, 597.5]), 'rdir': 'ccw'}
+{'center': array([ 725.5, 1893.5]), 'rdir': 'ccw'}  # 4.  7 circles, q4 to q1, straight line
+{'center': array([1199.5, 3419.5]), 'rdir': 'cw'}
+'''
 
 if __name__ == '__main__':
 	pass
