@@ -31,12 +31,17 @@ skate_spec = {
 	'turning_radius': 200,
 	'length': 140, # 70,
 	'width':  20,
-	'avgspeed': 35, # kmh, realistic:15  # bugs appear above 30
+	'avgspeed': 95, # kmh, realistic:15  # bugs appear above 30
 	'color': 'red',
+	'helmlag': 0,
+	'helmpct': 0,
+	'helmrange': [0,0],
+	'drift': 0,
 }
 
 animation_spec = {
 	'fps':20,  # frames per second
+	'simmode': 'precise', # 'helmed'
 }
 
 def kmh2cps(kph):
@@ -173,9 +178,7 @@ def plotRoute(cones, skate):
 	})
 	return route
 
-'''
-drawing routines
-'''
+#--------------- drawing ----------------------------------------# 
 
 def drawRoute(route, arena, skate):
 	radius = skate['turning_radius']
@@ -250,18 +253,28 @@ def nextLeg():
 	return legn
 
 def plotSkate(): # based on position and heading
-	# FuncAnimation does the drawing; here we set the x,y values in the Artist object
 	global skateline # lastKnown
 	bow,stern = nav.lineFromHeading(lastKnown['position'], lastKnown['heading'], skate_spec['length'])
-
-	# add 4 dots between bow and stern
-	diff = (bow - stern) / 5
+	diff = (bow - stern) / 5  # add 4 dots between bow and stern
 	points = [0,0,0,0,0]
 	for i in range(5): points[i] = stern + (diff * i)
-	skateline.set_offsets(points) # re-displayed by FuncAnimation
+	skateline.set_offsets(points) # FuncAnimation does the drawing
 	return bow,stern
 
-def positionSkate(framenum):
+def getPositionFromCamera():
+	return False
+
+def addRandomDrift(pos):
+	return pos
+
+def getPosition(framenum):
+	pos = getPositionFromCamera()
+	if not pos:
+		pos = getPositionByDeadReckoning()
+		pos = addRandomDrift(pos)
+	return pos
+
+def getPositionByDeadReckoning():
 	global lastKnown
 	shape = route[legn]['shape']
 	newpos = []
@@ -299,11 +312,22 @@ def positionSkate(framenum):
 		fractional = nav.lengthOfArc(tto, thetaNew, radius, rdir) < distance
 		if ispast or fractional:
 			nextLeg()
+			newpos = route[legn]['from']
 	return newpos
 
+def setHelm():
+	#course = lineFromHeading(from prev posiion to current position
+	#bearing = headingFromLine(from position to leg.to
+	#relative = bearing - course
+	#helm = a percentage of relative bearing
+	helm = lastKnown['helm']
+	return helm
+
 def animate(framenum): # called once for every frame
-	global skateline, skatedot, lastKnown
-	lastKnown['position'] = positionSkate(framenum)
+	global skateline, lastKnown
+	lastKnown['position'] = getPosition(framenum)
+	lastKnown['helm'] = setHelm()
+	
 	A,B = plotSkate()
 	return skateline, # when blit=True, return a list of artists
 
@@ -338,33 +362,4 @@ if __name__ == '__main__':
 	plt.show()
 
 '''
-- separate thinking and simulation
-
-FuncAnimation()
-	animate()
-		positionSkate()
-			reckon()
-			isPointPast()
-
-			get position from camera
-			if it fails,
-				get position from dead reckoning
-			getPosition()
-				if sim: 
-					reckon()
-					add random drift 
-				else: 
-					get position from camera 
-			if past:
-				nextLeg()
-			calc new heading = from prev posiion to current position
-			calc new bearing = from position to leg.to
-			calc relative bearing = angle between heading and bearing
-			calc helm = a percentage of relative bearing
-			
-			
-		plotSkate()
-			skateline.set_data()
-			skatedot.set_data()
-'''	
-
+'''
