@@ -239,7 +239,6 @@ conesfreestyle = [
 	{'center':[2928.5, 2561. ], 'rdir':'ccw' }, # -slope, -dy, +dx, down, to the right, quadrant 4
 	{'center':[ 411.5,  787. ], 'rdir':'ccw' }, # +slope, -dy, -dx, down, to the left , quadrant 3
 ]
-
 conestwobugs = [
 	{'center':[347.5 ,  953.5], 'rdir': 'ccw'}, 
 	{'center':[1533.5, 1228.5], 'rdir': 'ccw'}, # ccw 3 circles, over 35 kph
@@ -247,14 +246,20 @@ conestwobugs = [
 	{'center':[1844.5, 3156.5], 'rdir': 'cw' },
 	{'center':[3603.5, 2532.5], 'rdir': 'cw' }, # cw q1 to q4 vibrate glitch 
 ]
-
-'''
-{'center': array([3006.5, 2064.5]), 'rdir': 'cw'}
-{'center': array([3399.5,  580.5]), 'rdir': 'ccw'}
-{'center': array([600.5, 597.5]), 'rdir': 'ccw'}
-{'center': array([ 725.5, 1893.5]), 'rdir': 'ccw'}  # 4.  7 circles, q4 to q1, straight line
-{'center': array([1199.5, 3419.5]), 'rdir': 'cw'}
-'''
+conessevencircles = [
+	{'center': [3006.5, 2064.5], 'rdir': 'cw'},
+	{'center': [3399.5,  580.5], 'rdir': 'ccw'},
+	{'center': [600.5, 597.5], 'rdir': 'ccw'},
+	{'center': [ 725.5, 1893.5], 'rdir': 'ccw'},  # 4.  7 circles, q4 to q1, straight line
+	{'center': [1199.5, 3419.5], 'rdir': 'cw'},
+]
+conespassby = [
+	{'center': [ 427.5, 2569. ], 'rdir': 'ccw'},
+	{'center': [1638.5, 2257. ], 'rdir': 'ccw'},  # pt 2, pass by
+	{'center': [3572.5, 1919. ], 'rdir': 'ccw'},
+	{'center': [2872.5, 3263. ], 'rdir': 'ccw'},
+	{'center': [979.5, 737. ], 'rdir': 'ccw'},
+]
 
 if __name__ == '__main__':
 	pass

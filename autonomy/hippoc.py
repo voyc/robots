@@ -240,7 +240,7 @@ legn = 0
 delay = int(1000 / animation_spec['fps']) # delay between frames in milliseconds
 
 def nextLeg():
-	global lastKnown, route, legn
+	global lastKnown, legn # route
 	legn += 1
 	if legn >= len(route):
 		legn = 0
@@ -274,8 +274,7 @@ def positionSkate(framenum):
 		ispast = nav.isPointPastLine(route[legn]['from'], route[legn]['to'], newpos)
 		if ispast:
 			nextLeg()
-		#newheading = based on newpos ?  actual heading is  visual on skate
-		#helm = adjust based on relative bearing
+			newpos = route[legn]['from']
 
 	elif shape == 'arc':
 		leg = route[legn]
@@ -297,7 +296,8 @@ def positionSkate(framenum):
 		lastKnown['heading'] = nav.headingOfLine(A,B)
 
 		ispast = nav.isThetaPastArc(tfrom,tto,thetaNew, center,radius, rdir)
-		if ispast:
+		fractional = nav.lengthOfArc(tto, thetaNew, radius, rdir) < distance
+		if ispast or fractional:
 			nextLeg()
 	return newpos
 
@@ -320,7 +320,8 @@ if __name__ == '__main__':
 	cones = chooseSides(cones)
 
 	#cones = nav.conesfreestyle
-	cones = nav.conestwobugs
+	#cones = nav.conestwobugs
+	#cones = nav.conespassby
 	for cone in cones: logging.info(cone)
 
 	cones = calcCones(cones, skate_spec)
@@ -337,13 +338,7 @@ if __name__ == '__main__':
 	plt.show()
 
 '''
-bugs:
-	x cw reverse heading bug
-	x draw skate as series of big dots
-	x reckon: cw q1 to q4: vibrate stall
-	- isThetaPast: ccw circle multiple times bug, q4 to q1?
-	- separate thinking and simulation
-
+- separate thinking and simulation
 
 FuncAnimation()
 	animate()
