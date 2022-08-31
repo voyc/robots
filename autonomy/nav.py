@@ -11,6 +11,7 @@ import numpy as np
 import math
 import matplotlib
 import matplotlib.pyplot as plt
+import logging
 
 inf = float('inf')   # note: -inf == float('-inf')
 
@@ -38,9 +39,7 @@ def quadFromTheta(theta):
 	elif piscalar < 1.0: quad = 2
 	elif piscalar < 1.5: quad = 3
 	elif piscalar < 2.0: quad = 4
-	else: 
-		logging.error('error, not possible, piscalar is ', piscalar)
-		quit()
+	else: raise Exception(f'errror, not possible, piscalar={piscalar}')
 	return quad
 
 def angleFromSlope(slope):
@@ -54,12 +53,10 @@ def slopeFromAngle(angle):
 def thetaFromAngle(angle, dx, dy): 
 	q = quadFromVector([dx,dy])
 	if q == 1: theta = angle
-	if q == 2: theta = angle + np.pi
-	if q == 3: theta = angle + np.pi
-	if q == 4: theta = (2 * np.pi) + angle   
-	if theta > (2*np.pi):
-		logging.error('error, not possible, thetaFromAngle',angle,dx,dy,theta,q)
-		quit()
+	elif q == 2: theta = angle + np.pi
+	elif q == 3: theta = angle + np.pi
+	elif q == 4: theta = (2 * np.pi) + angle
+	else: raise Exception(f'error, values not possible, in thetaFromAngle, q={q}, dx={dx}, dy={dy}')
 	return theta
 
 def headingFromTheta(theta):
@@ -180,9 +177,7 @@ def lengthOfArcTheta(tfrom, tto, r, rdir):
 		tdiff = tfrom - tto
 		if tdiff <= 0:  # if from == to, cw goes all the way around
 			tdiff += 2*np.pi
-	else:
-		logging.error('bad rdir')
-		quit()
+	else: raise Exception(f'bad rdir={rdir}')
 	return tdiff
 
 def reckonArc(theta1, distance, r, rdir):  # no center?

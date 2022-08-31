@@ -9,6 +9,7 @@ import nav
 from matplotlib.animation import FuncAnimation 
 import sys
 import logging
+import argparse
 
 # all measurements are in cm's, and 1 cm == 1 pixel
 # speed is in kph, and internally changed to cps
@@ -31,7 +32,7 @@ skate_spec = {
 	'turning_radius': 200,
 	'length': 140, # 70,
 	'width':  20,
-	'avgspeed': 95, # kmh, realistic:15  # bugs appear above 30
+	'avgspeed': 45, # kmh, realistic:15  # bugs appear above 30
 	'color': 'red',
 	'helmlag': 0,
 	'helmpct': 0,
@@ -39,9 +40,10 @@ skate_spec = {
 	'drift': 0,
 }
 
-animation_spec = {
-	'fps':20,  # frames per second
-	'simmode': 'precise', # 'helmed'
+run_spec = {
+	'quiet': False,
+	'fps':20,         # frames per second
+	'simmode': None,  # precise, helmed
 }
 
 def kmh2cps(kph):
@@ -229,7 +231,10 @@ skateline = plt.gca().scatter([0,0,0,0,0],[0,0,0,0,0], c=['r','r','r','r','b'])
 # driving variables
 lastKnown = {
 	'position': arena_spec['gate'],
+	'prevpos' : arena_spec['gate'],
 	'heading': 0,
+	'course': 0,
+	'bearing': 0,
 	'helm': 0,
 	'speed': kmh2cps(skate_spec['avgspeed']),
 }
@@ -240,16 +245,12 @@ route = []
 legn = 0
 
 # animation constants
-delay = int(1000 / animation_spec['fps']) # delay between frames in milliseconds
+delay = int(1000 / run_spec['fps']) # delay between frames in milliseconds
 
 def nextLeg():
-	global lastKnown, legn # route
+	global legn # route
 	legn += 1
-	if legn >= len(route):
-		legn = 0
-	if route[legn]['shape'] == 'line':
-		lastKnown['heading'] = route[legn]['bearing']
-		lastKnown['position'] = route[legn]['from']
+	if legn >= len(route): legn = 0
 	return legn
 
 def plotSkate(): # based on position and heading
@@ -262,35 +263,34 @@ def plotSkate(): # based on position and heading
 	return bow,stern
 
 def getPositionFromCamera():
-	return False
+	return False,0
 
 def addRandomDrift(pos):
 	return pos
 
 def getPosition(framenum):
-	pos = getPositionFromCamera()
+	pos,head = getPositionFromCamera()
 	if not pos:
-		pos = getPositionByDeadReckoning()
+		pos,head = getPositionByDeadReckoning()
 		pos = addRandomDrift(pos)
-	return pos
+	return pos,head
 
 def getPositionByDeadReckoning():
-	global lastKnown
-	shape = route[legn]['shape']
 	newpos = []
+	head = lastKnown['heading']
+	leg = route[legn]
 	distance = lastKnown['speed']
-	if shape == 'line':
-		heading = lastKnown['heading']
-		helm = lastKnown['helm']
-		course = heading + helm
-		newpos = nav.reckonLine(lastKnown['position'], course, distance)
-		ispast = nav.isPointPastLine(route[legn]['from'], route[legn]['to'], newpos)
+	if leg['shape'] == 'line':
+		newpos = nav.reckonLine(lastKnown['position'], head, distance)
+		ispast = nav.isPointPastLine(leg['from'], leg['to'], newpos)
 		if ispast:
 			nextLeg()
-			newpos = route[legn]['from']
+			if run_spec['simmode'] == 'precise':
+				newpos = route[legn]['from']
+				if route[legn]['shape'] == 'line':
+					head = route[legn]['bearing']
 
-	elif shape == 'arc':
-		leg = route[legn]
+	elif leg['shape'] == 'arc':
 		tfrom,_ = nav.thetaFromPoint(leg['from'], leg['center'])
 		tto,_   = nav.thetaFromPoint(leg['to'], leg['center'])
 		center = leg['center']
@@ -303,41 +303,62 @@ def getPositionByDeadReckoning():
 		x,y = nav.pointFromTheta(center, thetaNew, radius)
 		newpos = [x,y]
 
-		perp = nav.linePerpendicular( center, newpos, radius)
-		if rdir == 'cw': A,B = perp	
-		else: B,A = perp
-		lastKnown['heading'] = nav.headingOfLine(A,B)
+		# re-orient the skate as it rotates around the cone
+		if run_spec['simmode'] == 'precise':
+			perp = nav.linePerpendicular( center, newpos, radius)
+			if rdir == 'cw': A,B = perp	
+			else: B,A = perp
+			head = nav.headingOfLine(A,B)
 
 		ispast = nav.isThetaPastArc(tfrom,tto,thetaNew, center,radius, rdir)
 		fractional = nav.lengthOfArc(tto, thetaNew, radius, rdir) < distance
 		if ispast or fractional:
 			nextLeg()
-			newpos = route[legn]['from']
-	return newpos
+			if run_spec['simmode'] == 'precise': 
+				newpos = route[legn]['from']
+				head = route[legn]['bearing']
+	return newpos,head
 
 def setHelm():
 	#course = lineFromHeading(from prev posiion to current position
 	#bearing = headingFromLine(from position to leg.to
 	#relative = bearing - course
 	#helm = a percentage of relative bearing
+	lastKnown['course']
+	lastKnown['bearing']
 	helm = lastKnown['helm']
 	return helm
 
+def setThrottle():
+	return lastKnown['speed']
+
 def animate(framenum): # called once for every frame
 	global skateline, lastKnown
-	lastKnown['position'] = getPosition(framenum)
-	lastKnown['helm'] = setHelm()
+	lastKnown['prevpos'] = lastKnown['position']
+	pos,head = getPosition(framenum)
+	lastKnown['position'] = pos
+	lastKnown['heading'] = head
+	if run_spec['simmode'] == 'helmed':
+		lastKnown['helm'] = setHelm()
+		lastKnown['speed'] = setThrottle()
 	
 	A,B = plotSkate()
 	return skateline, # when blit=True, return a list of artists
 
 if __name__ == '__main__':
-	global runquiet
-	runquiet = True
+	# get arguments
+	parser = argparse.ArgumentParser()
+	parser.add_argument('-q', '--quiet', help='run without console messages', action='store_true')
+	parser.add_argument('-sm', '--simmode', help='simulation mode', choices=['precise', 'helmed'], default='precise')
+	args = parser.parse_args()
+	run_spec['quiet'] = args.quiet
+	run_spec['simmode'] = args.simmode
+
 	logging.basicConfig(format='%(message)s')
-	if not set(['--quiet', '-q']) & set(sys.argv):
-		runquiet = False
+	if not run_spec['quiet']:
 		logging.getLogger('').setLevel(logging.INFO)
+
+	logging.info(f'simmode {run_spec["simmode"]}') 
 
 	# main
 	cones = placeCones(arena_spec, event_spec)
@@ -355,11 +376,36 @@ if __name__ == '__main__':
 	drawArena(cones, arena_spec)
 	drawRoute(route, arena_spec, skate_spec)
 
-	lastKnown['heading'] = route[0]['bearing']
+	if run_spec['simmode'] == 'precise':
+		lastKnown['heading'] = route[0]['bearing']
 
 	anim = FuncAnimation(plt.gcf(), animate, frames=None, interval=delay, blit=True)
-	
+
 	plt.show()
 
 '''
+	heading = orientation of the vehicle 
+
+	heading+helm = prediction of future course
+
+	course = actual travel = line from previous position to current position
+
+	simmode = precise
+		heading is set instantly to what we want we want it to be
+		line: heading = course, line from prevpos to current positon
+		arc: heading is assumed to be perpendicular to the ray from cone to current position
+		both: on nextleg, heading jumps to next leg from
+		no drift
+
+	simmode = helmed
+		heading is what it is
+		course is what it is
+		set helm bring course back to what we want		
+		includes drift
+
+	when we reach a cone
+		change bearing to next cone
+		set helm to steer a circle - how to calculate this based on radius and speed?
+		stay in the circle until heading = bearing 	
+
 '''
