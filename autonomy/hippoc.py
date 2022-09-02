@@ -10,6 +10,7 @@ from matplotlib.animation import FuncAnimation
 import sys
 import logging
 import argparse
+import random
 
 # all measurements are in cm's, and 1 cm == 1 pixel
 # speed is in kph, and internally changed to cps
@@ -30,14 +31,15 @@ event_spec = {
 }
 skate_spec = {
 	'turning_radius': 200,
+	'helmrange': [-100,100],
 	'length': 140, # 70,
 	'width':  20,
 	'avgspeed': 45, # kmh, realistic:15  # bugs appear above 30
 	'color': 'red',
 	'helmlag': 0,
-	'helmpct': 0,
+	'helmpct': .30,
 	'helmrange': [0,0],
-	'drift': 0,
+	'drift': 30,
 }
 
 run_spec = {
@@ -266,22 +268,26 @@ def getPositionFromCamera():
 	return False,0
 
 def addRandomDrift(pos):
-	return pos
+	p = pos
+	rx = (random.random() * 2 - 1) * skate_spec['drift']
+	ry = (random.random() * 2 - 1) * skate_spec['drift']
+	p = pos + np.array([rx,ry])
+	return p
 
 def getPosition(framenum):
 	pos,head = getPositionFromCamera()
 	if not pos:
 		pos,head = getPositionByDeadReckoning()
-		pos = addRandomDrift(pos)
 	return pos,head
 
 def getPositionByDeadReckoning():
 	newpos = []
 	head = lastKnown['heading']
+	helm = lastKnown['helm']
 	leg = route[legn]
 	distance = lastKnown['speed']
 	if leg['shape'] == 'line':
-		newpos = nav.reckonLine(lastKnown['position'], head, distance)
+		newpos = nav.reckonLine(lastKnown['position'], head+helm, distance)
 		ispast = nav.isPointPastLine(leg['from'], leg['to'], newpos)
 		if ispast:
 			nextLeg()
@@ -317,6 +323,12 @@ def getPositionByDeadReckoning():
 			if run_spec['simmode'] == 'precise': 
 				newpos = route[legn]['from']
 				head = route[legn]['bearing']
+
+	if run_spec['simmode'] == 'helmed':
+		savpos = newpos
+		newpos = addRandomDrift(newpos)
+
+	head = nav.headingOfLine(lastKnown['prevpos'], newpos)
 	return newpos,head
 
 def setHelm():
@@ -324,13 +336,32 @@ def setHelm():
 	#bearing = headingFromLine(from position to leg.to
 	#relative = bearing - course
 	#helm = a percentage of relative bearing
-	lastKnown['course']
-	lastKnown['bearing']
-	helm = lastKnown['helm']
+	helmmin = skate_spec['helmrange'][0]
+	helmmax = skate_spec['helmrange'][1]
+
+	heading = lastKnown['heading']
+	newbearing = nav.headingOfLine( lastKnown['position'], route[legn]['to'])
+	if newbearing < 0:
+		newbearing += 360
+	helmpct = skate_spec['helmpct']
+
+	relative_bearing = newbearing - heading
+	if abs(relative_bearing) > 180:
+		relative_bearing = newbearing - (heading + 360)	
+
+	helm = relative_bearing * helmpct
 	return helm
 
 def setThrottle():
 	return lastKnown['speed']
+
+def getBearing():
+	bearing = False	
+	if route[legn]['shape'] == 'line':
+		bearing = route[legn]['bearing']
+	else:
+		bearing = route[legn+1]['bearing']
+	return bearing
 
 def animate(framenum): # called once for every frame
 	global skateline, lastKnown
@@ -338,6 +369,7 @@ def animate(framenum): # called once for every frame
 	pos,head = getPosition(framenum)
 	lastKnown['position'] = pos
 	lastKnown['heading'] = head
+	lastKnown['bearing'] = getBearing()
 	if run_spec['simmode'] == 'helmed':
 		lastKnown['helm'] = setHelm()
 		lastKnown['speed'] = setThrottle()
