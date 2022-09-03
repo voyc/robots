@@ -4,4 +4,5 @@ html/min.js
 html/min.css
 html/robots.txt
 autonomy/xtemp_*
+autonomy/*.mp4
 __pycache__

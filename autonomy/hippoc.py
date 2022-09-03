@@ -11,6 +11,7 @@ import sys
 import logging
 import argparse
 import random
+import time
 
 # all measurements are in cm's, and 1 cm == 1 pixel
 # speed is in kph, and internally changed to cps
@@ -46,6 +47,7 @@ run_spec = {
 	'quiet': False,
 	'fps':20,         # frames per second
 	'simmode': None,  # precise, helmed
+	'startdelay': 1000,
 }
 
 def kmh2cps(kph):
@@ -245,14 +247,18 @@ lastKnown = {
 cones = []
 route = []
 legn = 0
+running = True
 
 # animation constants
 delay = int(1000 / run_spec['fps']) # delay between frames in milliseconds
 
 def nextLeg():
-	global legn # route
+	global legn
+	global running
 	legn += 1
-	if legn >= len(route): legn = 0
+	if legn >= len(route): 
+		running = False
+		legn = 0
 	return legn
 
 def plotSkate(): # based on position and heading
@@ -365,23 +371,30 @@ def getBearing():
 
 def animate(framenum): # called once for every frame
 	global skateline, lastKnown
-	lastKnown['prevpos'] = lastKnown['position']
-	pos,head = getPosition(framenum)
-	lastKnown['position'] = pos
-	lastKnown['heading'] = head
-	lastKnown['bearing'] = getBearing()
-	if run_spec['simmode'] == 'helmed':
-		lastKnown['helm'] = setHelm()
-		lastKnown['speed'] = setThrottle()
+	if framenum > (run_spec['startdelay'] / 1000) * 20: 
+		lastKnown['prevpos'] = lastKnown['position']
+		lastKnown['position'], lastKnown['heading'] = getPosition(framenum)
+		lastKnown['bearing'] = getBearing()
+		if run_spec['simmode'] == 'helmed':
+			lastKnown['helm'] = setHelm()
+			lastKnown['speed'] = setThrottle()
 	
 	A,B = plotSkate()
 	return skateline, # when blit=True, return a list of artists
+
+def gen():
+	global running
+	num = 0
+	while running:
+		yield num
+		num += 1
 
 if __name__ == '__main__':
 	# get arguments
 	parser = argparse.ArgumentParser()
 	parser.add_argument('-q', '--quiet', help='run without console messages', action='store_true')
 	parser.add_argument('-sm', '--simmode', help='simulation mode', choices=['precise', 'helmed'], default='precise')
+	parser.add_argument('-o', '--output', help='simulation mode', default='none')
 	args = parser.parse_args()
 	run_spec['quiet'] = args.quiet
 	run_spec['simmode'] = args.simmode
@@ -411,33 +424,12 @@ if __name__ == '__main__':
 	if run_spec['simmode'] == 'precise':
 		lastKnown['heading'] = route[0]['bearing']
 
-	anim = FuncAnimation(plt.gcf(), animate, frames=None, interval=delay, blit=True)
+	anim = FuncAnimation(plt.gcf(), animate, frames=gen, repeat=False, save_count=2000, interval=delay, blit=True)
 
-	plt.show()
+	if args.output == 'none':
+		plt.show()
+	else:
+		anim.save(args.output)
 
 '''
-	heading = orientation of the vehicle 
-
-	heading+helm = prediction of future course
-
-	course = actual travel = line from previous position to current position
-
-	simmode = precise
-		heading is set instantly to what we want we want it to be
-		line: heading = course, line from prevpos to current positon
-		arc: heading is assumed to be perpendicular to the ray from cone to current position
-		both: on nextleg, heading jumps to next leg from
-		no drift
-
-	simmode = helmed
-		heading is what it is
-		course is what it is
-		set helm bring course back to what we want		
-		includes drift
-
-	when we reach a cone
-		change bearing to next cone
-		set helm to steer a circle - how to calculate this based on radius and speed?
-		stay in the circle until heading = bearing 	
-
 '''
