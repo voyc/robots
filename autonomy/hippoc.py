@@ -32,15 +32,14 @@ event_spec = {
 }
 skate_spec = {
 	'turning_radius': 200,
-	'helmrange': [-100,100],
 	'length': 140, # 70,
 	'width':  20,
 	'avgspeed': 45, # kmh, realistic:15  # bugs appear above 30
 	'color': 'red',
 	'helmlag': 0,
 	'helmpct': .30,
-	'helmrange': [0,0],
-	'drift': 30,
+	'helmrange': [-45,+45],
+	'drift': 0,
 }
 
 run_spec = {
@@ -48,6 +47,7 @@ run_spec = {
 	'fps':20,         # frames per second
 	'simmode': None,  # precise, helmed
 	'startdelay': 1000,
+	'trail': 'none'   # none, full, lap
 }
 
 def kmh2cps(kph):
@@ -229,8 +229,10 @@ def drawArena(cones, arena, test=False):
 
 #--------------- above is library functions, below is animation, implemented as global -----------------# 
 
-# a line2D artist object to represent the skate, displayed by FuncAnimation
+# Artist objects displayed by FuncAnimation
 skateline = plt.gca().scatter([0,0,0,0,0],[0,0,0,0,0], c=['r','r','r','r','b'])
+trailline = plt.gca().scatter([0,0,0,0,0],[0,0,0,0,0], c='pink', s=2)
+trailpoints = []
 
 # driving variables
 lastKnown = {
@@ -257,8 +259,11 @@ def nextLeg():
 	global running
 	legn += 1
 	if legn >= len(route): 
-		running = False
+		if args.output != 'none':
+			running = False
 		legn = 0
+	if not run_spec['quiet']:
+		logging.info(f'begin leg {legn}: {route[legn]["shape"]}')
 	return legn
 
 def plotSkate(): # based on position and heading
@@ -268,6 +273,10 @@ def plotSkate(): # based on position and heading
 	points = [0,0,0,0,0]
 	for i in range(5): points[i] = stern + (diff * i)
 	skateline.set_offsets(points) # FuncAnimation does the drawing
+
+	if run_spec['trail'] != 'none':
+		trailpoints.append(lastKnown['prevpos'])
+		trailline.set_offsets(trailpoints)
 	return bow,stern
 
 def getPositionFromCamera():
@@ -280,7 +289,7 @@ def addRandomDrift(pos):
 	p = pos + np.array([rx,ry])
 	return p
 
-def getPosition(framenum):
+def getPosition(fnum):
 	pos,head = getPositionFromCamera()
 	if not pos:
 		pos,head = getPositionByDeadReckoning()
@@ -334,28 +343,27 @@ def getPositionByDeadReckoning():
 		savpos = newpos
 		newpos = addRandomDrift(newpos)
 
-	head = nav.headingOfLine(lastKnown['prevpos'], newpos)
+	if run_spec['simmode'] == 'helmed':
+		head = nav.headingOfLine(lastKnown['prevpos'], newpos)
 	return newpos,head
 
-def setHelm():
-	#course = lineFromHeading(from prev posiion to current position
-	#bearing = headingFromLine(from position to leg.to
-	#relative = bearing - course
-	#helm = a percentage of relative bearing
-	helmmin = skate_spec['helmrange'][0]
-	helmmax = skate_spec['helmrange'][1]
+def clamp(num, min_value, max_value):
+	return max(min(num, max_value), min_value)
 
+def setHelm():
 	heading = lastKnown['heading']
 	newbearing = nav.headingOfLine( lastKnown['position'], route[legn]['to'])
 	if newbearing < 0:
 		newbearing += 360
-	helmpct = skate_spec['helmpct']
 
 	relative_bearing = newbearing - heading
-	if abs(relative_bearing) > 180:
+	if relative_bearing > 180:
 		relative_bearing = newbearing - (heading + 360)	
+	if relative_bearing < -180:
+		relative_bearing = newbearing + (heading - 360)	
 
-	helm = relative_bearing * helmpct
+	helm = relative_bearing * skate_spec['helmpct']
+	helm = clamp(helm, skate_spec['helmrange'][0], skate_spec['helmrange'][1])
 	return helm
 
 def setThrottle():
@@ -369,49 +377,57 @@ def getBearing():
 		bearing = route[legn+1]['bearing']
 	return bearing
 
-def animate(framenum): # called once for every frame
+def animate(fnum): # called once for every frame
 	global skateline, lastKnown
-	if framenum > (run_spec['startdelay'] / 1000) * 20: 
+	if fnum > (run_spec['startdelay'] / 1000) * run_spec['fps']: 
 		lastKnown['prevpos'] = lastKnown['position']
-		lastKnown['position'], lastKnown['heading'] = getPosition(framenum)
+		lastKnown['position'], lastKnown['heading'] = getPosition(fnum)
 		lastKnown['bearing'] = getBearing()
 		if run_spec['simmode'] == 'helmed':
 			lastKnown['helm'] = setHelm()
 			lastKnown['speed'] = setThrottle()
 	
 	A,B = plotSkate()
-	return skateline, # when blit=True, return a list of artists
+	return skateline, trailline # when blit=True, return a list of artists
 
-def gen():
+def gen(): # generate a sequential frame count, with a kill switch
 	global running
-	num = 0
+	global framenum
+	framenum = 0
 	while running:
-		yield num
-		num += 1
+		yield framenum
+		framenum += 1
 
 if __name__ == '__main__':
 	# get arguments
 	parser = argparse.ArgumentParser()
-	parser.add_argument('-q', '--quiet', help='run without console messages', action='store_true')
-	parser.add_argument('-sm', '--simmode', help='simulation mode', choices=['precise', 'helmed'], default='precise')
-	parser.add_argument('-o', '--output', help='simulation mode', default='none')
+	parser.add_argument('-q', '--quiet'     ,action='store_true'                                 ,help='run without console messages') 
+	parser.add_argument('-sm', '--simmode'  ,default='precise', choices=['precise', 'helmed']    ,help='simulation mode'             ) 
+	parser.add_argument('-o', '--output'    ,default='none'                                      ,help='output filename'             ) 
+	parser.add_argument('-d', '--drift'     ,default=0, type=int                                 ,help='maximum drift in degrees'    ) 
+	parser.add_argument('-t', '--trail'     ,default='none', choices=['none', 'full', 'lap']     ,help='trail left by skate'         ) 
+	parser.add_argument('-td', '--testdata' ,default='none', choices=['none', 'freestyle','spiral', 'twobugs', 'passby'] ,help='trail left by skate'         ) 
 	args = parser.parse_args()
 	run_spec['quiet'] = args.quiet
 	run_spec['simmode'] = args.simmode
+	run_spec['trail'] = args.trail
+	skate_spec['drift'] = args.drift
 
 	logging.basicConfig(format='%(message)s')
 	if not run_spec['quiet']:
 		logging.getLogger('').setLevel(logging.INFO)
+		logging.info(args)
 
 	logging.info(f'simmode {run_spec["simmode"]}') 
 
-	# main
-	cones = placeCones(arena_spec, event_spec)
-	cones = chooseSides(cones)
+	if args.testdata != 'none':
+		cones = nav.testcones[args.testdata]
 
-	#cones = nav.conesfreestyle
-	#cones = nav.conestwobugs
-	#cones = nav.conespassby
+	# main
+	if len(cones) == 0:
+		cones = placeCones(arena_spec, event_spec)
+		cones = chooseSides(cones)
+
 	for cone in cones: logging.info(cone)
 
 	cones = calcCones(cones, skate_spec)
@@ -424,12 +440,106 @@ if __name__ == '__main__':
 	if run_spec['simmode'] == 'precise':
 		lastKnown['heading'] = route[0]['bearing']
 
-	anim = FuncAnimation(plt.gcf(), animate, frames=gen, repeat=False, save_count=2000, interval=delay, blit=True)
+	if args.output == 'none':
+		save_count = None
+		repeat = True
+	else:
+		save_count = 2000
+		repeat = False
+	
+	anim = FuncAnimation(plt.gcf(), animate, frames=gen, repeat=repeat, save_count=save_count, interval=delay, blit=True)
 
 	if args.output == 'none':
 		plt.show()
 	else:
 		anim.save(args.output)
 
+	logging.info(f'Complete.  Num frames: {framenum}')
+
 '''
+keep helm within turning radius
+	how to convert turning_radius to min/max relative_bearing
+	can you do a unit test, circling a skate around a cone
+		too tight, it collapses into the cone
+		too loose, it spirals off the page
+
+slow down for tight turns
+
+gradually speed up with each iteration
+
+
+run patterns
+only one cone in dead center, run a spiral around it, within the arena boundaries
+no route, just forever circle one cone
+gate, cone, gate
+
+add reverse
+
+named patterns:
+	spiral
+	freestyle
+	slalom
+	barrel race
+	porch mandala
+
+unit test named patterns
+
+route a pattern
+run a pattern, with route?
+
+plot route as you go, ala billiards
+
+barrel racing: run once and out
+freestyle: route, run, repeat, until what
+repeat and timing each run
+spiral: plot route, same cone again and again
+
+unittest spiral
+	run main and sim loop
+	x leave a trail
+	save image and compare image to referencd
+
+find the centermost cone and spiral around it
+how to plot a route?  cannot.  has to be done at execution time
+cone center
+largest circle within arena given center
+smallest radius
+largest radius
+number of circles
+gradually increasing radius
+
+make spiral a leg shape
+	given: center, start radius, end radius, radial pct increase radius each frame
+		direction, in or out, cw or ccw
+
+find centermost cone and go to it
+
+why are we doing spiral?  why not unittest freestyle first?
+
+how many cones.  if event = barrel racing, find valid barrels and ignore the extraneous.
+
+place cones per event
+	freestyle
+	barrel racing
+	course racing
+	straight line slalom
+	downhill slalom
+	spiral
+
+any arc could be treated as a spiral, i
+	with additional parameters
+		number of passes
+		radial change per frame
+	set by plotRoute
+	can a spiral intersect another cone?
+		the spiral leg could be used like a line, as a route to the next cone
+
+random options cannot be used for unittests
+
+add lap counter
+frames, laps, elapsed, top speed
+start time, log with timer
+display all specs
+numlaps = 1
 '''
+

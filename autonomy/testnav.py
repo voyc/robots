@@ -218,7 +218,7 @@ class TestNav(unittest.TestCase):
 
 		plt.gcf().clear()
 
-		cones = nav.conesfreestyle
+		cones = nav.testcones['freestyle']
 		
 		cones = hippoc.calcCones(cones, hippoc.skate_spec)
 		route = hippoc.plotRoute(cones, hippoc.skate_spec)

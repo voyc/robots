@@ -6,4 +6,6 @@ def infinite_sequence():
 
 
 for i in infinite_sequence():
+	if i > 10000:
+		quit()
 	print(i)
