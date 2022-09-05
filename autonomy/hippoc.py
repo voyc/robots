@@ -452,7 +452,7 @@ if __name__ == '__main__':
 	if args.output == 'none':
 		plt.show()
 	else:
-		anim.save(args.output)
+		anim.save(f'output/{args.output}.mp4')
 
 	logging.info(f'Complete.  Num frames: {framenum}')
 

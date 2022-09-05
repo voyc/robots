@@ -157,8 +157,8 @@ class TestNav(unittest.TestCase):
 		from PIL import ImageStat
 
 		name = 'drawperps'
-		testname = f'xtemp_{name}.png'
-		refname = f'ref_{name}.png'
+		testname = f'xtemp/xtemp_{name}.png'
+		refname = f'ref/ref_{name}.png'
 		r = 70
 
 		for test in drawperps:
@@ -213,8 +213,8 @@ class TestNav(unittest.TestCase):
 		from PIL import ImageStat
 
 		name = 'drawarena'
-		testname = f'xtemp_{name}.png'
-		refname = f'ref_{name}.png'
+		testname = f'xtemp/xtemp_{name}.png'
+		refname = f'ref/ref_{name}.png'
 
 		plt.gcf().clear()
 
@@ -247,8 +247,8 @@ class TestNav(unittest.TestCase):
 		from PIL import ImageStat
 
 		name = 'drawarcs'
-		testname = f'xtemp_{name}.png'
-		refname = f'ref_{name}.png'
+		testname = f'xtemp/xtemp_{name}.png'
+		refname = f'ref/ref_{name}.png'
 
 		plt.gcf().clear()
 
