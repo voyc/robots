@@ -234,7 +234,7 @@ skateline = plt.gca().scatter([0,0,0,0,0],[0,0,0,0,0], c=['r','r','r','r','b'])
 trailline = plt.gca().scatter([0,0,0,0,0],[0,0,0,0,0], c='pink', s=2)
 trailpoints = []
 
-# driving variables
+# piloting variables
 lastKnown = {
 	'position': arena_spec['gate'],
 	'prevpos' : arena_spec['gate'],
@@ -250,8 +250,6 @@ cones = []
 route = []
 legn = 0
 running = True
-
-# animation constants
 delay = int(1000 / run_spec['fps']) # delay between frames in milliseconds
 
 def nextLeg():
@@ -423,29 +421,25 @@ if __name__ == '__main__':
 	if args.testdata != 'none':
 		cones = nav.testcones[args.testdata]
 
-	# main
-	if len(cones) == 0:
-		cones = placeCones(arena_spec, event_spec)
-		cones = chooseSides(cones)
-
-	for cone in cones: logging.info(cone)
-
-	cones = calcCones(cones, skate_spec)
-
-	route = plotRoute(cones, skate_spec)
-
-	drawArena(cones, arena_spec)
-	drawRoute(route, arena_spec, skate_spec)
-
-	if run_spec['simmode'] == 'precise':
-		lastKnown['heading'] = route[0]['bearing']
-
 	if args.output == 'none':
 		save_count = None
 		repeat = True
 	else:
 		save_count = 2000
 		repeat = False
+
+	if len(cones) == 0:
+		cones = placeCones(arena_spec, event_spec)
+		cones = chooseSides(cones)
+	for cone in cones: logging.info(cone)
+
+	cones = calcCones(cones, skate_spec)
+	route = plotRoute(cones, skate_spec)
+	drawArena(cones, arena_spec)
+	drawRoute(route, arena_spec, skate_spec)
+
+	if run_spec['simmode'] == 'precise':
+		lastKnown['heading'] = route[0]['bearing']
 	
 	anim = FuncAnimation(plt.gcf(), animate, frames=gen, repeat=repeat, save_count=save_count, interval=delay, blit=True)
 
@@ -541,5 +535,44 @@ frames, laps, elapsed, top speed
 start time, log with timer
 display all specs
 numlaps = 1
+
+2 simultaneous tasks
+	fly the drone
+	drive the skate
+both require navigation and piloting
+navigator and pilot
+to navigate - plot a route, strategy
+to pilot - steer the vehicle along the route, tactics
+
+Use OpenCV addWeighted() to combine matplotlib plot over image from camera
+https://docs.opencv.org/4.x/d5/dc4/tutorial_adding_images.html
+
+
+1st time
+	if spec.live:
+		use OpenCV to read frame from drone camera
+		use TensorFlow to do object detection and segmentation of cones and skate
+	elif spec.sim:
+		generate arena, cones, skate
+	use matplotlib to build map and plot route
+subsequent times:
+	orient new map to master map
+
+while running:
+	if spec.live:
+		use OpenCV to read frame from drone camera
+		use TensorFlow to do object detection and segmentation of cones and skate
+	elif spec.sim:
+		plot new position via dead reckoning
+
+	set gate = skate starting position
+	use matplotlib to plan route: calculate heading, bearings, route
+	use matplotlib to navigate: calculate heading, bearings
+	use matplotlib to pilot: calculate helm, speed
+	use matplotlib to draw map
+	use OpenCV.addWeighted to overlay map on top of camera image
+	use OpenCV to show the finished photo
+	use OpenCV.waitKey(0) to allow user override
+
 '''
 

@@ -3,6 +3,17 @@
 import unittest
 import sys
 import logging
+from PIL import Image
+from PIL import ImageChops
+from PIL import ImageStat
+
+def compareImageFiles(image1, image2):
+	im1 = Image.open(image1)
+	im2 = Image.open(image2)
+	diff = ImageChops.difference(im1, im2)
+	stat = ImageStat.Stat(diff)
+	ratio = (sum(stat.mean) / (len(stat.mean) * 255)) * 100 
+	return ratio
 
 class TestNav(unittest.TestCase):
 	def test_a_vectors(self):
@@ -152,9 +163,6 @@ class TestNav(unittest.TestCase):
 		import matplotlib.pyplot as plt  
 		import matplotlib
 		import math
-		from PIL import Image
-		from PIL import ImageChops
-		from PIL import ImageStat
 
 		name = 'drawperps'
 		testname = f'xtemp/xtemp_{name}.png'
@@ -190,16 +198,11 @@ class TestNav(unittest.TestCase):
 
 		plt.savefig(testname)
 
-		im1 = Image.open(testname)
-		im2 = Image.open(refname)
-		diff = ImageChops.difference(im1, im2)
-		stat = ImageStat.Stat(diff)
-		ratio = (sum(stat.mean) / (len(stat.mean) * 255)) * 100 
+		ratio = compareImageFiles(testname, refname)
 		self.assertEqual(ratio, 0)
 
 		if not runquiet:
 			plt.show()
-
 
 	def test_g_drawarena(self):
 		import numpy as np
@@ -208,9 +211,6 @@ class TestNav(unittest.TestCase):
 		import matplotlib
 		import math
 		import hippoc
-		from PIL import Image
-		from PIL import ImageChops
-		from PIL import ImageStat
 
 		name = 'drawarena'
 		testname = f'xtemp/xtemp_{name}.png'
@@ -227,11 +227,7 @@ class TestNav(unittest.TestCase):
 
 		plt.savefig(testname)
 
-		im1 = Image.open(testname)
-		im2 = Image.open(refname)
-		diff = ImageChops.difference(im1, im2)
-		stat = ImageStat.Stat(diff)
-		ratio = (sum(stat.mean) / (len(stat.mean) * 255)) * 100 
+		ratio = compareImageFiles(testname,refname)
 		self.assertEqual(ratio, 0)
 
 		if not runquiet:
@@ -242,9 +238,6 @@ class TestNav(unittest.TestCase):
 		import nav
 		import matplotlib.pyplot as plt
 		import math
-		from PIL import Image
-		from PIL import ImageChops
-		from PIL import ImageStat
 
 		name = 'drawarcs'
 		testname = f'xtemp/xtemp_{name}.png'
@@ -306,11 +299,37 @@ class TestNav(unittest.TestCase):
 
 		plt.savefig(testname)
 
-		im1 = Image.open(testname)
-		im2 = Image.open(refname)
-		diff = ImageChops.difference(im1, im2)
-		stat = ImageStat.Stat(diff)
-		ratio = (sum(stat.mean) / (len(stat.mean) * 255)) * 100 
+		ratio = compareImageFiles(testname, refname)
+		self.assertEqual(ratio, 0)
+
+		if not runquiet:
+			plt.show()
+
+	def test_i_runfreestyle(self):
+		import numpy as np
+		import nav
+		import matplotlib.pyplot as plt  
+		import matplotlib
+		import math
+		import hippoc
+
+		name = 'drawarena'
+		testname = f'xtemp/xtemp_{name}.png'
+		refname = f'ref/ref_{name}.png'
+
+		plt.gcf().clear()
+
+		cones = nav.testcones['freestyle']
+		
+		cones = hippoc.calcCones(cones, hippoc.skate_spec)
+		route = hippoc.plotRoute(cones, hippoc.skate_spec)
+		hippoc.drawArena(cones, hippoc.arena_spec, test=True)
+		hippoc.drawRoute(route, hippoc.arena_spec, hippoc.skate_spec)
+		hippoc.go(route, hippoc.arena_spec, hippoc.skate_spec)
+
+		plt.savefig(testname)
+
+		ratio = compareImageFiles(testname,refname)
 		self.assertEqual(ratio, 0)
 
 		if not runquiet:
