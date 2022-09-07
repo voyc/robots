@@ -10,9 +10,16 @@ def FunkAnimation(looper, numframes, fps):
 	delay = fps/1000
 	plt.ion()
 	plt.show()
+
+	running = True
+	def onpress(event):
+		nonlocal running
+		if event.key == 'q': running = False
+	plt.gcf().canvas.mpl_connect('key_press_event', onpress)
 	for i in range(numframes):
 		looper(i)
 		plt.pause(delay)
+		if not running: break
 
 def main():
 	global bow, stern, incr, skateline
@@ -32,7 +39,7 @@ def main():
 	plt.gca().spines['left'].set_color(color)
 	plt.gca().spines['right'].set_color(color)
 	
-	FunkAnimation(animate, 50, 20)
+	FunkAnimation(animate, 200, 20)
 	
 def animate(framenum):
 	global bow,stern,incr, skateline
