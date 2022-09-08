@@ -456,61 +456,54 @@ keep helm within turning radius
 	can you do a unit test, circling a skate around a cone
 		too tight, it collapses into the cone
 		too loose, it spirals off the page
-
-slow down for tight turns
-
-gradually speed up with each iteration
-
-
-run patterns
-only one cone in dead center, run a spiral around it, within the arena boundaries
-no route, just forever circle one cone
-gate, cone, gate
-
-add reverse
+	slow down for tight turns
+	gradually speed up with each iteration
 
 named patterns:
 	spiral
 	freestyle
-	slalom
+	slalom: straighti-line or course
 	barrel race
 	porch mandala
+	perimeter
+	slalom around the perimeter
+	unit test named patterns, ie spiral
+		run main and sim loop
+		x leave a trail
+		save image and compare image to referencd
 
-unit test named patterns
-
-route a pattern
-run a pattern, with route?
-
-plot route as you go, ala billiards
-
-barrel racing: run once and out
-freestyle: route, run, repeat, until what
 repeat and timing each run
-spiral: plot route, same cone again and again
+	barrel racing: run once and out
+	freestyle: route, run, repeat, until what
+	spiral: plot route, same cone again and again
+	add lap counter
+	frames, laps, elapsed, top speed
+	start time, log with timer
+	display all specs
+	numlaps = 1
 
-unittest spiral
-	run main and sim loop
-	x leave a trail
-	save image and compare image to referencd
-
-find the centermost cone and spiral around it
-how to plot a route?  cannot.  has to be done at execution time
-cone center
-largest circle within arena given center
-smallest radius
-largest radius
-number of circles
-gradually increasing radius
-
-make spiral a leg shape
-	given: center, start radius, end radius, radial pct increase radius each frame
-		direction, in or out, cw or ccw
-
-find centermost cone and go to it
-
-why are we doing spiral?  why not unittest freestyle first?
-
-how many cones.  if event = barrel racing, find valid barrels and ignore the extraneous.
+spiral pattern
+	only one cone in dead center, run a spiral around it, within the arena boundaries
+	no route, just forever circle one cone; gate, cone, gate
+	add reverse
+	find the centermost cone and spiral around it
+	how to plot a route?  cannot.  has to be done at execution time
+		cone center
+		largest circle within arena given center
+		smallest radius
+		largest radius
+		number of circles
+		gradually increasing radius
+	make spiral a leg shape
+		given: center, start radius, end radius, radial pct increase radius each frame
+			direction, in or out, cw or ccw
+		any arc could be treated as a spiral, i
+			with additional parameters
+				number of passes
+				radial change per frame
+			set by plotRoute
+			can a spiral intersect another cone?
+				the spiral leg could be used like a line, as a route to the next cone
 
 place cones per event
 	freestyle
@@ -520,59 +513,79 @@ place cones per event
 	downhill slalom
 	spiral
 
-any arc could be treated as a spiral, i
-	with additional parameters
-		number of passes
-		radial change per frame
-	set by plotRoute
-	can a spiral intersect another cone?
-		the spiral leg could be used like a line, as a route to the next cone
+notes:
+	random options cannot be used for unittests
+	plot route as you go, ala billiards
+	how many cones?  if event = barrel racing, find valid barrels and ignore the extraneous.
+	why are we doing spiral?  why not unittest freestyle first?
 
-random options cannot be used for unittests
+refactor ala args.py
+	fix argument passing of:
+		arena_spec
+		event_spec
+		skate_spec
+		run_spec
+	rename:
+		:%s/arena_spec['w']/spec.arenawidth/gc
+		:%s/arena_spec['h']/spec.arenaheight/gc
+		:%s/arena_spec['title']/spec.gatex/gc
+		:%s/arena_spec['gate']/spec.gatey/gc
+	        :%s/arena_spec['conecolor']/spec.conecolor/gc
+	        :%s/arena_spec['routecolor']/spec.routecolor/gc
+		:%s/run_spec[quiet']/spec.quiet/gc
+		:%s/run_spec[simmode']/spec.simmode/gc
+		:%s/skate_spec['drift']/spec.drift/gc
+		:%s/args.output/spec.output/gc
+		:%s/run_spec[trail']/spec.trail/gc
+		:%s/run_spec[fps']/spec.fps/gc
+		:%s/run_spec[startdelay']/spec.startdelay/gc
+		:%s/args.testdata/spec.suite/gc
+		:%s/event_spec['event']/spec.event/gc
+		:%s/event_spec['num_cones']/spec.numcones/gc
+		:%s/skate_spec['turning_radius']/spec.turningradius/gc
+		:%s/skate_spec['length']/spec.skatelength/gc
+		:%s/skate_spec['width']/spec.skatewidth/gc
+		:%s/skate_spec['color']/spec.skatecolor/gc
+		:%s/skate_spec['avgspeed']/spec.avgspeed/gc
+		:%s/skate_spec['helmlag']/spec.helmlag/gc
+		:%s/skate_spec['helmpct']/spec.helmpct/gc
+		:%s/skate_spec['helmrange']/spec.helmrange/gc
+        
 
-add lap counter
-frames, laps, elapsed, top speed
-start time, log with timer
-display all specs
-numlaps = 1
-
-2 simultaneous tasks
-	fly the drone
-	drive the skate
-both require navigation and piloting
-navigator and pilot
-to navigate - plot a route, strategy
-to pilot - steer the vehicle along the route, tactics
-
-Use OpenCV addWeighted() to combine matplotlib plot over image from camera
-https://docs.opencv.org/4.x/d5/dc4/tutorial_adding_images.html
-
-
-1st time
-	if spec.live:
-		use OpenCV to read frame from drone camera
-		use TensorFlow to do object detection and segmentation of cones and skate
-	elif spec.sim:
-		generate arena, cones, skate
-	use matplotlib to build map and plot route
-subsequent times:
-	orient new map to master map
-
-while running:
-	if spec.live:
-		use OpenCV to read frame from drone camera
-		use TensorFlow to do object detection and segmentation of cones and skate
-	elif spec.sim:
-		plot new position via dead reckoning
-
-	set gate = skate starting position
-	use matplotlib to plan route: calculate heading, bearings, route
-	use matplotlib to navigate: calculate heading, bearings
-	use matplotlib to pilot: calculate helm, speed
-	use matplotlib to draw map
-	use OpenCV.addWeighted to overlay map on top of camera image
-	use OpenCV to show the finished photo
-	use OpenCV.waitKey(0) to allow user override
+refactor ala sk8 sensoryMotorCircuit
+	2 simultaneous tasks
+		fly the drone
+		drive the skate
+	both require navigation and piloting
+	navigator and pilot
+	to navigate - plot a route, strategy
+	to pilot - steer the vehicle along the route, tactics
+	
+	1st time
+		if spec.live:
+			use OpenCV to read frame from drone camera
+			use TensorFlow to do object detection and segmentation of cones and skate
+		elif spec.sim:
+			generate arena, cones, skate
+		use matplotlib to build map and plot route
+	subsequent times:
+		orient new map to master map
+	
+	while running:
+		if spec.live:
+			use OpenCV to read frame from drone camera
+			use TensorFlow to do object detection and segmentation of cones and skate
+		elif spec.sim:
+			plot new position via dead reckoning
+	
+		set gate = skate starting position
+		use matplotlib to plan route: calculate heading, bearings, route
+		use matplotlib to navigate: calculate heading, bearings
+		use matplotlib to pilot: calculate helm, speed
+		use matplotlib to draw map
+		use OpenCV.addWeighted to overlay map on top of camera image
+		use OpenCV to show the finished photo
+		use OpenCV.waitKey(0) to allow user override
 
 '''
 

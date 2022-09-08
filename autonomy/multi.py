@@ -30,6 +30,7 @@ def withcv2():
 	# rectify image
 	cv2shape = cv2src.shape  # shape is attribute of the numpy array
 	print(f'cv2shape {cv2shape}')
+	#see: https://www.tutorialspoint.com/opencv/opencv_affine_translation.htm
 
 	# draw
 	cv2.line(cv2src, points[0], points[1], bluecv2)
