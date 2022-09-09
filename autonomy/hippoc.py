@@ -17,46 +17,13 @@ import time
 # speed is in kph, and internally changed to cps
 # x,y pixel positions in the arena stand in for lng,lat coordinates
 
-# global read-only specifications
-arena_spec = {
-	'w':4000,
-	'h': 4000,
-	'title': 'Arena',
-	'gate': [2000,50],
-	'conecolor': 'cyan',
-	'routecolor': 'black'
-}
-event_spec = {
-	'event': 'freestyle',
-	'num_cones': 5,
-}
-skate_spec = {
-	'turning_radius': 200,
-	'length': 140, # 70,
-	'width':  20,
-	'avgspeed': 45, # kmh, realistic:15  # bugs appear above 30
-	'color': 'red',
-	'helmlag': 0,
-	'helmpct': .30,
-	'helmrange': [-45,+45],
-	'drift': 0,
-}
-
-run_spec = {
-	'quiet': False,
-	'fps':20,         # frames per second
-	'simmode': None,  # precise, helmed
-	'startdelay': 1000,
-	'trail': 'none'   # none, full, lap
-}
-
 def kmh2cps(kph):
 	cm_per_km = 10000
 	sec_per_hr = 3600
 	cps = (kph * cm_per_km) / sec_per_hr
 	return cps
 
-def placeCones(arena, event):
+def placeCones():
 	# build and return a 2D array of x,y points randomly positioned within the arena
 
 	#constants
@@ -65,12 +32,12 @@ def placeCones(arena, event):
 	margin_factor = 0.05
 
 	#calculations
-	margin = int(((arena['w'] + arena['h']) / 2) * margin_factor)
-	min_dist = int(((arena['w'] + arena['h']) / 2) * min_dist_factor)
+	margin = int(((spec.arenawidth + spec.arenaheight) / 2) * margin_factor)
+	min_dist = int(((spec.arenawidth + spec.arenaheight) / 2) * min_dist_factor)
 	
 	# get a pool of points
-	x = np.random.randint(low=margin, high=arena['w']-margin, size=(starting_pool_size,1), dtype=int)
-	y = np.random.randint(low=margin, high=arena['h']-margin, size=(starting_pool_size,1), dtype=int)
+	x = np.random.randint(low=margin, high=spec.arenawidth-margin, size=(starting_pool_size,1), dtype=int)
+	y = np.random.randint(low=margin, high=spec.arenaheight-margin, size=(starting_pool_size,1), dtype=int)
 	pool = np.transpose([x,y])[0]
 
 	# elimate points until remaining points have a good spread
@@ -88,14 +55,14 @@ def placeCones(arena, event):
 		j = j+1
 	
 	# choose final four
-	pool = pool[:event['num_cones']]
+	pool = pool[:spec.numcones]
 
 	# center the cones in the arena
 	tpool = np.transpose(pool)
 	lo = np.array([tpool[0].min(), tpool[1].min()])
 	hi = np.array([tpool[0].max(), tpool[1].max()]) 
 	bbox_center = lo + ((hi - lo) / 2)
-	arena_center = np.array([int(arena['w']/2), int(arena['h']/2)])
+	arena_center = np.array([int(spec.arenawidth/2), int(spec.arenaheight/2)])
 	adj = arena_center - bbox_center
 	pool = np.add(pool,adj)
 
@@ -113,10 +80,10 @@ def chooseSides(cones):
 		cone['rdir'] = rdir
 	return cones
 	
-def calcCones(cones, skate):
+def calcCones(cones):
 	# add entry and exit points to each cone
-	r = skate['turning_radius']
-	gate = { 'center': arena_spec['gate'] }
+	r = spec.turningradius
+	gate = { 'center': (spec.gatex,spec.gatey) }
 	for i in range(len(cones)):
 		cone = cones[i]
 		prevcone = gate if i <= 0 else cones[i-1]
@@ -148,9 +115,9 @@ def calcCones(cones, skate):
 			cone['exit']  = exit['L']
 	return cones
 	
-def plotRoute(cones, skate):
+def plotRoute(cones):
 	route = []
-	gate = arena_spec['gate']
+	gate = (spec.gatex,spec.gatey)
 	prevexit = gate
 	for i in range(0,len(cones)):
 		cone = cones[i]
@@ -186,9 +153,9 @@ def plotRoute(cones, skate):
 
 #--------------- drawing ----------------------------------------# 
 
-def drawRoute(route, arena, skate):
-	radius = skate['turning_radius']
-	color = arena['routecolor']
+def drawRoute(route):
+	radius = spec.turningradius
+	color = spec.routecolor
 	for leg in route:
 		if leg['shape'] == 'line':
 			nav.drawLine([leg['from'], leg['to']], color)
@@ -198,10 +165,10 @@ def drawRoute(route, arena, skate):
 			tto,_   = nav.thetaFromPoint(leg['to']  , leg['center'])
 			nav.drawArc(tfrom, tto, leg['rdir'], leg['center'], radius, color)
 
-def drawArena(cones, arena, test=False):
+def drawArena(cones, test=False):
 	# draw cones
-	color = arena['conecolor'] 
-	radius = skate_spec['turning_radius']
+	color = spec.conecolor 
+	radius = spec.turningradius
 	i = 0
 	for cone in cones:
 		pt = cone['center']
@@ -214,11 +181,11 @@ def drawArena(cones, arena, test=False):
 			nav.drawPoint(cone['exit'], color='red')
 
 	# draw gate
-	nav.drawPoint(arena_spec['gate'], color=color)
+	nav.drawPoint((spec.gatex,spec.gatey), color=color)
 
 	# draw frame
-	plt.xlim(0,arena_spec['w'])
-	plt.ylim(0,arena_spec['h'])
+	plt.xlim(0,spec.arenawidth)
+	plt.ylim(0,spec.arenaheight)
 	plt.autoscale(False)
 	plt.gca().set_aspect('equal', anchor='C')
 	plt.tick_params(left=False, right=False, labelleft=False, labelbottom= False, bottom=False)
@@ -234,45 +201,46 @@ skateline = plt.gca().scatter([0,0,0,0,0],[0,0,0,0,0], c=['r','r','r','r','b'])
 trailline = plt.gca().scatter([0,0,0,0,0],[0,0,0,0,0], c='pink', s=2)
 trailpoints = []
 
-# piloting variables
-lastKnown = {
-	'position': arena_spec['gate'],
-	'prevpos' : arena_spec['gate'],
-	'heading': 0,
-	'course': 0,
-	'bearing': 0,
-	'helm': 0,
-	'speed': kmh2cps(skate_spec['avgspeed']),
-}
-
 # globals
+spec = None
 cones = []
 route = []
 legn = 0
 running = True
-delay = int(1000 / run_spec['fps']) # delay between frames in milliseconds
+delay = 0
+
+# piloting variables
+lastKnown = {
+	'position': (0,0),
+	'prevpos' : (0,0),
+	'heading': 0,
+	'course': 0,
+	'bearing': 0,
+	'helm': 0,
+	'speed': 0,
+}
 
 def nextLeg():
 	global legn
 	global running
 	legn += 1
 	if legn >= len(route): 
-		if args.output != 'none':
+		if spec.output != 'none':
 			running = False
 		legn = 0
-	if not run_spec['quiet']:
+	if not spec.quiet:
 		logging.info(f'begin leg {legn}: {route[legn]["shape"]}')
 	return legn
 
 def plotSkate(): # based on position and heading
 	global skateline # lastKnown
-	bow,stern = nav.lineFromHeading(lastKnown['position'], lastKnown['heading'], skate_spec['length'])
+	bow,stern = nav.lineFromHeading(lastKnown['position'], lastKnown['heading'], spec.skatelength)
 	diff = (bow - stern) / 5  # add 4 dots between bow and stern
 	points = [0,0,0,0,0]
 	for i in range(5): points[i] = stern + (diff * i)
 	skateline.set_offsets(points) # FuncAnimation does the drawing
 
-	if run_spec['trail'] != 'none':
+	if spec.trail != 'none':
 		trailpoints.append(lastKnown['prevpos'])
 		trailline.set_offsets(trailpoints)
 	return bow,stern
@@ -282,8 +250,8 @@ def getPositionFromCamera():
 
 def addRandomDrift(pos):
 	p = pos
-	rx = (random.random() * 2 - 1) * skate_spec['drift']
-	ry = (random.random() * 2 - 1) * skate_spec['drift']
+	rx = (random.random() * 2 - 1) * spec.drift
+	ry = (random.random() * 2 - 1) * spec.drift
 	p = pos + np.array([rx,ry])
 	return p
 
@@ -304,7 +272,7 @@ def getPositionByDeadReckoning():
 		ispast = nav.isPointPastLine(leg['from'], leg['to'], newpos)
 		if ispast:
 			nextLeg()
-			if run_spec['simmode'] == 'precise':
+			if spec.simmode == 'precise':
 				newpos = route[legn]['from']
 				if route[legn]['shape'] == 'line':
 					head = route[legn]['bearing']
@@ -314,7 +282,7 @@ def getPositionByDeadReckoning():
 		tto,_   = nav.thetaFromPoint(leg['to'], leg['center'])
 		center = leg['center']
 		rdir = leg['rdir']
-		radius = skate_spec['turning_radius']
+		radius = spec.turningradius
 		thetaOld,_ = nav.thetaFromPoint(lastKnown['position'],center)
 
 		# hello? heading is not a factor in reckonArc
@@ -323,7 +291,7 @@ def getPositionByDeadReckoning():
 		newpos = [x,y]
 
 		# re-orient the skate as it rotates around the cone
-		if run_spec['simmode'] == 'precise':
+		if spec.simmode == 'precise':
 			perp = nav.linePerpendicular( center, newpos, radius)
 			if rdir == 'cw': A,B = perp	
 			else: B,A = perp
@@ -333,15 +301,15 @@ def getPositionByDeadReckoning():
 		fractional = nav.lengthOfArc(tto, thetaNew, radius, rdir) < distance
 		if ispast or fractional:
 			nextLeg()
-			if run_spec['simmode'] == 'precise': 
+			if spec.simmode == 'precise': 
 				newpos = route[legn]['from']
 				head = route[legn]['bearing']
 
-	if run_spec['simmode'] == 'helmed':
+	if spec.simmode == 'helmed':
 		savpos = newpos
 		newpos = addRandomDrift(newpos)
 
-	if run_spec['simmode'] == 'helmed':
+	if spec.simmode == 'helmed':
 		head = nav.headingOfLine(lastKnown['prevpos'], newpos)
 	return newpos,head
 
@@ -360,8 +328,8 @@ def setHelm():
 	if relative_bearing < -180:
 		relative_bearing = newbearing + (heading - 360)	
 
-	helm = relative_bearing * skate_spec['helmpct']
-	helm = clamp(helm, skate_spec['helmrange'][0], skate_spec['helmrange'][1])
+	helm = relative_bearing * (spec.helmpct / 100)
+	helm = clamp(helm, 0-spec.helmrange, spec.helmrange)
 	return helm
 
 def setThrottle():
@@ -377,11 +345,11 @@ def getBearing():
 
 def animate(fnum): # called once for every frame
 	global skateline, lastKnown
-	if fnum > (run_spec['startdelay'] / 1000) * run_spec['fps']: 
+	if fnum > (spec.startdelay / 1000) * spec.fps: 
 		lastKnown['prevpos'] = lastKnown['position']
 		lastKnown['position'], lastKnown['heading'] = getPosition(fnum)
 		lastKnown['bearing'] = getBearing()
-		if run_spec['simmode'] == 'helmed':
+		if spec.simmode == 'helmed':
 			lastKnown['helm'] = setHelm()
 			lastKnown['speed'] = setThrottle()
 	
@@ -396,32 +364,77 @@ def gen(): # generate a sequential frame count, with a kill switch
 		yield framenum
 		framenum += 1
 
-if __name__ == '__main__':
-	# get arguments
+event_names = [
+	'freestyle',
+	'barrel-racing',
+	'course-racing',
+	'straight-line-slalom',
+	'downhill-slalom',
+	'spiral',
+]
+
+def main():
+	global spec, cones, route, delay, lastKnown
+
 	parser = argparse.ArgumentParser()
-	parser.add_argument('-q', '--quiet'     ,action='store_true'                                 ,help='run without console messages') 
-	parser.add_argument('-sm', '--simmode'  ,default='precise', choices=['precise', 'helmed']    ,help='simulation mode'             ) 
-	parser.add_argument('-o', '--output'    ,default='none'                                      ,help='output filename'             ) 
-	parser.add_argument('-d', '--drift'     ,default=0, type=int                                 ,help='maximum drift in degrees'    ) 
-	parser.add_argument('-t', '--trail'     ,default='none', choices=['none', 'full', 'lap']     ,help='trail left by skate'         ) 
-	parser.add_argument('-td', '--testdata' ,default='none', choices=['none', 'freestyle','spiral', 'twobugs', 'passby'] ,help='trail left by skate'         ) 
-	args = parser.parse_args()
-	run_spec['quiet'] = args.quiet
-	run_spec['simmode'] = args.simmode
-	run_spec['trail'] = args.trail
-	skate_spec['drift'] = args.drift
+
+	# arena spec
+	parser.add_argument('-aw' , '--arenawidth'	,default=4000		,type=int				,help='width of arena in pixels'	),
+	parser.add_argument('-ah' , '--arenaheight'	,default=4000		,type=int				,help='height of arena in pixels'	),
+	parser.add_argument('-gx' , '--gatex'		,default=2000		,type=int				,help='x position of starting gate'	),
+	parser.add_argument('-gy' , '--gatey'		,default=50		,type=int				,help='y position of starting gate'	),
+
+	# sim spec
+	parser.add_argument('-q'  , '--quiet'		,default=False		,action='store_true'			,help='run without console messages'	),
+	parser.add_argument('-v'  , '--verbose'		,default=False		,action='store_true'			,help='show detailed console messages'	),
+	parser.add_argument('-sm' , '--simmode'		,default='precise'	,choices=['precise', 'helmed']		,help='simulation mode'			),
+	parser.add_argument('-d'  , '--drift'		,default=0		,type=int				,help='maximum drift in degrees'	), 
+	parser.add_argument('-td' , '--suite'		,default='none'		,choices=['','']			,help='name of test data suite'		),
+
+	# run spec
+	parser.add_argument('-t'  , '--trail'		,default='none'		,choices=['none', 'full', 'lap']	,help='trail left by skate'		), 
+	parser.add_argument('-o'  , '--output'		,default='none'							,help='output filename'			),
+	parser.add_argument('-f'  , '--fps'		,default=20		,type=int				,help='frames per second'		),
+	parser.add_argument('-sd' , '--startdelay'	,default=1000		,type=int				,help='delay milliseconds before start' ),
+	parser.add_argument('-cc' , '--conecolor'	,default='cyan'							,help='color of cones'			),
+	parser.add_argument('-rc' , '--routecolor'	,default='black'						,help='color of route'			),
+
+	# event spec
+	parser.add_argument('-e'  , '--event'		,default='freestyle'	,choices=event_names			,help='name of event'			),
+	parser.add_argument('-nc' , '--numcones'	,default=5		,type=int				,help='number of cones'			),
+
+	# skate spec
+	parser.add_argument('-tr' , '--turningradius'	,default=200		,type=int				,help='skate turning radius'		),
+	parser.add_argument('-sl' , '--skatelength'	,default=70		,type=int				,help='skate length in cm'		),
+	parser.add_argument('-sw' , '--skatewidth'	,default=20		,type=int				,help='skate width in cm'		),
+	parser.add_argument('-sc' , '--skatecolor'	,default='red'							,help='skate color'			),
+	parser.add_argument('-as' , '--avgspeed'	,default=15		,type=int				,help='average speed'			),
+	parser.add_argument('-hl' , '--helmlag'		,default=0		,type=int				,help='lag before helm takes effect'	),
+	parser.add_argument('-hp' , '--helmpct'		,default=30		,type=int				,help='percent of relative bearing'	),
+	parser.add_argument('-hr' , '--helmrange'	,default=45		,type=int				,help='range of helm in degrees =/-'	),
+
+	spec = parser.parse_args()	# returns Namespace object, use dot-notation
 
 	logging.basicConfig(format='%(message)s')
-	if not run_spec['quiet']:
+	if not spec.quiet:
 		logging.getLogger('').setLevel(logging.INFO)
-		logging.info(args)
 
-	logging.info(f'simmode {run_spec["simmode"]}') 
+	speca = vars(spec)		# returns iterable and subscriptable collection
+	for k in speca:
+		tab = '\t' if len(k) >= 8 else '\t\t'
+		logging.info(f'{k}{tab}{speca[k]}')
 
-	if args.testdata != 'none':
-		cones = nav.testcones[args.testdata]
+	lastKnown['position'] = (spec.gatex,spec.gatey)
+	lastKnown['prevpos'] = (spec.gatex,spec.gatey)
+	lastKnown['speed'] = kmh2cps(spec.avgspeed)
+	delay = int(1000 / spec.fps) # delay between frames in milliseconds
+	print(lastKnown)
+	print(delay)
 
-	if args.output == 'none':
+	if spec.suite != 'none':
+		cones = nav.testcones[spec.suite]
+
+	if spec.output == 'none':
 		save_count = None
 		repeat = True
 	else:
@@ -429,26 +442,29 @@ if __name__ == '__main__':
 		repeat = False
 
 	if len(cones) == 0:
-		cones = placeCones(arena_spec, event_spec)
+		cones = placeCones()
 		cones = chooseSides(cones)
 	for cone in cones: logging.info(cone)
 
-	cones = calcCones(cones, skate_spec)
-	route = plotRoute(cones, skate_spec)
-	drawArena(cones, arena_spec)
-	drawRoute(route, arena_spec, skate_spec)
+	cones = calcCones(cones)
+	route = plotRoute(cones)
+	drawArena(cones)
+	drawRoute(route)
 
-	if run_spec['simmode'] == 'precise':
+	if spec.simmode == 'precise':
 		lastKnown['heading'] = route[0]['bearing']
 	
 	anim = FuncAnimation(plt.gcf(), animate, frames=gen, repeat=repeat, save_count=save_count, interval=delay, blit=True)
 
-	if args.output == 'none':
+	if spec.output == 'none':
 		plt.show()
 	else:
-		anim.save(f'output/{args.output}.mp4')
+		anim.save(f'output/{spec.output}.mp4')
 
 	logging.info(f'Complete.  Num frames: {framenum}')
+
+if __name__ == '__main__':
+	main()
 
 '''
 keep helm within turning radius
@@ -518,39 +534,8 @@ notes:
 	plot route as you go, ala billiards
 	how many cones?  if event = barrel racing, find valid barrels and ignore the extraneous.
 	why are we doing spiral?  why not unittest freestyle first?
-
-refactor ala args.py
-	fix argument passing of:
-		arena_spec
-		event_spec
-		skate_spec
-		run_spec
-	rename:
-		:%s/arena_spec['w']/spec.arenawidth/gc
-		:%s/arena_spec['h']/spec.arenaheight/gc
-		:%s/arena_spec['title']/spec.gatex/gc
-		:%s/arena_spec['gate']/spec.gatey/gc
-	        :%s/arena_spec['conecolor']/spec.conecolor/gc
-	        :%s/arena_spec['routecolor']/spec.routecolor/gc
-		:%s/run_spec[quiet']/spec.quiet/gc
-		:%s/run_spec[simmode']/spec.simmode/gc
-		:%s/skate_spec['drift']/spec.drift/gc
-		:%s/args.output/spec.output/gc
-		:%s/run_spec[trail']/spec.trail/gc
-		:%s/run_spec[fps']/spec.fps/gc
-		:%s/run_spec[startdelay']/spec.startdelay/gc
-		:%s/args.testdata/spec.suite/gc
-		:%s/event_spec['event']/spec.event/gc
-		:%s/event_spec['num_cones']/spec.numcones/gc
-		:%s/skate_spec['turning_radius']/spec.turningradius/gc
-		:%s/skate_spec['length']/spec.skatelength/gc
-		:%s/skate_spec['width']/spec.skatewidth/gc
-		:%s/skate_spec['color']/spec.skatecolor/gc
-		:%s/skate_spec['avgspeed']/spec.avgspeed/gc
-		:%s/skate_spec['helmlag']/spec.helmlag/gc
-		:%s/skate_spec['helmpct']/spec.helmpct/gc
-		:%s/skate_spec['helmrange']/spec.helmrange/gc
-        
+	arena size and gate are passed by args only in sim mode
+	turning radius can be adjusted by machine learning and should be saved with the skate id
 
 refactor ala sk8 sensoryMotorCircuit
 	2 simultaneous tasks
@@ -586,6 +571,38 @@ refactor ala sk8 sensoryMotorCircuit
 		use OpenCV.addWeighted to overlay map on top of camera image
 		use OpenCV to show the finished photo
 		use OpenCV.waitKey(0) to allow user override
+
+refactor ala args.py
+	x fix argument passing of:
+		x arena_spec
+		x event_spec
+		x skate_spec
+		x run_spec
+	x rename:
+		x %s/arena_spec\['w'\]/spec.arenawidth/gc
+		x %s/arena_spec\['h'\]/spec.arenaheight/gc
+		x %s/arena_spec\['gate'\]/(spec.gatex,spec.gatey)/gc
+	        x %s/arena_spec\['conecolor'\]/spec.conecolor/gc
+	        x %s/arena_spec\['routecolor'\]/spec.routecolor/gc
+		x %s/run_spec\['quiet'\]/spec.quiet/gc
+		x %s/run_spec\['simmode'\]/spec.simmode/gc
+		x %s/skate_spec\['drift'\]/spec.drift/gc
+		x %s/args.output/spec.output/gc
+		x %s/run_spec\['trail'\]/spec.trail/gc
+		x %s/run_spec\['fps'\]/spec.fps/gc
+		x %s/run_spec\['startdelay'\]/spec.startdelay/gc
+		x %s/args.testdata/spec.suite/gc
+		- %s/event_spec\['event'\]/spec.event/gc
+		x %s/event_spec\['num_cones'\]/spec.numcones/gc
+		x %s/skate_spec\['turning_radius'\]/spec.turningradius/gc
+		x %s/skate_spec\['length'\]/spec.skatelength/gc
+		- %s/skate_spec\['width'\]/spec.skatewidth/gc
+		- %s/skate_spec\['color'\]/spec.skatecolor/gc
+		x %s/skate_spec\['avgspeed'\]/spec.avgspeed/gc
+		- %s/skate_spec\['helmlag'\]/spec.helmlag/gc
+		x %s/skate_spec\['helmpct'\]/spec.helmpct/gc
+		x %s/skate_spec\['helmrange'\]/spec.helmrange/gc
+        
 
 '''
 
