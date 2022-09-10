@@ -4,5 +4,6 @@ html/min.js
 html/min.css
 html/robots.txt
 autonomy/xtemp/*
-autonomy/output/*
+autonomy/videos/*
+autonomy/games/*
 __pycache__

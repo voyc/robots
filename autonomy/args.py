@@ -32,6 +32,7 @@ run_spec = {
 }
 '''
 import argparse
+import types
 
 event_names = [
 	'freestyle',
@@ -96,4 +97,22 @@ if __name__ == '__main__':
 	for k in speca:
 		tab = '\t' if len(k) >= 8 else '\t\t'
 		print(f'{k}{tab}{speca[k]}')
+
+	# iterate argparse.Namespace __dict__ attribute
+	print('----')
+	for k in spec.__dict__:
+		tab = '\t' if len(k) >= 8 else '\t\t'
+		print(f'{k}{tab}{spec.__dict__[k]}')
+	print('----')
+
+	# initialize a argparse.Namespace from a dict
+	sp = argparse.Namespace(**speca)
+	sp.a = 'a'
+	print(sp)
+	print('----')
+
+	# roughly equivalent: argparse.Namespace vs types.SimpleNamespace
+	sn = types.SimpleNamespace(**speca)
+	sn.a = 'b'
+	print(sn)
 

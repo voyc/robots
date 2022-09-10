@@ -12,6 +12,7 @@ import logging
 import argparse
 import random
 import time
+import json
 
 # all measurements are in cm's, and 1 cm == 1 pixel
 # speed is in kph, and internally changed to cps
@@ -72,22 +73,39 @@ def placeCones():
 			'center':pt, 
 		})
 	
-	return cones 
+	#return cones 
+	return pool 
 		
-def chooseSides(cones):
+def planRoute(cones):
+	order = []
+	for i in range(len(cones)):
+		order.append(i)
+	random.shuffle(order)
+	
+	sides = []
 	for cone in cones:
 		rdir = np.random.choice(['ccw','cw'])
-		cone['rdir'] = rdir
-	return cones
+		sides.append(rdir)
+	return order, sides
 	
-def calcCones(cones):
+def calcPlan(cones, order, sides):
+	# combine cones, order, sides into a list of dicts, sorted by order
+	plan = []
+	for i in range(len(cones)):
+		plan.append({
+			'order':order[i], 
+			'center':cones[i], 
+			'rdir':sides[i], 
+		})
+	plan = sorted(plan, key=lambda cone: cone['order'])
+
 	# add entry and exit points to each cone
 	r = spec.turningradius
 	gate = { 'center': (spec.gatex,spec.gatey) }
-	for i in range(len(cones)):
-		cone = cones[i]
-		prevcone = gate if i <= 0 else cones[i-1]
-		nextcone = gate if i+1 >= len(cones) else cones[i+1] 
+	for i in range(len(plan)):
+		cone = plan[i]
+		prevcone = gate if i <= 0 else plan[i-1]
+		nextcone = gate if i+1 >= len(plan) else plan[i+1] 
 
 		# entry point
 		A = prevcone['center']
@@ -113,15 +131,15 @@ def calcCones(cones):
 		else:
 			cone['entry'] = entry['R']
 			cone['exit']  = exit['L']
-	return cones
+	return plan
 	
-def plotRoute(cones):
+def plotRoute(plan):
 	route = []
 	gate = (spec.gatex,spec.gatey)
 	prevexit = gate
-	for i in range(0,len(cones)):
-		cone = cones[i]
-	
+	for i in range(0,len(plan)):
+		cone = plan[i]
+
 		heading = nav.headingOfLine(prevexit, cone['entry'])
 	
 		route.append({
@@ -153,7 +171,7 @@ def plotRoute(cones):
 
 #--------------- drawing ----------------------------------------# 
 
-def drawRoute(route):
+def drawRoute(route, test=True):
 	radius = spec.turningradius
 	color = spec.routecolor
 	for leg in route:
@@ -165,12 +183,12 @@ def drawRoute(route):
 			tto,_   = nav.thetaFromPoint(leg['to']  , leg['center'])
 			nav.drawArc(tfrom, tto, leg['rdir'], leg['center'], radius, color)
 
-def drawArena(cones, test=False):
+def drawArena(plan, test=False):
 	# draw cones
 	color = spec.conecolor 
 	radius = spec.turningradius
 	i = 0
-	for cone in cones:
+	for cone in plan:
 		pt = cone['center']
 		i += 1
 		plt.text( pt[0], pt[1], str(i), fontsize='14', ha='center', va='center', color=color)
@@ -196,7 +214,7 @@ def drawArena(cones, test=False):
 
 #--------------- above is library functions, below is animation, implemented as global -----------------# 
 
-# Artist objects displayed by FuncAnimation
+# global Artist objects displayed by FuncAnimation
 skateline = plt.gca().scatter([0,0,0,0,0],[0,0,0,0,0], c=['r','r','r','r','b'])
 trailline = plt.gca().scatter([0,0,0,0,0],[0,0,0,0,0], c='pink', s=2)
 trailpoints = []
@@ -209,7 +227,7 @@ legn = 0
 running = True
 delay = 0
 
-# piloting variables
+# global piloting variables
 lastKnown = {
 	'position': (0,0),
 	'prevpos' : (0,0),
@@ -220,15 +238,19 @@ lastKnown = {
 	'speed': 0,
 }
 
+# global constants
+dirvideoout = 'videos'
+dirsavegame = 'games'
+
 def nextLeg():
 	global legn
 	global running
 	legn += 1
 	if legn >= len(route): 
-		if spec.output != 'none':
+		if spec.videoout != 'none':
 			running = False
 		legn = 0
-	if not spec.quiet:
+	if spec.verbose and not spec.quiet:
 		logging.info(f'begin leg {legn}: {route[legn]["shape"]}')
 	return legn
 
@@ -364,6 +386,51 @@ def gen(): # generate a sequential frame count, with a kill switch
 		yield framenum
 		framenum += 1
 
+def flattenCones(d2):
+	a = []
+	for r in d2:
+		a.append(r[0])
+		a.append(r[1])
+	return a
+
+def unflattenCones(flat):
+	d2 = []
+	i = 0
+	while i < len(flat):
+		x = flat[i]
+		y = flat[i+1]	
+		d2.append((x,y))
+		i += 2
+	return d2
+def writeGame(cones,order,sides):
+	speca = vars(spec)
+	flat = flattenCones(cones)
+	savedgame = {
+		'speca': speca,
+		'flat' : flat,
+		'order': order,
+		'sides': sides,
+	}
+	#json_string = json.dumps(savedgame)
+	fh = open(f'{dirsavegame}/{spec.savegame}.json', 'w')
+	#json.dump(json_string, fh)
+	json.dump(savedgame, fh)
+
+def readGame():
+	global spec
+	fh = open(f'{dirsavegame}/{spec.game}.json', 'r')
+	savedgame = json.load(fh)
+	print(savedgame)
+	speca = savedgame['speca']
+	flat  = savedgame['flat']
+	order = savedgame['order']
+	sides = savedgame['sides']
+
+	spec = argparse.Namespace(**speca)
+	cones = unflattenCones(flat)
+	
+	return cones, order, sides
+
 event_names = [
 	'freestyle',
 	'barrel-racing',
@@ -371,6 +438,9 @@ event_names = [
 	'straight-line-slalom',
 	'downhill-slalom',
 	'spiral',
+]
+game_names = [
+	'firstgame',
 ]
 
 def main():
@@ -389,11 +459,12 @@ def main():
 	parser.add_argument('-v'  , '--verbose'		,default=False		,action='store_true'			,help='show detailed console messages'	),
 	parser.add_argument('-sm' , '--simmode'		,default='precise'	,choices=['precise', 'helmed']		,help='simulation mode'			),
 	parser.add_argument('-d'  , '--drift'		,default=0		,type=int				,help='maximum drift in degrees'	), 
-	parser.add_argument('-td' , '--suite'		,default='none'		,choices=['','']			,help='name of test data suite'		),
+	parser.add_argument('-g'  , '--game'		,default='none'					,help='filename of saved game'		),
 
 	# run spec
 	parser.add_argument('-t'  , '--trail'		,default='none'		,choices=['none', 'full', 'lap']	,help='trail left by skate'		), 
-	parser.add_argument('-o'  , '--output'		,default='none'							,help='output filename'			),
+	parser.add_argument('-o'  , '--videoout'	,default='none'							,help='filename for video output'	),
+	parser.add_argument('-sg' , '--savegame'	,default='none'							,help='filename for game to save'	),
 	parser.add_argument('-f'  , '--fps'		,default=20		,type=int				,help='frames per second'		),
 	parser.add_argument('-sd' , '--startdelay'	,default=1000		,type=int				,help='delay milliseconds before start' ),
 	parser.add_argument('-cc' , '--conecolor'	,default='cyan'							,help='color of cones'			),
@@ -428,27 +499,30 @@ def main():
 	lastKnown['prevpos'] = (spec.gatex,spec.gatey)
 	lastKnown['speed'] = kmh2cps(spec.avgspeed)
 	delay = int(1000 / spec.fps) # delay between frames in milliseconds
-	print(lastKnown)
-	print(delay)
 
-	if spec.suite != 'none':
-		cones = nav.testcones[spec.suite]
-
-	if spec.output == 'none':
+	if spec.videoout == 'none':
 		save_count = None
 		repeat = True
 	else:
 		save_count = 2000
 		repeat = False
 
+	if spec.game != 'none':
+		cones, order, sides = readGame()
 	if len(cones) == 0:
 		cones = placeCones()
-		cones = chooseSides(cones)
-	for cone in cones: logging.info(cone)
+		order,sides = planRoute(cones)
 
-	cones = calcCones(cones)
-	route = plotRoute(cones)
-	drawArena(cones)
+	for cone in cones: logging.info(cone)
+	logging.info(order)
+	logging.info(sides)
+
+	if spec.savegame != 'none':
+		writeGame(cones,order,sides)
+
+	plan = calcPlan(cones, order, sides)
+	route = plotRoute(plan)
+	drawArena(plan)
 	drawRoute(route)
 
 	if spec.simmode == 'precise':
@@ -456,10 +530,10 @@ def main():
 	
 	anim = FuncAnimation(plt.gcf(), animate, frames=gen, repeat=repeat, save_count=save_count, interval=delay, blit=True)
 
-	if spec.output == 'none':
+	if spec.videoout == 'none':
 		plt.show()
 	else:
-		anim.save(f'output/{spec.output}.mp4')
+		anim.save(f'{dirvideoout}/{spec.videoout}.mp4')
 
 	logging.info(f'Complete.  Num frames: {framenum}')
 
@@ -571,38 +645,4 @@ refactor ala sk8 sensoryMotorCircuit
 		use OpenCV.addWeighted to overlay map on top of camera image
 		use OpenCV to show the finished photo
 		use OpenCV.waitKey(0) to allow user override
-
-refactor ala args.py
-	x fix argument passing of:
-		x arena_spec
-		x event_spec
-		x skate_spec
-		x run_spec
-	x rename:
-		x %s/arena_spec\['w'\]/spec.arenawidth/gc
-		x %s/arena_spec\['h'\]/spec.arenaheight/gc
-		x %s/arena_spec\['gate'\]/(spec.gatex,spec.gatey)/gc
-	        x %s/arena_spec\['conecolor'\]/spec.conecolor/gc
-	        x %s/arena_spec\['routecolor'\]/spec.routecolor/gc
-		x %s/run_spec\['quiet'\]/spec.quiet/gc
-		x %s/run_spec\['simmode'\]/spec.simmode/gc
-		x %s/skate_spec\['drift'\]/spec.drift/gc
-		x %s/args.output/spec.output/gc
-		x %s/run_spec\['trail'\]/spec.trail/gc
-		x %s/run_spec\['fps'\]/spec.fps/gc
-		x %s/run_spec\['startdelay'\]/spec.startdelay/gc
-		x %s/args.testdata/spec.suite/gc
-		- %s/event_spec\['event'\]/spec.event/gc
-		x %s/event_spec\['num_cones'\]/spec.numcones/gc
-		x %s/skate_spec\['turning_radius'\]/spec.turningradius/gc
-		x %s/skate_spec\['length'\]/spec.skatelength/gc
-		- %s/skate_spec\['width'\]/spec.skatewidth/gc
-		- %s/skate_spec\['color'\]/spec.skatecolor/gc
-		x %s/skate_spec\['avgspeed'\]/spec.avgspeed/gc
-		- %s/skate_spec\['helmlag'\]/spec.helmlag/gc
-		x %s/skate_spec\['helmpct'\]/spec.helmpct/gc
-		x %s/skate_spec\['helmrange'\]/spec.helmrange/gc
-        
-
 '''
-
