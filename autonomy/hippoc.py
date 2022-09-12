@@ -446,35 +446,25 @@ game_names = [
 def main():
 	global spec, cones, route, delay, lastKnown
 
+	# args
+
 	parser = argparse.ArgumentParser()
 
-	# arena spec
+	# event spec, provided by operator
+	parser.add_argument('-e'  , '--event'		,default='freestyle'	,choices=event_names			,help='name of event'			),
+
+	# arena spec, normally supplied by camera
 	parser.add_argument('-aw' , '--arenawidth'	,default=4000		,type=int				,help='width of arena in pixels'	),
 	parser.add_argument('-ah' , '--arenaheight'	,default=4000		,type=int				,help='height of arena in pixels'	),
 	parser.add_argument('-gx' , '--gatex'		,default=2000		,type=int				,help='x position of starting gate'	),
 	parser.add_argument('-gy' , '--gatey'		,default=50		,type=int				,help='y position of starting gate'	),
 
-	# sim spec
-	parser.add_argument('-q'  , '--quiet'		,default=False		,action='store_true'			,help='run without console messages'	),
-	parser.add_argument('-v'  , '--verbose'		,default=False		,action='store_true'			,help='show detailed console messages'	),
-	parser.add_argument('-sm' , '--simmode'		,default='precise'	,choices=['precise', 'helmed']		,help='simulation mode'			),
-	parser.add_argument('-d'  , '--drift'		,default=0		,type=int				,help='maximum drift in degrees'	), 
-	parser.add_argument('-g'  , '--game'		,default='none'					,help='filename of saved game'		),
-
-	# run spec
-	parser.add_argument('-t'  , '--trail'		,default='none'		,choices=['none', 'full', 'lap']	,help='trail left by skate'		), 
-	parser.add_argument('-o'  , '--videoout'	,default='none'							,help='filename for video output'	),
-	parser.add_argument('-sg' , '--savegame'	,default='none'							,help='filename for game to save'	),
-	parser.add_argument('-f'  , '--fps'		,default=20		,type=int				,help='frames per second'		),
-	parser.add_argument('-sd' , '--startdelay'	,default=1000		,type=int				,help='delay milliseconds before start' ),
-	parser.add_argument('-cc' , '--conecolor'	,default='cyan'							,help='color of cones'			),
-	parser.add_argument('-rc' , '--routecolor'	,default='black'						,help='color of route'			),
-
-	# event spec
-	parser.add_argument('-e'  , '--event'		,default='freestyle'	,choices=event_names			,help='name of event'			),
+	# sim spec, used only by the simulator
+	parser.add_argument('-sm' , '--simmode'		,default='precise'	,choices=['none','precise', 'helmed']	,help='simulation mode'			),
+	parser.add_argument('-d'  , '--drift'		,default=0		,type=int				,help='maximum random drift in degrees'	), 
 	parser.add_argument('-nc' , '--numcones'	,default=5		,type=int				,help='number of cones'			),
 
-	# skate spec
+	# skate spec, unique to each skate, maybe determined by machine learning
 	parser.add_argument('-tr' , '--turningradius'	,default=200		,type=int				,help='skate turning radius'		),
 	parser.add_argument('-sl' , '--skatelength'	,default=70		,type=int				,help='skate length in cm'		),
 	parser.add_argument('-sw' , '--skatewidth'	,default=20		,type=int				,help='skate width in cm'		),
@@ -484,21 +474,41 @@ def main():
 	parser.add_argument('-hp' , '--helmpct'		,default=30		,type=int				,help='percent of relative bearing'	),
 	parser.add_argument('-hr' , '--helmrange'	,default=45		,type=int				,help='range of helm in degrees =/-'	),
 
+	# run spec, having to do only with the computer and operator
+	parser.add_argument('-q'  , '--quiet'		,default=False		,action='store_true'			,help='run without console messages'	),
+	parser.add_argument('-v'  , '--verbose'		,default=False		,action='store_true'			,help='show detailed console messages'	),
+	parser.add_argument('-g'  , '--game'		,default='none'					,help='filename of saved game'		),
+	parser.add_argument('-t'  , '--trail'		,default='none'		,choices=['none', 'full', 'lap']	,help='trail left by skate'		), 
+	parser.add_argument('-o'  , '--videoout'	,default='none'							,help='filename for video output'	),
+	parser.add_argument('-sg' , '--savegame'	,default='none'							,help='filename for game to save'	),
+	parser.add_argument('-f'  , '--fps'		,default=20		,type=int				,help='frames per second'		),
+	parser.add_argument('-sd' , '--startdelay'	,default=1000		,type=int				,help='delay milliseconds before start' ),
+	parser.add_argument('-cc' , '--conecolor'	,default='cyan'							,help='color of cones'			),
+	parser.add_argument('-rc' , '--routecolor'	,default='black'						,help='color of route'			),
+
 	spec = parser.parse_args()	# returns Namespace object, use dot-notation
+
+	# logging
 
 	logging.basicConfig(format='%(message)s')
 	if not spec.quiet:
 		logging.getLogger('').setLevel(logging.INFO)
+
+	# more args
 
 	speca = vars(spec)		# returns iterable and subscriptable collection
 	for k in speca:
 		tab = '\t' if len(k) >= 8 else '\t\t'
 		logging.info(f'{k}{tab}{speca[k]}')
 
+	# initialization	
+
 	lastKnown['position'] = (spec.gatex,spec.gatey)
 	lastKnown['prevpos'] = (spec.gatex,spec.gatey)
 	lastKnown['speed'] = kmh2cps(spec.avgspeed)
 	delay = int(1000 / spec.fps) # delay between frames in milliseconds
+
+	# sim setup
 
 	if spec.videoout == 'none':
 		save_count = None
@@ -507,8 +517,13 @@ def main():
 		save_count = 2000
 		repeat = False
 
+	# saved game
+
 	if spec.game != 'none':
 		cones, order, sides = readGame()
+
+	# setup arena -&- plan route
+
 	if len(cones) == 0:
 		cones = placeCones()
 		order,sides = planRoute(cones)
@@ -517,18 +532,28 @@ def main():
 	logging.info(order)
 	logging.info(sides)
 
+	# more saved game
+
 	if spec.savegame != 'none':
 		writeGame(cones,order,sides)
+
+	# plan next lap
 
 	plan = calcPlan(cones, order, sides)
 	route = plotRoute(plan)
 	drawArena(plan)
 	drawRoute(route)
 
+	# more initialization
+
 	if spec.simmode == 'precise':
 		lastKnown['heading'] = route[0]['bearing']
 	
+	# main loop
+
 	anim = FuncAnimation(plt.gcf(), animate, frames=gen, repeat=repeat, save_count=save_count, interval=delay, blit=True)
+
+	# save or show
 
 	if spec.videoout == 'none':
 		plt.show()
@@ -540,109 +565,3 @@ def main():
 if __name__ == '__main__':
 	main()
 
-'''
-keep helm within turning radius
-	how to convert turning_radius to min/max relative_bearing
-	can you do a unit test, circling a skate around a cone
-		too tight, it collapses into the cone
-		too loose, it spirals off the page
-	slow down for tight turns
-	gradually speed up with each iteration
-
-named patterns:
-	spiral
-	freestyle
-	slalom: straighti-line or course
-	barrel race
-	porch mandala
-	perimeter
-	slalom around the perimeter
-	unit test named patterns, ie spiral
-		run main and sim loop
-		x leave a trail
-		save image and compare image to referencd
-
-repeat and timing each run
-	barrel racing: run once and out
-	freestyle: route, run, repeat, until what
-	spiral: plot route, same cone again and again
-	add lap counter
-	frames, laps, elapsed, top speed
-	start time, log with timer
-	display all specs
-	numlaps = 1
-
-spiral pattern
-	only one cone in dead center, run a spiral around it, within the arena boundaries
-	no route, just forever circle one cone; gate, cone, gate
-	add reverse
-	find the centermost cone and spiral around it
-	how to plot a route?  cannot.  has to be done at execution time
-		cone center
-		largest circle within arena given center
-		smallest radius
-		largest radius
-		number of circles
-		gradually increasing radius
-	make spiral a leg shape
-		given: center, start radius, end radius, radial pct increase radius each frame
-			direction, in or out, cw or ccw
-		any arc could be treated as a spiral, i
-			with additional parameters
-				number of passes
-				radial change per frame
-			set by plotRoute
-			can a spiral intersect another cone?
-				the spiral leg could be used like a line, as a route to the next cone
-
-place cones per event
-	freestyle
-	barrel racing
-	course racing
-	straight line slalom
-	downhill slalom
-	spiral
-
-notes:
-	random options cannot be used for unittests
-	plot route as you go, ala billiards
-	how many cones?  if event = barrel racing, find valid barrels and ignore the extraneous.
-	why are we doing spiral?  why not unittest freestyle first?
-	arena size and gate are passed by args only in sim mode
-	turning radius can be adjusted by machine learning and should be saved with the skate id
-
-refactor ala sk8 sensoryMotorCircuit
-	2 simultaneous tasks
-		fly the drone
-		drive the skate
-	both require navigation and piloting
-	navigator and pilot
-	to navigate - plot a route, strategy
-	to pilot - steer the vehicle along the route, tactics
-	
-	1st time
-		if spec.live:
-			use OpenCV to read frame from drone camera
-			use TensorFlow to do object detection and segmentation of cones and skate
-		elif spec.sim:
-			generate arena, cones, skate
-		use matplotlib to build map and plot route
-	subsequent times:
-		orient new map to master map
-	
-	while running:
-		if spec.live:
-			use OpenCV to read frame from drone camera
-			use TensorFlow to do object detection and segmentation of cones and skate
-		elif spec.sim:
-			plot new position via dead reckoning
-	
-		set gate = skate starting position
-		use matplotlib to plan route: calculate heading, bearings, route
-		use matplotlib to navigate: calculate heading, bearings
-		use matplotlib to pilot: calculate helm, speed
-		use matplotlib to draw map
-		use OpenCV.addWeighted to overlay map on top of camera image
-		use OpenCV to show the finished photo
-		use OpenCV.waitKey(0) to allow user override
-'''
