@@ -565,3 +565,52 @@ def main():
 if __name__ == '__main__':
 	main()
 
+'''
+brain parts
+  - visualcortex
+  - hippocampus
+  - frontalcortex
+  - drone (eyes and neck)
+
+tasks of each brain part, shown below in sensoryMotorCircuit
+
+main
+  - wakeup
+  - act while awake
+    - sensoryMotorCircuit
+      - drone.getFrame()
+      - visualcortex.detectObjects
+      - hippocampus.buildMap
+      - frontalcortex.navigate
+  - sleep
+
+modify
+  - add micropersonalities
+  - separate navigator and pilot
+  - simultaneously navigate and pilot, drone and skate
+  - do other things besides running in an event (drone not necessary for these)
+    - walk to and fro the event, remote-controlled by human operator 
+    - train
+      - run patterns over and over, improving for speed
+      - setup imaginary arenas and run repeatedly for speed
+    - play
+      - compete skate vs drone
+    - converse with human operator
+  - add pleasure/pain centers
+    - hunger for battery charge, drone and skate (bms)
+      - must request assistance from human operator
+    - detect battery full (charging controller)
+  - act loop, sleep loop
+  - four loops
+    - drone nav
+    - drone pilot
+    - skate nav
+    - skate pilot
+
+engage in an activity
+  - add one or more processes
+  - each actor is a micropersonality
+      - captain, pilot, navigator
+      - an activity resembles a group converstaion or meeting
+
+'''

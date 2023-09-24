@@ -1,59 +1,7 @@
 '''
 plotcv.py
 combine matplotlib and opencv
-
-data format
-	both matplotlib and opencv express the image as a numpy array
-	you can always manipulate the array directly using matrix math
-	or, both matplotlib and opencv provide methods to do sophisticated operations
-	there is considerable overlap between the two systems
-	you can probably do whatever you want with either system
-	and you can mix and match both systems, so long as you know the differences 
-	in the way they handle the array
-color model
-	by default, matplotlib uses RGB, opencv uses BGR
-alpha channel
-	by default, array shape is (y,x,3)
-	can be changed to (y,x,4), for RGBA or BGRA 
-	example:
-		y,x,d = myarray.shape
-		numpy.dstack( ( myarray, numpy.zeros((y, x)) ) )
-		https://stackoverflow.com/questions/39642721/adding-alpha-channel-to-rgb-array-using-numpy
-display
-	by default, matplotlib produces a graph
-		with x,y,z axis, with tickmarks and scale
-		the graph is positioned with margins inside a resizeable window
-	opencv gives a full-size image in a fixed-size window
-animation
-	both systems provide systems for animation and user-input handling
-	matplotlib FuncAnimation allows for an incremental blit 
-	matplotlib allows you to change the data of objects already in the plot
-	opencv requires you to rewrite the whole screen
-user input
-	both systems allow you to wait for a key press
-	both systems provide an event-handler for keyboard and mouse events
-tiling
-	numpy hstack() and vstack() can be used to tile multiple images into one
-	in addition, matplotlib uses the Figure->Axes->Plot heirarchy of subplots
-
-1. convert plot to image
-google: convert matplotlib figure to numpy array opencv
-https://www.autoscripts.net/convert-matplotlib-figure-to-cv2-image/
-
-2. overlay transparent plot on top of image
-https://docs.opencv.org/3.4/d5/dc4/tutorial_adding_images.html
-
-in cv2,
-use cv2.inRange() to make a mask
-use cv2.bitwise_and() to make masked image
-see ../sk8/visualcortex.py
-
-in matplotlib,
-use imshow() twice, where second, top, image has alpha channel
-https://stackoverflow.com/questions/49025832/combine-picture-and-plot-with-matplotlib-with-alpha-channel
-ax.imshow(bottom, interpolation=None)
-ax.imshow(topimg, interpolation=None) # top image must have alpha channel
-
+see https://github.com/voyc/robots/wiki/OpenCV-vs-matplotlib/
 '''
 import numpy as np
 import matplotlib.pyplot as plt
