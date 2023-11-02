@@ -15,14 +15,15 @@ const char* ssid = "JASMINE_2G";
 const char* password = "8496HAG#1";
 
 int helm = 0;
-int pinHelm = 9;  // D6
+int pinHelm = 3;  // D3  full strength input voltage from hot rail 6.6V - 8.4V
 Servo servoHelm;
 
 int throttle = 0;
-int pinThrottle = 6; // D3
+int pinThrottle = 6; // D6  6V regulated input
 Servo servoThrottle;
 
 char buffer[40];
+boolean logging = false;
 
 AsyncWebServer server(8080);
 
@@ -31,6 +32,15 @@ struct command {
 	int dgr;
 	char s[40];
 };
+
+void logger(String msg, boolean cr=true) {
+	if (logging) {
+		Serial.print(msg);
+		if (cr) {
+			Serial.println("");
+		}
+	}
+}
 
 command parseQueryString(AsyncWebServerRequest* request) {
 	command cmd;
@@ -62,7 +72,7 @@ String setHelm(AsyncWebServerRequest* request) {
 	servoHelm.write(servoValue(helm));
 
 	sprintf(buffer, "%s; helm %d throttle %d", cmd.s, helm, throttle);
-	Serial.println(buffer);
+	logger(buffer);
 	return buffer;
 }
 
@@ -73,7 +83,7 @@ String setThrottle(AsyncWebServerRequest* request) {
 	servoThrottle.write(servoValue(throttle));
 
 	sprintf(buffer, "%s; helm %d throttle %d", cmd.s, helm, throttle);
-	Serial.println(buffer);
+	logger(buffer);
 	return buffer;
 }
 
@@ -82,42 +92,46 @@ int servoValue(int dgr) {
 }
  
 void setup() {
+	// setup logging via serial monitor
+	logging = false;
 	Serial.begin(115200);
-	while(!Serial);
-	Serial.setTimeout(100);
-	Serial.println("\nsetup");
+	for (int i=0; i<25; i++) {
+		if (Serial) {
+			logging = true;
+			Serial.setTimeout(100);
+		}
+		delay(500);
+	}
+	logger("\nbegin setup");
 
 	// setup wifi
-
 	WiFi.begin(ssid, password);
-	Serial.print("Connecting");
+	logger("Connecting...", false);
 	int wstat = WiFi.status();
 	while(wstat != WL_CONNECTED) { 
-		Serial.print(wstat);
+		logger(String(wstat), false);
 		delay(500);
 		wstat = WiFi.status();
 	}
-	Serial.println("");
-	Serial.print("Connected to WiFi network with IP Address: ");
-	Serial.println(WiFi.localIP());
+	sprintf(buffer, "\nConnected to WiFi network with IP Address: %s", WiFi.localIP());
+	logger(buffer);
 
+	// setup webserver
 	server.on("/helm", HTTP_GET, [](AsyncWebServerRequest *request){
 		request->send_P(200, "text/plain", setHelm(request).c_str());
 	});
-
 	server.on("/throttle", HTTP_GET, [](AsyncWebServerRequest *request){
 		request->send_P(200, "text/plain", setThrottle(request).c_str());
 	});
-
 	server.begin();
 
 	// setup servos
-
 	servoHelm.attach(pinHelm);
 	servoHelm.write(servoValue(helm));
-
 	servoThrottle.attach(pinThrottle);
 	servoThrottle.write(servoValue(throttle));
+
+	logger("setup complete");
 }
 
 
@@ -125,5 +139,4 @@ void setup() {
 void loop() {
 	delay(1000);
 }
-
 

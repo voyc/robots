@@ -1,0 +1,105 @@
+see also
+drive/arduino components
+drive/meccano parts
+
+
+
+
+How tu use imu for auto-leveling quadcopter
+https://www.youtube.com/watch?v=4BoIE8YQwM8
+
+- 3D modeling:  new drive motor mount
+circuit design: work book projects using transistors
+circuit design: low battery indicator: zener diodes, transistors
+programming: coast and brake routines for the servo continuous
+programming: test imu
+programming: commands for full starboard and full port and amidship
+
+ESP32 15x7
+perfboard 24x18
+breadboard 30x10+4
+
+
+20cm deck width (at center, 16cm min, 20.5cm max)
+70cm deck length (13cm overhang, 10cm front 17cm rear)
+1.2cm deck thickness
+
+44cm wheelbase: wheel to wheel centers
+17.5cm wheel track: distance between wheel centerlines
+
+7cm wheel diameter
+5cm wheel width
+8cm wheel center to decktop
+
+3.3 new wheel diameter
+
+
+deck width~20~20cm deck width (at center, 16cm min, 20.5cm max)
+deck length~70~70cm deck length (13cm overhang, 10cm front 17cm rear)
+deck thickness~1.2~1.2cm deck thickness
+wheelbase~44~44cm wheelbase: wheel to wheel centers
+wheel track~17.5~17.5cm wheel track: distance between wheel centerlines
+wheel diameter~7~7cm wheel diameter
+wheel width~5~5cm wheel width
+wheel clearance~8~8cm wheel center to decktop
+
+mobile power
+ideal
+	1 7.4V lipo battery for two servos
+	1 voltage divider to provide 3.7V to ESP32
+	1 power switch
+	1 LED power on indicator
+	1 usb connector: allows program upload, plus auto onboard recharging whenever plugged in
+	note: vehicle cannot be used when usb cable connected
+	full bms 
+		warn low battery condition
+		auto shutdown on:
+			overcharge 
+			undercharge 
+			too fast discharge 
+			overheat
+
+simple (for now)
+	3 18650's
+	3 18650 holders (1 single for ESP32, 1 double in series for servos)
+	1 separate charger: manually remove batteries from vehicle, place in charger
+	2 power switches
+	2 power on/off LED's
+	when usb cable plugged into ESP32, do NOT turn on power to ESP32
+	no onboard bms
+	
+keep separate development board for program testing with duplicate servos not connected to vehicle
+
+M2 screws used to mount servomotor to board, 2mm threadsize, 1.5mm pilot hole
+M3 bolts connect arm to servo, and weight to arm
+M4 Meccano bolts and axles
+
+The preferred walking speed is the speed at which humans or animals choose to walk. Many people tend to walk at about 1.42 metres per second (5.1 km/h; 3.2 mph; 4.7 ft/s).
+
+speed unit conversions
+n * 1000 : km to m
+n * .001 : m to km
+n * 0.000277777777778 : s to h
+n * 3600 : h to s
+n * .001 * 3600 : km/h to m/s
+n * 1000 * .000277778 : m/s to km/h 
+Wheel diameter: 3.5cm
+Circumference: 11cm
+At 60 rpm: 11cm per second = .11 * 1000 * .000277778 = 0.03055558 km/h
+at 45rpm: .11m * 45r = 4.95m/m : 4.95/60 = .0825m/s
+
+specs for sk8 drive motor
+
+rpm range: 0 - 100 rpm, average: 60
+
+specs for sk8legs
+linear actuator
+extended: 10.63cm (4.18")
+retracted: 5.06cm (1.99")
+stroke: 10.63-5.06 = 5.57cm (2.19")
+
+8.7 (3.42")
+14.05 (5.53")
+stroke: 14.05 - 8.7 = 5.35 (2.10")
+
+

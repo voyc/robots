@@ -23,6 +23,8 @@ savthrottle = 0
 
 baseurl = 'http://192.168.1.100:8080'
 linenum = 27
+minline = 27
+maxline = 37
 
 def clamp(v,n,x):   # value, min, max
 	return max(n, min(x, v))
@@ -85,6 +87,8 @@ def send(qstring):
 	except:
 		screen.addstr(y, 30, 'vehicle offline') 
 	linenum = linenum + 1
+	if linenum > maxline:
+		linenum = minline
 
 def kill():
 	global throttle, helm
@@ -141,6 +145,8 @@ throttle astern 22
 throttle stop 0
 
 battery check
+
+return a json string with telemetry data
 
 '''
 

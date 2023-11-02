@@ -17,7 +17,7 @@ from serial.tools import list_ports
 list_ports.comports()  # Outputs list of available serial ports
 
 '''  
-import serial # this is the pyserial library
+import serial
 import time
 
 arduino = serial.Serial(port='/dev/ttyACM0', baudrate=115200, timeout=.1)

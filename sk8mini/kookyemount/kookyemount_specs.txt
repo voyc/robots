@@ -1,0 +1,142 @@
+
+kookyemount.blend
+
+slice stem into rectangle
+drill hole in stem for spring
+slide stem 8mm towards center
+trim bottom point of stem to fit into girder V
+cut V in back wall for girder
+make indentation in stem for girder screw
+shave down top edge of back wall and stem
+
+MPU-6050 orientation and polarity of 3 axes
+https://how2electronics.com/wp-content/uploads/2018/06/2_Oreintation_Polarity_of_Rotation_MPU6050.png
+
+in the MPU-6050
+	x is the direction of travel, +forward, -reverse;  roll +right, -left 
+	y is axial, +left, -right; pitch +nose up, -nose down
+	z is vertical, +up, -down; yaw +nose left, -nose right 
+
+in blender
+	x runs across the screen right to left
+	y runs towards and away from the viewer
+	z is vertical
+
+I made my blender drawing relative to MPU-6050 axes
+therefore, my blender views are switched around:
+	front = right side of vehicle
+	back = left side of vehicle
+	left = rear of vehicle
+	right = front of vehicle
+Think of the views as relative to the mount, where front means looking into the jaws of the mount.
+
+our view is looking at the vehicle from the rear
+x is direction of travel, + is away from us
+y is axial, + is to the left
+z is vertical, + is up
+
+
+x motor 40x40x20
+
+x motor hole 40x27x20mm
+x motor hole 41x27.5x20mm, expanded by .5mm on three sides
+x sidewall wd 8mm
+x backwall wd 4mm
+offset y = 4mm
+
+mount outer x 41+8+8 = 57mm
+mount outer y = 27.5 + 4 = 31.5mm
+mount outer z = 20mm
+
+motor screw holes (4) 2M x 10mm
+distance between z = 10mm
+distance between x = 50mm
+screw hole diameter: 1.5mm
+rotate on x axis: 90	
+
+cable hole
+
+dimensions 
+x = 8mm (clear thru the sidewall)
+y = 6mm  (19-25mm from front)
+z = 7mm (centered within 20mm sidewall)
+z with extension = 7 + ((20-7)/2) = 7 + 6.5 = 13.5
+z loc = (20 - 13.5)/2 = 3.25
+
+
+stem
+x = 14mm     width
+y = 19mm     length
+z = 12.5mm  height
+
+stem cutouts
+  stem bolt hole
+  stem indentation for recessed nut
+  stem spring hole
+
+mount cutouts
+  girder slice right - 1mm out of mount back wall
+  girder slice left - 1mm
+
+all above to stem rotated around the rotor on the y axis by 45 degr
+
+position of the rear drive wheel => half length of rear axle => determined by y dimensions of:
++ rotor gear extension y  = 14mm
++ mount y
+ - girder slice       1mm
++ plus stem y    19mm
+
+bolt hole y = 
+distance from girder end to bolt hole
+less 1mm girder slice
+
+5.5 holes of girder between tire and truck post
+5.5 * 12.7 in = 69.85, round up to 70mm
+
+70mm from center point to inside tire wall
+breakdown of y distances:
+  2mm - space between tire motor
+13mm - motor in front of mount  
+27mm - motor inside of mount
+  1mm - space around motor
+  6mm - back wall of mount
+ -1mm - incision for girder insert
+ 25.4mm - girder
+ 
+ 70mm - total   73.4     4mm over
+ 
+motor dimensions: 40x40x20
+space around 3 sides of motor: 1mm
+motor hole: 42x28x20
+mount sides: 8mm
+mount back: 6mm
+mount dimensions: 50x34x20
+
+
+y dimensions of motor
+40mm - motor y front to back
+  7mm - flange/grommet to front of motor
+  6mm - flange-grommet
+27mm - flange/grommet to back of motor
+
+motor under flange: 40x27x20mm
+
+
+41 - 27 = 14 mm rotor extension  
+
+motor: 20x40x40
+motor x = 40
+motor y = 40
+motor z = 20m
+
+motor y = 40mm
+plus 1mm space between tirewall
+plus 1mm space between mount
+total 42 from mount to tire
+
+69 - 42 = 27
+
+grid = .5in = 12.7mm
+girder bolt hole = 69 - 12.7mm = 56.3 
+
+
