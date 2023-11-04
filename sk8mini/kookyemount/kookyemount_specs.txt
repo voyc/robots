@@ -1,73 +1,75 @@
 
 kookyemount.blend
 
-slice stem into rectangle
-drill hole in stem for spring
-slide stem 8mm towards center
-trim bottom point of stem to fit into girder V
-cut V in back wall for girder
-make indentation in stem for girder screw
-shave down top edge of back wall and stem
+todo:
+  slice stem into rectangle
+  drill hole in stem for spring
+  slide stem 8mm towards center
+  trim bottom point of stem to fit into girder V
+  cut V in back wall for girder
+  make indentation in stem for girder screw
+  shave down top edge of back wall and stem
 
 MPU-6050 orientation and polarity of 3 axes
 https://how2electronics.com/wp-content/uploads/2018/06/2_Oreintation_Polarity_of_Rotation_MPU6050.png
 
-in the MPU-6050
+Two different axes systems.
+1. in the MPU-6050
 	x is the direction of travel, +forward, -reverse;  roll +right, -left 
 	y is axial, +left, -right; pitch +nose up, -nose down
 	z is vertical, +up, -down; yaw +nose left, -nose right 
 
-in blender
-	x runs across the screen right to left
-	y runs towards and away from the viewer
-	z is vertical
+2. in blender
+	x red, runs across the screen right to left
+	y green, runs towards and away from the viewer
+	z blue, is vertical
 
-I made my blender drawing relative to MPU-6050 axes
-therefore, my blender views are switched around:
-	front = right side of vehicle
+Two different view sets.
+1. The Blender model is relative to the mount, and using the MPU-6050 axes.
+	front = right side of vehicle, looking into the jaws of the mount
 	back = left side of vehicle
 	left = rear of vehicle
 	right = front of vehicle
-Think of the views as relative to the mount, where front means looking into the jaws of the mount.
 
-our view is looking at the vehicle from the rear
-x is direction of travel, + is away from us
-y is axial, + is to the left
-z is vertical, + is up
+2. The GIMP drawing is equivalent to the Blender right view.
 
 
-x motor 40x40x20
 
-x motor hole 40x27x20mm
-x motor hole 41x27.5x20mm, expanded by .5mm on three sides
-x sidewall wd 8mm
-x backwall wd 4mm
-offset y = 4mm
+dimensions, location, rotation - see spreadsheet
 
-mount outer x 41+8+8 = 57mm
-mount outer y = 27.5 + 4 = 31.5mm
-mount outer z = 20mm
+The drawing is centered on the motor, dimensions 40x40x20.
+The motor is lying down, so the z dimension is 20.
+The y dimension is 40, the direction of the axle or rotor.
+The x dimension is 40, the direction of travel.
+The rotor shaft is offset by 10mm so that 30mm extends from the shaft towards the front,
+and 10mm extends towards the rear.
 
-motor screw holes (4) 2M x 10mm
-distance between z = 10mm
-distance between x = 50mm
-screw hole diameter: 1.5mm
-rotate on x axis: 90	
+The motor has two flange/grommets for mounting, one front one rear.
+The flange/grommets are placed so that 13mm will extend in front of the mount, and 27mm behind.
+Each flange grommet contains two screw holes, aligned with the y axis.
+The motor also has a cable coming out from rear side, near the back of the motor.
+
+motor screw holes
+	motor screw holes (4) 2M x 6mm in the flange/grommets
+	distance between z = 10mm
+	distance between x = 50mm
+	pilot holes in the mount: 1.5mm x 10mm
+	rotate on x axis: 90	
 
 cable hole
-
-dimensions 
-x = 8mm (clear thru the sidewall)
-y = 6mm  (19-25mm from front)
-z = 7mm (centered within 20mm sidewall)
-z with extension = 7 + ((20-7)/2) = 7 + 6.5 = 13.5
-z loc = (20 - 13.5)/2 = 3.25
-
+	x = 8mm (clear thru the sidewall)
+	y = 6mm  (19-25mm from front)
+	z = 7mm (centered within 20mm sidewall)
+	z with extension = 7 + ((20-7)/2) = 7 + 6.5 = 13.5
+	z loc = (20 - 13.5)/2 = 3.25
 
 stem
-x = 14mm     width
-y = 19mm     length
-z = 12.5mm  height
+x = 14mm     width, width of the axle girder
+y = 16mm     length 15 external plus 1mm extruded into the mount for boolean union operation
+z = 12.5mm   height of the axle girder, 9mm height of stem to leave room for truck rotation 
+
+stem will be rotated 45 degrees to match the axle girder
+stem cutouts and mount cutouts will be rotated simultaneously
 
 stem cutouts
   stem bolt hole
@@ -138,5 +140,24 @@ total 42 from mount to tire
 
 grid = .5in = 12.7mm
 girder bolt hole = 69 - 12.7mm = 56.3 
+
+
+
+final sculpting
+  stem cutouts
+  rotate stem and V slices (see "rotate stem..." below)
+  mount cutouts
+  union mount and stem
+
+export only the mount union
+
+
+rotate stem and Vslices around y axis of rotor
+  select rotor
+  shift-s, cursor to selected
+  in header, Transform Pivot Point menu, choose 3D Cursor
+  select all the objects to be rotated together
+  r y 45 <enter>
+
 
 

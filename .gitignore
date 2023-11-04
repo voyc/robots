@@ -7,3 +7,4 @@ autonomy/xtemp/*
 autonomy/videos/*
 autonomy/games/*
 __pycache__
+*.stl
