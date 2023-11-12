@@ -15,11 +15,11 @@ const char* ssid = "JASMINE_2G";
 const char* password = "8496HAG#1";
 
 int helm = 0;
-int pinHelm = 3;  // D3  full strength input voltage from hot rail 6.6V - 8.4V
+int pinHelm = D3;  // D3  full strength input voltage from hot rail 6.6V - 8.4V
 Servo servoHelm;
 
 int throttle = 0;
-int pinThrottle = 6; // D6  6V regulated input
+int pinThrottle = D6; // D6  6V regulated input
 Servo servoThrottle;
 
 char buffer[40];
@@ -56,6 +56,7 @@ command parseQueryString(AsyncWebServerRequest* request) {
 		cmd.dir = -1;
 	else
 		cmd.dir = 1;
+	cmd.dir = 0 - cmd.dir;	// ?
 
 	String scmd = request->url();
 	scmd = scmd.substring(1);

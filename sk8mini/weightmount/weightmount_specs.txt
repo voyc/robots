@@ -1,0 +1,32 @@
+
+
+2.5 KG
+137.0mm outer diameter
+ 26.0mm inner diameter
+ 25.4mm thickness
+
+.5 KG 
+103mm outer diameter
+ 31mm inner diameter
+ 14mm thickness
+
+.25 KG
+98.24mm outer diameter
+51.09mm inner diameter
+ 6.15mm thickness
+
+
+
+
+servo arm
+60 x 8
+hole centers
+4, 6, 12, 18, 24, 32, 40, 50
+hole diameters: 5@2.5mm, 2@3mm
+
+
+two springs
+arm extended fully horizontal
+pull-down until wheels touch deck
+with 3 wraps per side: 3.5 grams
+with 5 wraps per side: ? grams

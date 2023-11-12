@@ -1,0 +1,8 @@
+
+ESP32 
+GPIO22 to SCL   A5    blue
+GPIO21 to SDA   A4   green
+
+A4 and A5, per https://www.instructables.com/MPU-6050-Tutorial-How-to-Program-MPU-6050-With-Ard/
+
+
