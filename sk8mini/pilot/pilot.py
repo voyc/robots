@@ -16,12 +16,14 @@ screen.keypad(True)
 
 helm = 0
 throttle = 0
+adjthrottle = 0
 maxthrottle = 9
 maxhelm = 9
+opthelm = 5
 savhelm = 0
 savthrottle = 0
 
-baseurl = 'http://192.168.1.100:8080'
+baseurl = 'http://192.168.1.103:8080'
 linenum = 27
 minline = 27
 maxline = 37
@@ -73,7 +75,7 @@ def compose():
 			name = 'ahead'
 			value = throttle
 	if cmd:
-		value = value * 10
+		value = value * 10  # times ten to get degrees: 0 to +-90
 		qs = f'{cmd}?{name}={value}'
 	return qs
 
@@ -118,11 +120,19 @@ try:
 			throttle += 1
 		elif char == curses.KEY_DOWN:
 			throttle -= 1
+
+		elif char == curses.KEY_SRIGHT:
+			helm = opthelm
+		elif char == curses.KEY_SLEFT:
+			helm = -opthelm
+		elif char == curses.KEY_SR:  # SF
+			helm = 0
 		else:
 			continue
 
 		throttle = clamp(throttle, 0-maxthrottle, maxthrottle)
 		helm = clamp(helm, 0-maxhelm, maxhelm)
+		
 		draw()
 		qstring = compose()
 		send(qstring)

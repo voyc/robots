@@ -1,0 +1,46 @@
+In file included from /home/john/webapps/robots/robots/sk8mini/pilot/mpu6050/mpu6050.ino:3:
+/home/john/.arduino15/packages/arduino/hardware/esp32/2.0.13/libraries/Wire/src/Wire.h: In function 'void loop()':
+
+
+/home/john/.arduino15/packages/arduino/hardware/esp32/2.0.13/libraries/Wire/src/Wire.h:126:13: note: candidate 1: 'uint8_t TwoWire::requestFrom(int, int, int)'
+     uint8_t requestFrom(int address, int size, int sendStop);
+             ^~~~~~~~~~~
+
+/home/john/.arduino15/packages/arduino/hardware/esp32/2.0.13/libraries/Wire/src/Wire.h:122:12: note: candidate 2: 'size_t TwoWire::requestFrom(uint8_t, size_t, bool)'
+     size_t requestFrom(uint8_t address, size_t len, bool stopBit);
+            ^~~~~~~~~~~
+
+
+
+/home/john/.arduino15/packages/arduino/hardware/esp32/2.0.13/libraries/Wire/src/Wire.h:126:13: note: candidate 1: 'uint8_t TwoWire::requestFrom(int, int, int)'
+     uint8_t requestFrom(int address, int size, int sendStop);
+             ^~~~~~~~~~~
+/home/john/.arduino15/packages/arduino/hardware/esp32/2.0.13/libraries/Wire/src/Wire.h:120:13: note: candidate 2: 'uint8_t TwoWire::requestFrom(uint16_t, uint8_t, bool)'
+     uint8_t requestFrom(uint16_t address, uint8_t size, bool sendStop);
+             ^~~~~~~~~~~
+
+
+
+/home/john/.arduino15/packages/arduino/hardware/esp32/2.0.13/libraries/Wire/src/Wire.h:126:13: note: candidate 1: 'uint8_t TwoWire::requestFrom(int, int, int)'
+     uint8_t requestFrom(int address, int size, int sendStop);
+             ^~~~~~~~~~~
+/home/john/.arduino15/packages/arduino/hardware/esp32/2.0.13/libraries/Wire/src/Wire.h:119:12: note: candidate 2: 'size_t TwoWire::requestFrom(uint16_t, size_t, bool)'
+     size_t requestFrom(uint16_t address, size_t size, bool sendStop);
+            ^~~~~~~~~~~
+
+
+
+/home/john/.arduino15/packages/arduino/hardware/esp32/2.0.13/libraries/Wire/src/Wire.h:126:13: note: candidate 1: 'uint8_t TwoWire::requestFrom(int, int, int)'
+     uint8_t requestFrom(int address, int size, int sendStop);
+             ^~~~~~~~~~~
+/home/john/.arduino15/packages/arduino/hardware/esp32/2.0.13/libraries/Wire/src/Wire.h:122:12: note: candidate 2: 'size_t TwoWire::requestFrom(uint8_t, size_t, bool)'
+     size_t requestFrom(uint8_t address, size_t len, bool stopBit);
+            ^~~~~~~~~~~
+
+
+
+
+Sketch uses 304969 bytes (9%) of program storage space. Maximum is 3145728 bytes.
+Global variables use 31076 bytes (9%) of dynamic memory, leaving 296604 bytes for local variables. Maximum is 327680 bytes.
+
+

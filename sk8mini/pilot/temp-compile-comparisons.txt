@@ -1,0 +1,67 @@
+john@RacerSwift:~/webapps/robots/robots/sk8mini/pilot$ arduino-cli board listall | grep nano
+Arduino Nano                                                            arduino:avr:nano                                   
+Arduino Nano ESP32                                                      esp32:esp32:nano_nora                              
+Arduino Nano ESP32                                                      arduino:esp32:nano_nora                            
+Nano32                                                                  esp32:esp32:nano32                                 
+UM NanoS3                                                               esp32:esp32:nanos3                                 
+
+----------------
+john@RacerSwift:~/webapps/robots/robots/sk8mini/pilot$ arduino-cli compile pilot.ino -b esp32:esp32:nano32
+
+/home/john/webapps/robots/robots/sk8mini/pilot/pilot.ino:18:15: error: 'D3' was not declared in this scope
+ int pinHelm = D3;  // D3  full strength input voltage from hot rail 6.6V - 8.4V
+               ^~
+Used library        Version Path                                                                     
+WiFi                2.0.0   /home/john/.arduino15/packages/esp32/hardware/esp32/2.0.13/libraries/WiFi
+ESP Async WebServer 1.2.3   /home/john/Arduino/libraries/ESPAsyncWebServer-master                    
+FS                  2.0.0   /home/john/.arduino15/packages/esp32/hardware/esp32/2.0.13/libraries/FS  
+AsyncTCP            1.1.1   /home/john/Arduino/libraries/AsyncTCP-master                             
+ESP32Servo          0.13.0  /home/john/Arduino/libraries/ESP32Servo                                  
+
+Used platform Version Path                                                      
+esp32:esp32   2.0.13  /home/john/.arduino15/packages/esp32/hardware/esp32/2.0.13
+Error during build: exit status 1
+
+----------------
+
+john@RacerSwift:~/webapps/robots/robots/sk8mini/pilot$ arduino-cli compile pilot.ino -b esp32:esp32:nano_nora
+
+In file included from /home/john/.arduino15/packages/esp32/hardware/esp32/2.0.13/cores/esp32/Arduino.h:223,
+                 from /tmp/arduino/sketches/83C902B3B3573E0FCD716BBCFBBE30BF/sketch/pilot.ino.cpp:1:
+/home/john/.arduino15/packages/esp32/hardware/esp32/2.0.13/cores/esp32/io_pin_remap.h:25:49: error: variable or field 'analogWrite' declared void
+ #define analogWrite(pin, value)     analogWrite(digitalPinToGPIONumber(pin), value)
+                                                 ^~~~~~~~~~~~~~~~~~~~~~
+
+Used library        Version Path                                                                     
+WiFi                2.0.0   /home/john/.arduino15/packages/esp32/hardware/esp32/2.0.13/libraries/WiFi
+ESP Async WebServer 1.2.3   /home/john/Arduino/libraries/ESPAsyncWebServer-master                    
+FS                  2.0.0   /home/john/.arduino15/packages/esp32/hardware/esp32/2.0.13/libraries/FS  
+AsyncTCP            1.1.1   /home/john/Arduino/libraries/AsyncTCP-master                             
+ESP32Servo          0.13.0  /home/john/Arduino/libraries/ESP32Servo                                  
+
+Used platform Version Path                                                      
+esp32:esp32   2.0.13  /home/john/.arduino15/packages/esp32/hardware/esp32/2.0.13
+Error during build: exit status 1
+
+-------------------------
+
+john@RacerSwift:~/webapps/robots/robots/sk8mini/pilot$ arduino-cli compile pilot.ino -b arduino:esp32:nano_nora
+
+In file included from /home/john/.arduino15/packages/arduino/hardware/esp32/2.0.13/cores/esp32/Arduino.h:223,
+                 from /tmp/arduino/sketches/83C902B3B3573E0FCD716BBCFBBE30BF/sketch/pilot.ino.cpp:1:
+/home/john/.arduino15/packages/arduino/hardware/esp32/2.0.13/cores/esp32/io_pin_remap.h:25:49: error: variable or field 'analogWrite' declared void
+ #define analogWrite(pin, value)     analogWrite(digitalPinToGPIONumber(pin), value)
+                                                 ^~~~~~~~~~~~~~~~~~~~~~
+
+Used library        Version Path                                                                       
+WiFi                2.0.0   /home/john/.arduino15/packages/arduino/hardware/esp32/2.0.13/libraries/WiFi
+ESP Async WebServer 1.2.3   /home/john/Arduino/libraries/ESPAsyncWebServer-master                      
+FS                  2.0.0   /home/john/.arduino15/packages/arduino/hardware/esp32/2.0.13/libraries/FS  
+AsyncTCP            1.1.1   /home/john/Arduino/libraries/AsyncTCP-master                               
+ESP32Servo          0.13.0  /home/john/Arduino/libraries/ESP32Servo                                    
+
+Used platform Version Path                                                        
+arduino:esp32 2.0.13  /home/john/.arduino15/packages/arduino/hardware/esp32/2.0.13
+Error during build: exit status 1
+
+

@@ -6,3 +6,127 @@ GPIO21 to SDA   A4   green
 A4 and A5, per https://www.instructables.com/MPU-6050-Tutorial-How-to-Program-MPU-6050-With-Ard/
 
 
+ESP32 serial comm
+5V  voltage input
+GND
+UOR/GPIO3
+UOT/GPIO1
+when burning, short IO0 to GND
+
+FTDI, six pins, four used:
+DTR/RTS request to send
+RX
+TX
+VCC voltage output, 3.3V or 5V depending on jumper
+CTS clear to send
+GND
+
+Pin map to burn ESP32-CAM with FTDI chip:
+^ FTDI ^ ESP32-CAM ^ comment ^
+| VCC | 5V  | keep FTDI jumper to 5V |
+| GND | GND | |
+| RX  | UOT | r to t and vice-versa |
+| TX  | UOR | t to r   |
+|     | IO0 | jumper short to ground  |
+|     | GND | jumper   |
+
+Both the ESP32-CAM and the FTDI offer a choice between 3.3V and 5V.
+DronebotWorkshop recommends 3.3V.
+https://dronebotworkshop.com/esp32-cam-intro/
+MicrocontrollersLab recommends 5V.
+https://microcontrollerslab.com/ftdi-usb-to-serial-converter-cable-use-linux-windows/
+
+
+Ubuntu 22 requires a mod for CH340 chip, due to naming conflict with Braille keyboard.
+https://askubuntu.com/questions/1403705/dev-ttyusb0-not-present-in-ubuntu-22-04
+
+
+As of 2023, three different USB-to-serial chips are being
+used for uploading a program into a microcontroller.
+1.
+2.
+3.
+
+
+Requirements.
+1. Use one power supply all the time.  Do not switch power supply to USB port just because you are uploading.
+2. No jumpers.  One reset switch is OK.  If port is plugged in, receive the data and load it.
+
+When I plug the USB in, it means I want to upload a new firmware, OR I want to recharge the battery.
+This works only for a battery pack at 5V or less.
+
+BMS with charging
+For n number of 3.7V cells. For a given SnP configuration.
+
+
+
+
+Todo
+o 90 day schedule 
+x Cash card, put away til trip planned
+  Address list (address plan)
+  awacs
+    Look for short on volt reg
+o   Fish eye lens, ordered
+    adjust quality and resolution parameters on OV2604
+    add IMU and capture telemetry data
+  sk8
+o   Blender weight mount
+    Video sk8mini w AWACS
+    capture attitude from sk8mini
+    jspeed adjustment depending on y-axis attitude
+    improved virtual joystick: half and full commands
+  Photo collection
+  Photo collection annotated for training
+  Neural net training software
+  model for local execution
+  bugs:
+    lag
+      connected as station:  too much lag.
+      connected as access point:, resolution: vga 640x480, and quality, it is tolerable
+
+
+UART - Universally Asynchronous Receiver/Transmitter
+
+TTL - transistor-transistor logic
+
+TTL UART serial comm  
+  * 0 bit = 0V 
+  * 1 bit = 5V
+
+RS232, serial comm from the days of teletype machines, high voltages
+0 bit = "space" = +3V ~ +15V
+1 bit = "mark" = -15V ~ -3V
+These serial protocols are 1:1.  One host, one peripheral.
+
+USB, Universal Serial Bus, is a "bus" architecture, meaning multiple peripherals can all be plugged into the bus.
+
+USB used by computers and peripherals
+
+TTL UART used by microcontrollers
+
+RS232 - I don't know why we are bothering with this.
+
+USB to RS232
+RS232 to TTL UART
+USB to serial
+
+FTDI - port not recognized, drivers are supposedly installed automatically on Linux, can be built with 232 or other chips?
+
+esp32-cam-mb  works when plugged in, does not work with my stripped down system of rx/tx only
+
+https://randomnerdtutorials.com/upload-code-esp32-cam-mb-usb/
+
+Is my ftdi from spark from or high let go?
+
+https://www.eevblog.com/forum/chat/ft232rl-ch340g-cp2102-which-to-chose/
+
+Sparkfun
+
+Fomo. Faster objects, more objects, proprietary algorithm of edge impulse finding centroids instead of bounding boxes.
+
+Founded in 2019 by Zach Shelby and Jan Jongboom
+
+edgeimpulse.com
+
+

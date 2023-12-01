@@ -1,0 +1,36 @@
+/home/john/.arduino15/packages/esp32/hardware/esp32/2.0.13/boards.txt
+/home/john/.arduino15/packages/arduino/hardware/avr/1.8.6/boards.txt
+/home/john/.arduino15/packages/arduino/hardware/esp32/2.0.13/boards.txt
+/home/john/.local/bin/arduino/arduino-1.8.19/hardware/arduino/avr/boards.txt
+
+
+pid = port id
+
+
+^ name ^ FQBN ^ PID ^
+| Arduino UNO | arduino:avr:uno |  |
+
+
+In the FQBN arduino:avr:uno:
+  * arduino is the Package (or Packager or Vendor)
+  * arduino:avr is the Platform where:
+    * arduino is the Package (or Packager or Vendor)
+    * avr is the CPU Architecture
+  * uno is the Board Identifier (or just Board)
+
+oIn this explanation, "platform is now synonymous for CPU Architecture within a Package"o
+
+platform = package + cpu architecture
+
+
+
+two new terms were introduced
+  * CPU Architecture
+  * 
+
+
+
+package contains multiple platforms, one for each cpu architecture.
+
+
+

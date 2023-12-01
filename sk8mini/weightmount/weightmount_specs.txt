@@ -12,7 +12,7 @@
 
 .25 KG
 98.24mm outer diameter
-51.09mm inner diameter
+51.09mm inner diameter  safe:50.9  inset:25.45
  6.15mm thickness
 
 
