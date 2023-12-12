@@ -1,18 +1,26 @@
+'''
+pilot.py
+virtual joystick to control sk8mini via http
+
+http://192.168.1.100:8080/throttle?start
+http://192.168.1.100:8080/throttle?kill
+
+http://192.168.1.100:8080/throttle?ahead=10
+http://192.168.1.100:8080/throttle?astern=10
+http://192.168.1.100:8080/throttle?stop=0
+
+http://192.168.1.100:8080/helm?starboard=10
+http://192.168.1.100:8080/helm?port=10
+http://192.168.1.100:8080/helm?amidships=0
+'''
+
 import curses
 import requests
  
-# get the curses screen window
-screen = curses.initscr()
- 
-# turn off input echoing
-curses.noecho()
- 
-# respond to keys immediately (don't wait for enter)
-curses.cbreak()
-
-# map arrow keys to special values
-screen.keypad(True)
- 
+screen = curses.initscr() # get the curses screen window
+curses.noecho() # turn off input echoing
+curses.cbreak() # respond to keys immediately (don't wait for enter)
+screen.keypad(True) # map arrow keys to special values
 
 helm = 0
 throttle = 0
@@ -23,7 +31,7 @@ opthelm = 5
 savhelm = 0
 savthrottle = 0
 
-baseurl = 'http://192.168.1.103:8080'
+baseurl = 'http://192.168.1.100:8080'
 linenum = 27
 minline = 27
 maxline = 37
@@ -87,16 +95,24 @@ def send(qstring):
 	try:
 		response = requests.get(url)	
 	except:
-		screen.addstr(y, 30, 'vehicle offline') 
+		screen.addstr(y, 30, 'no response from http') 
 	linenum = linenum + 1
 	if linenum > maxline:
 		linenum = minline
 
+def start():
+	global throttle, helm
+	throttle = 0
+	helm = 0
+	send("start")
+
 def kill():
 	global throttle, helm
 	throttle = 0
-	send("throttle?stop")
 	helm = 0
+	send("kill")
+
+	send("throttle?stop")
 	send("helm?amidships")
 
 try:
@@ -112,6 +128,7 @@ try:
 			kill()
 			draw()
 			continue
+
 		elif char == curses.KEY_RIGHT:
 			helm += 1
 		elif char == curses.KEY_LEFT:
@@ -127,6 +144,10 @@ try:
 			helm = -opthelm
 		elif char == curses.KEY_SR:  # SF
 			helm = 0
+
+		elif char >= ord('1') and char <= ord('9'):
+			opthelm = int(chr(char))
+			continue;
 		else:
 			continue
 
@@ -143,20 +164,4 @@ finally:
 	screen.keypad(0) 
 	curses.echo()
 	curses.endwin()
-
-'''
-
-helm port 45
-helm starboard 60
-helm amidships 0
-
-throttle ahead 50
-throttle astern 22 
-throttle stop 0
-
-battery check
-
-return a json string with telemetry data
-
-'''
 

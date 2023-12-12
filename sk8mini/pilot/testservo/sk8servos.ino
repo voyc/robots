@@ -1,50 +1,14 @@
-/* 
-pilot.ino  
-for Arduino ESP32 on sk8mini
-implement webserver and services to allow remote user to pilot the sk8 via http
+/* sk8servos.ino
 
-uploading to ESP32
-give me permission to write to DFU port
-echo 'SUBSYSTEMS=="usb", ATTRS{idVendor}=="2341", MODE:="0666"' | sudo tee /etc/udev/rules.d/60-arduino-esp32.rules && sudo udevadm trigger && sudo udevadm control --reload-rules
-from https://forum.arduino.cc/t/arduino-nano-esp32-esptool-error-argument-baud-b-invalid-arg-auto-int-value-upload-speed/1152185/5
+board esp32:esp32:nano_nora
+  the Arduino Nano ESP32, with the ESP32 from espressif, and the NORA-W106 module from u-blox
 
-example using webserver:
-/home/john/Arduino/libraries/ESPAsyncWebServer-master/src/WebRequest.cpp 
+two servos: helm and throttle 
+  using GPIO (espressif) pin numbers 6 and 9, PinNumbers=byGPIONumber
+  (PinNumbers=default does a pin number remap and results in a compile error)
 */
 
-#include <WiFi.h>
-#include "ESPAsyncWebServer.h"
 #include <ESP32Servo.h>
-
-/*
-*
-* logging
-*
-*/
-boolean logging = false;  // set true if Serial connected
-int loglevel = 100;  // set by programmer
-void logger(int level, char* msg, ...) {
-	if (logging && (level >= loglevel)) {
-		char buffer[160];
-		va_list va;
-		va_start (va, msg);
-		vsprintf (buffer, msg, va);
-		va_end (va);
-		Serial.println(buffer);
-	}
-}
-
-void setupLogger() {
-	logging = false;
-	Serial.begin(115200);
-	for (int i=0; i<25; i++) {
-		if (Serial) {
-			logging = true;
-			Serial.setTimeout(100);
-		}
-		delay(500);
-	}
-}
 
 /*
 *
@@ -86,15 +50,14 @@ void sweepHelm(int angle, int dps=120) {
 	// dps is the arm speed (angular velocity) in degrees per second
 	//      between 90 and 180 is reasonable, 120 is ideal;  180: -45 to 45 in half second
 	int inc = helmSweepInc;  // optimal increment of distance of each step
+	int pause = helmPause;  // optimal pause between steps 
 
 	int travel = angle - helm; // travel vector (distance) given by old and new angles
 	if (travel < 0)   // let increment match the sign of the travel vector
 		inc = 0 - inc;
 	int ttime = (int)(abs(travel) * 1000) / dps; // travel time in ms varies with vector and velocity 
 	int steps = (int)travel / inc; // vector and increment gives steps, rounded down
-	int pause = 0;
-	if ((ttime > 0) && (steps > 0))
-		pause = (int)ttime / steps; // ttime and steps gives pause for each step, rounded down
+	pause = ttime / steps; // ttime and steps gives pause for each step, rounded down
 	logger(50, "sweepHelm dps:%d, angle:%d, helm:%d, ttime:%d, steps:%d, pause:%d", dps, angle, helm, ttime, steps, pause);
 
 	if (pause >= helmPause) { // if pause greater than minimum pause for sweep)
@@ -240,98 +203,109 @@ void warmupServos() {
 	zeroThrottle();
 }
 
+
 /*
 *
-* wifi and webserver
+* local testing
 *
 */
 
-const char* ssid = "JASMINE_2G"; 
-const char* password = "8496HAG#1";
-
-AsyncWebServer server(8080);
-
-struct command {
-	int dir;
-	int dgr;
-	char s[140];
-};
-
-
-struct command parseQueryString(AsyncWebServerRequest* request) {
-	command cmd;
-
-	AsyncWebParameter* param = request->getParam(0);
-	String name = param->name();
-	String value = param->value();
-
-	cmd.dgr = value.toInt();
-
-	cmd.dir = 1;
-	if (name == "port" || name == "astern")
-		cmd.dir = -1;
-	else
-		cmd.dir = 1;
-	//cmd.dir = 0 - cmd.dir;	// ?
-
-	String scmd = request->url();
-	scmd = scmd.substring(1);
-
-	sprintf(cmd.s, "%s %s %s", scmd, name, value);
-
-	return cmd;
-}
-
-String reqHelm(AsyncWebServerRequest* request) {
-	command cmd = parseQueryString(request);
-	helmDesired = 0;
-	if (cmd.dgr > 0)
-		helmDesired = cmd.dgr * cmd.dir;
-	sweepHelm(helmDesired);
-	return cmd.s;
-}
-
-String reqThrottle(AsyncWebServerRequest* request) {
-	command cmd = parseQueryString(request);
-	throttle = cmd.dgr * cmd.dir;
-	sweepThrottle(throttle);
-	return cmd.s;
-}
+#ifdef SK8SERVOS_TESTING
 
 void setup() {
 	setupLogger();
 	logger(100, "\nbegin setup");
-
-	// setup wifi
-	WiFi.mode(WIFI_STA);
-	WiFi.begin(ssid, password);
-	logger(100, "Connecting to wifi...");
-	int wstat = -1;
-	while(wstat != WL_CONNECTED) { 
-		delay(500);
-		wstat = WiFi.status();   // 3:connected
-		logger(100, "%d", wstat);
-	}
-	logger(100, "Connected to WiFi network with IP Address: %s", WiFi.localIP().toString());
-	logger(100, "Signal strength: %d", WiFi.RSSI());
-
-	// setup webserver
-	server.on("/helm", HTTP_GET, [](AsyncWebServerRequest *request){
-		request->send_P(200, "text/plain", reqHelm(request).c_str());
-	});
-	server.on("/throttle", HTTP_GET, [](AsyncWebServerRequest *request){
-		request->send_P(200, "text/plain", reqThrottle(request).c_str());
-	});
-	server.begin();
-
-	// setup servos
 	setupServos();
 	warmupServos();
 	logger(100, "setup complete");
 }
 
-
-
 void loop() {
+	delay(1000);
+}
+ 
+void testSim() {
+	logger(100, "begin test sim");
+	sweepThrottle(23); delay(3000);
+	sweepHelm(    22); delay(3000);
+	sweepHelm(    45); delay(3000);
+	sweepHelm(     0); delay(3000);
+	sweepHelm(   -22); delay(3000);
+	sweepHelm(   -45); delay(3000);
+
+	zeroThrottle();
+	zeroHelm();
+	logger(100, "end test sim");
 }
 
+void testOneThrottle(int angle) {
+	logger( 50, "test one throttle %d", angle);
+	sweepThrottle( angle);
+	delay(3000);
+}
+void testThrottle() {
+	logger(100, "begin test throttle");
+	helm = 20;
+	testOneThrottle(23);
+	zeroThrottle();
+	logger(100, "end test throttle");
+}
+
+void testThrottleAdjustmentCalculation() {
+	logger(100, "begin test throttle adjustment calculation");
+	calcThrottleAdjustment(10, 10);
+	calcThrottleAdjustment(10, 20);
+	calcThrottleAdjustment(10, 30);
+	calcThrottleAdjustment(10, 40);
+	calcThrottleAdjustment(10, -10);
+	calcThrottleAdjustment(10, -20);
+	calcThrottleAdjustment(10, -30);
+	calcThrottleAdjustment(10, -40);
+
+	calcThrottleAdjustment(40, 10);
+	calcThrottleAdjustment(40, 20);
+	calcThrottleAdjustment(40, 30);
+	calcThrottleAdjustment(40, 40);
+	calcThrottleAdjustment(40, -10);
+	calcThrottleAdjustment(40, -20);
+	calcThrottleAdjustment(40, -30);
+	calcThrottleAdjustment(40, -40);
+	logger(100, "end test throttle adjustment calculation");
+}
+
+void testHelm() {
+	logger(100, "begin test helm");
+	logger(30, "test helm min:%d, max:%d", MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
+	logger(30, "test helm angle:%d, ms:%d", servoHelm.read(), servoHelm.readMicroseconds());
+
+	int helmangle = 50;  // 10 to 50
+	int sweepspeed = 120;  // 90 to 180
+
+	sweepspeed = 180;  // 90 to 180
+	sweepHelm( 10, sweepspeed); delay(3000);
+	sweepHelm( 20, sweepspeed); delay(3000);
+	sweepHelm( 30, sweepspeed); delay(3000);
+	sweepHelm( 40, sweepspeed); delay(3000);
+	sweepHelm( 50, sweepspeed); delay(3000);
+	sweepHelm( 40, sweepspeed); delay(3000);
+	sweepHelm( 30, sweepspeed); delay(3000);
+	sweepHelm( 20, sweepspeed); delay(3000);
+	sweepHelm( 10, sweepspeed); delay(3000);
+	sweepHelm(  0, sweepspeed); delay(3000);
+	sweepHelm( 50, sweepspeed); delay(3000);
+	sweepHelm(  0, sweepspeed); delay(3000);
+	sweepHelm(-10, sweepspeed); delay(3000);
+	sweepHelm(-20, sweepspeed); delay(3000);
+	sweepHelm(-30, sweepspeed); delay(3000);
+	sweepHelm(-40, sweepspeed); delay(3000);
+	sweepHelm(-50, sweepspeed); delay(3000);
+	sweepHelm( 50, sweepspeed); delay(3000);
+	sweepHelm(-50, sweepspeed); delay(3000);
+	sweepHelm(-40, sweepspeed); delay(3000);
+	sweepHelm(-30, sweepspeed); delay(3000);
+	sweepHelm(-20, sweepspeed); delay(3000);
+	sweepHelm(-10, sweepspeed); delay(3000);
+	zeroHelm();
+	logger(100, "end test helm");
+}
+#endif

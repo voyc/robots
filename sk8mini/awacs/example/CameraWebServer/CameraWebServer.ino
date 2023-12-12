@@ -32,8 +32,8 @@
 //#define CAMERA_MODEL_DFRobot_Romeo_ESP32S3 // Has PSRAM
 #include "camera_pins.h"
 
-#define CONNECT_AS_STATION 
-//#define CONNECT_AS_ACCESSPOINT 
+//#define CONNECT_AS_STATION 
+#define CONNECT_AS_ACCESSPOINT 
 
 // ===========================
 // Enter your WiFi credentials
@@ -152,21 +152,32 @@ void setup() {
     Serial.print(".");
   }
   Serial.println("");
-  Serial.println("WiFi connected");
+  Serial.println("WiFi connected as station");
   IPAddress IP = WiFi.localIP();
 #else
-  Serial.println("go for WiFi access point...");
   WiFi.softAP(ssidAP, passwordAP, channel, 0, numConnections);
-  Serial.println("WiFi access point ready");
+  Serial.print("WiFi connected as access point ");
+  Serial.println(ssidAP);
   IPAddress IP = WiFi.softAPIP();
 #endif
 
-  Serial.print("Camera Ready! Use 'http://");
-  Serial.print(IP);
-  Serial.println("' to connect");
+  Serial.print(" http://");
+  Serial.println(IP);
 
-  Serial.println("go for StartCameraServer()...");
+  // tune settings for sk8mini
+  config.frame_size = FRAMESIZE_UXGA;
+		// label            res         ratio   quality
+		// FRAMESIZE_QVGA   320 x  240            4
+		// FRAMESIZE_VGA    640 x  480            4
+		// FRAMESIZE_SVGA   800 x  600            4
+		// FRAMESIZE_HD    1280 x  720  16:9     10
+		// FRAMESIZE_SXGA  1280 x 1024   4:3
+		// FRAMESIZE_UXGA  1600 x 1200   5:4     10
+  config.grab_mode = CAMERA_GRAB_WHEN_EMPTY; //CAMERA_GRAB_LATEST
+  config.jpeg_quality = 12;  // 4 to 63, lower is better
+
   startCameraServer();
+  Serial.println("web server started");
 }
 
 void loop() {

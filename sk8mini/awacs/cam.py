@@ -4,26 +4,13 @@ import numpy as np
 import time
 import os
 
-camurl = 'http://192.168.4.1'
+camurl = 'http://192.168.4.1'   # when connected to access point AWACS
+#camurl = 'http://192.168.1.102'  # when connected as station to JASMINE_2G
 imgdir = '/home/john/sk8mini/awacs/photos'
 dirname = f'{imgdir}/{time.strftime("%Y%m%d-%H%M%S")}'
 ext = 'jpg'
 saving = True
 showing = True
-
-# set resolution: vga 640x480
-
-
-
-# set quality: 32
-
-
-
-
-
-
-
-
 
 def getText(qstring):
 	url = f'{camurl}/{qstring}'

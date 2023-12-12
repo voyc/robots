@@ -1,0 +1,48 @@
+
+longlens
+	120 degrees
+	good light in all three framesizes tested
+dcxv2
+	120 degrees
+	same fov as longlens
+	high res images very dark
+	svga greenish
+	svga cannot go to quality=4 like longlens
+dcv3r
+	160 degrees
+	high res images very dark
+
+
+
+the longlens has good light
+both dc* cams have good light in the svga res, but are too dark at higher res
+bright sunlight coming thru may be closing the aperature
+but pictures taken at night were even darker
+
+dcv34r has higher fov
+but also has less fisheye distortion
+lenc=1 (lens correction) set on all three tests, maybe it works best with this cam
+I must assume this cam is 160 degrees and the other two are 120
+
+
+no
+the two dc* cams have higher fov
+the longlens has lower fov but more distortion
+lower fov means larger objects, more pixels per object
+all three cams will have to be cropped, but longlens the least
+
+
+
+
+
+
+
+
+
+control?var=quality&val=12
+http://192.168.4.1/control?var=framesize&val=13    UXGA     best quality=24
+http://192.168.4.1/control?var=framesize&val=12    SXGA      best quality=14
+http://192.168.4.1/control?var=framesize&val=11    HD          best quality=10
+http://192.168.4.1/control?var=framesize&val=5      QVGA
+
+
