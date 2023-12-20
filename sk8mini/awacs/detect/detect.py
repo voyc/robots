@@ -30,9 +30,18 @@ import sys
 import json
 import argparse
 import logging
+import os
 
 # globals
 spec = None  # dict containing command-line parameters, initialized in main()
+
+#--------------- image file management ----------------------------------------# 
+
+def readImage(fname):
+	img = cv2.imread(fname, cv2.IMREAD_UNCHANGED)
+	logging.info(f'reading image from {fname}')
+	logging.debug(f'image shape: {img.shape}')
+	return img
 
 #--------------- annotate management ----------------------------------------# 
 
@@ -250,8 +259,8 @@ def main():
 	parser.add_argument('-oi' ,'--oimage'         ,default=''                                                 ,help='output image filename. not in use.'                         ),
 	parser.add_argument('-im' ,'--imodel'         ,default='model.json'                                       ,help='input model filename.'                                      ),
 	parser.add_argument('-om' ,'--omodel'         ,default=''                                                 ,help='output model filename. default to input model.'             ),
-	parser.add_argument('-ia' ,'--iannotate'      ,default=''                                                 ,help='input annotate filename.'                                   ),
-	parser.add_argument('-oa' ,'--oannotate'      ,default=''                                                 ,help='output annotate filename.'                                  ),
+	parser.add_argument('-ia' ,'--iannosufx'      ,default='_train'                                           ,help='input annotate filename suffix.'                                   ),
+	parser.add_argument('-oa' ,'--oannosufx'      ,default='_annot'                                           ,help='output annotate filename suffix.'                                  ),
 	parser.add_argument('-c'  ,'--cls'            ,default='all'                                              ,help='name of classifier to be processed. default to "all".'      ),
 	parser.add_argument('-v'  ,'--verbose'        ,default=False                ,action='store_true'          ,help='display additional output messages.'                        ),
 	parser.add_argument('-q'  ,'--quiet'          ,default=False                ,action='store_true'          ,help='suppresses all output.'                                     ),
@@ -268,10 +277,6 @@ def main():
 		spec.oimage = spec.iimage
 	if spec.omodel == '':
 		spec.omodel = spec.imodel
-	if spec.iannotate == '':
-		spec.iannotate = spec.iimage.replace('.jpg', '_trained.csv' )
-	if spec.oannotate == '':
-		spec.oannotate = spec.iannotate
 
 	# logging
 	logging.basicConfig(format='%(message)s')
@@ -280,54 +285,48 @@ def main():
 		logging.getLogger('').setLevel(logging.DEBUG)
 	if spec.quiet:
 		logging.getLogger('').setLevel(logging.CRITICAL)
-
 	logging.debug(spec)
-
-	# read first image
-	if spec.iimage != 'all':
-		fname = spec.ifolder+spec.iimage
-		imgInput = cv2.imread(fname, cv2.IMREAD_UNCHANGED)
-		logging.info(f'reading first image from {fname}')
-		logging.debug(f'image shape: {imgInput.shape}')
 
 	# read model
 	fname = spec.ifolder+spec.imodel
 	model = readModel(fname)
 
-	# for training, read input annotation 
-	#annotate = readAnnote(spec.ifolder+spec.iannotate)
-	#if spec.verbose:
-	#	printAnnotate(annotate)
-
-	# for each class in the model
-	#for m in model:
-	#	processClass(imgInput, model, spec.cls)
-
-	if spec.manual:
-		openSettings(model[spec.cls])
-
-	while True:
-		if spec.manual:
-			readSettings( model[spec.cls])
-
-		annotate, images = detectObjects(imgInput, model[spec.cls])
-	
-		# show the images
-		if spec.manual:
-			imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate, imgEdged = images
-			stack = stackImages(0.7,([imgInput,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgEdged]))
-			cv2.imshow('Image Processing', stack)
-			if cv2.waitKey(1) & 0xFF == ord('q'):
-				break
-		else:
-			break
-
-	cv2.destroyAllWindows()
+	# loop all images in folder
+	firstfile = True
+	for filename in os.listdir(spec.ifolder):
+		if spec.iimage == 'all' or spec.iimage == filename: 
+			basename, ext = os.path.splitext(filename)
+			if ext == '.jpg': 
+				annotate = []
+				img = readImage(spec.ifolder+filename)
+				for m in model:
+					if spec.cls == 'all' or spec.cls == m:
+						annotate += processImageClass(img, model, m, firstfile)
+				writeAnnotate(annotate, spec.ofolder+basename+spec.oannosufx+'.csv')
+				firstfile = False
 
 	if spec.manual or spec.train:
 		writeModel(model, spec.ofolder+spec.omodel)
 
-	writeAnnotate(annotate, spec.ofolder+spec.oannotate)
+
+# one image one cls
+def processImageClass(img, model, cls, firstfile):
+	if spec.manual and firstfile:
+		openSettings(model[cls])
+		while True:
+			readSettings(model[cls])
+			annotate, images = detectObjects(img, model[cls])
+
+			# show the images
+			imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate, imgEdged = images
+			stack = stackImages(0.7,([img,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgEdged]))
+			cv2.imshow('Image Processing', stack)
+			if cv2.waitKey(1) & 0xFF == ord('q'):
+				break
+		cv2.destroyAllWindows()
+	else:
+		annotate, _ = detectObjects(img, model[cls])
+	return annotate
 
 
 if __name__ == "__main__":
