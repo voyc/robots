@@ -1,0 +1,33 @@
+fix camera, remove horizontal lines
+	where is the problem: power, awacs, camera
+	awacs
+		take down
+		check batteries
+		check power supply output
+	try camera pcb in mb board
+	try other camera in awacs
+
+complete cycle
+	revise sk8 to connect to awacs access point
+	connect sk8 and racerswift to awacs access point
+	run awacs, sk8, pilot, cam simultaneously 
+
+gather photos
+
+markup photos for training
+
+implement imu on sk8
+	throttle deck adjustment
+		build table of deck tilt angle to turning radius
+		write routines for throttle adjustment depending on deck tilt angle
+			do math for diameter of right-wheel vs left-wheel turning radii
+	helm control PID
+		try jrowberg software
+		find examples using dmp
+		find PID examples: equations, parameters, loops
+		write PID routines for helm
+
+
+
+
+

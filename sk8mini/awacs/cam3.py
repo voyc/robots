@@ -38,10 +38,21 @@ def takePhoto( framesize, quality, resname):
 	print(fname)
 	cv2.imwrite(fname, image)
 
+	x = 341
+	y = 203
+	w = 606
+	h = 622
+	r = x+w
+	b = y+h
+	#crop_image = image[x:w, y:h]
+	crop_image = image[y:b, x:r]
+	fname = f'{imgdir}/{lensname}_{resname}_{quality}_cropped.{ext}'
+	cv2.imwrite(fname, crop_image)
+
 def take3():
-	takePhoto( 13, 28, 'uxga');
-	takePhoto( 10, 14, 'sxga');
-	takePhoto(  9,  8, 'svga');
+#	takePhoto( 13, 32, 'uxga');
+	takePhoto( 12, 18, 'sxga');
+#	takePhoto(  9,  8, 'svga');
 
 def getText(qstring):
 	url = f'{camurl}/{qstring}'

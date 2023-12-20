@@ -246,8 +246,10 @@ void warmupServos() {
 *
 */
 
-const char* ssid = "JASMINE_2G"; 
-const char* password = "8496HAG#1";
+//const char* ssid = "JASMINE_2G"; 
+//const char* password = "8496HAG#1";
+const char* ssid = "AWACS";
+const char* password = "indecent";
 
 AsyncWebServer server(8080);
 

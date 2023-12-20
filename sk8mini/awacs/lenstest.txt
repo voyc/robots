@@ -46,3 +46,11 @@ http://192.168.4.1/control?var=framesize&val=11    HD          best quality=10
 http://192.168.4.1/control?var=framesize&val=5      QVGA
 
 
+crop for sxga
+341,203
+606,621
+
+magick b_dcxv2_sxga_14.jpg -crop 450x462+202+155 cropped.jpg
+
+convert b_dcxv2_sxga_18.jpg -crop 606x621+341+203 cropped18.jpg
+

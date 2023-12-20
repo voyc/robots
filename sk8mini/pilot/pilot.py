@@ -31,7 +31,8 @@ opthelm = 5
 savhelm = 0
 savthrottle = 0
 
-baseurl = 'http://192.168.1.100:8080'
+#baseurl = 'http://192.168.1.100:8080'
+baseurl = 'http://192.168.4.2:8080'
 linenum = 27
 minline = 27
 maxline = 37
