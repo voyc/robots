@@ -65,6 +65,12 @@ def writeAnnotate(annotate, fname):
 	for a in annotate:
 		logging.debug( f'{a[0]}, {a[1]}, {a[2]}, {a[3]}, {a[4]}, {a[5]}, {a[6]}, {a[7]}')
 
+def scoreAnnotate(train, annotate):
+	error = 0
+	diff = len(train) - len(annotate)
+	error = diff * 10
+	return error
+
 #--------------- model management ----------------------------------------# 
 
 #example_model = {  # input/output structure, the model, a json dict saved to disk as string
@@ -293,18 +299,31 @@ def main():
 
 	# loop all images in folder
 	firstfile = True
+	totalerror = 0
+	numfiles = 0
 	for filename in os.listdir(spec.ifolder):
 		if spec.iimage == 'all' or spec.iimage == filename: 
 			basename, ext = os.path.splitext(filename)
 			if ext == '.jpg': 
 				annotate = []
 				img = readImage(spec.ifolder+filename)
+				if spec.train:
+					train = readAnnotate(spec.ifolder+basename+spec.iannosufx+'.csv')
+
+				# loop classes for in model
 				for m in model:
 					if spec.cls == 'all' or spec.cls == m:
 						annotate += processImageClass(img, model, m, firstfile)
+				if spec.train:
+					error = scoreAnnotate(train, annotate)
+					totalerror += error
+					numfiles += 1
+					logging.debug(f'{numfiles} {basename} error: {error}')
 				writeAnnotate(annotate, spec.ofolder+basename+spec.oannosufx+'.csv')
 				firstfile = False
 
+	if spec.train:
+		meansqarederror = int(totalerror / numfiles)
 	if spec.manual or spec.train:
 		writeModel(model, spec.ofolder+spec.omodel)
 
