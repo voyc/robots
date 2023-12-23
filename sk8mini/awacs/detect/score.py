@@ -1,16 +1,20 @@
+' score.py - compare two annotation files'
+
 import numpy as np
 import copy
 import cv2
 
 
 # one training set and three tests
-imagefname = '/home/john/media/webapps/sk8mini/awacs/photos/training/test/00095.jpg'
-trainfname = '/home/john/media/webapps/sk8mini/awacs/photos/training/test/00095_train.csv'
-equalfname = '/home/john/media/webapps/sk8mini/awacs/photos/training/test/00095_annot_equal.csv'
-shortfname = '/home/john/media/webapps/sk8mini/awacs/photos/training/test/00095_annot_short.csv'
-extrafname = '/home/john/media/webapps/sk8mini/awacs/photos/training/test/00095_annot_extra.csv'
+imagefname = '/home/john/media/webapps/sk8mini/awacs/photos/training/test/test/00095.jpg'
+trainfname = '/home/john/media/webapps/sk8mini/awacs/photos/training/test/test/00095_train.csv'
+equalfname = '/home/john/media/webapps/sk8mini/awacs/photos/training/test/test/00095_annot_equal.csv'
+shortfname = '/home/john/media/webapps/sk8mini/awacs/photos/training/test/test/00095_annot_short.csv'
+extrafname = '/home/john/media/webapps/sk8mini/awacs/photos/training/test/test/00095_annot_extra.csv'
+closefname = '/home/john/media/webapps/sk8mini/awacs/photos/training/test/test/00095_annot_close.csv'
+testrfname = '/home/john/media/webapps/sk8mini/awacs/photos/training/test/test/00095_annot_testr.csv'
 
-annotfname = extrafname
+annotfname = testrfname
 
 # also needed
 # a program to dislay image with overlaid annotations
@@ -21,7 +25,7 @@ annotfname = extrafname
 tt = [1, 527, 43, 26, 25, 540, 55, 25]
 ta = [1, 529, 45, 22, 22, 540, 56, 22]
 
-penalty_missing = 10000
+penalty_missing = 1000
 penalty_extra = 900
 
 c=0
@@ -111,11 +115,6 @@ def match(train,annot):
 			annot[trow[m]-1][m] = tndx
 			annot[trow[m]-1][e] = trow[e]
 
-	print('train after match')
-	printAnnotate(train)
-	print('annot after match')
-	printAnnotate(annot)
-
 	# replace dupes, ie missing
 	strain = sorted(train, key=lambda a: [a[m], a[e]])	
 	save = -1
@@ -126,16 +125,35 @@ def match(train,annot):
 		else:
 			save = srow[m]
 
-	# total errors for all objects in train
+	print('train after match')
+	printAnnotate(train)
+	print('annot after match')
+	printAnnotate(annot)
+
+	# array of cls values in the train
+	acls = {}
+	for t in train:
+		acls[t[c]] = 0
+	
+	# total error for all objects in train
 	error = 0
 	for trow in train:
 		error += trow[e]
+		acls[trow[c]] += trow[e]
+
+	# plus extras in annot
 	for arow in annot:
 		if arow[m] == 0:
 			error += arow[e]
+			acls[arow[c]] += arow[e]
+
+	# calc means
+	for cls in acls:
+		err = acls[cls]
+		acls[cls] = [err, int(err / len(train))]
 
 	mean = int(error / len(train))
-	return error, mean
+	return error, mean, acls
 
 def draw(img, train, annot):
 	imgMap = img.copy()
@@ -171,6 +189,9 @@ def draw(img, train, annot):
 			aw = arow[w]
 			ah = arow[h]
 			imgMap = cv2.rectangle(imgMap, (al,at), (al+aw,at+ah), color, thickness) 
+			s = f'{arow[e]}'
+			color = (  0,  0,  0) 
+			cv2.putText(imgMap, s, (al-20,at), cv2.FONT_HERSHEY_PLAIN, 1, color)
 
 	return imgMap
 
@@ -179,16 +200,10 @@ def main():
 	train = readAnnotate(trainfname)
 	annot = readAnnotate(annotfname)
 	
-	# array of cls values in the train
-	clsScore = {}
-	for t in train:
-		clsScore[t[c]] = 0
-	#print(clsScore)
-	#print()
-	
 	# compare
-	error, mean = match(train,annot)
+	error, mean, acls = match(train,annot)
 	print(f'error: {error}, mean: {mean}')
+	print(acls)
 	
 	img = cv2.imread(imagefname, cv2.IMREAD_UNCHANGED)
 	imgMap = draw(img, train, annot)

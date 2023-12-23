@@ -4,10 +4,11 @@ import cv2
 import copy
 
 # one training set and three tests
-ifolder = '/home/john/media/webapps/sk8mini/awacs/photos/training/test/'
+ifolder = '/home/john/media/webapps/sk8mini/awacs/photos/training/test/test/'
 iannosufx = '_annot_extra'
 iannosufx = '_annot_short'
 iannosufx = '_annot_equal'
+iannosufx = '_annot_testr'
 
 c=0
 l=1
