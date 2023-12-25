@@ -76,7 +76,8 @@ def scoreAnnotate(train, annotate):
 #example_model = {  # input/output structure, the model, a json dict saved to disk as string
 #	'cone': {
 #		'name'     : 'cone',
-#		'cls'    : 1,
+#		'cls'      : 1,
+#		'algo'     : 1,
 #		'hue_min'  : 0,
 #		'hue_max'  : 127,
 #		'sat_min'  : 107,
@@ -85,12 +86,15 @@ def scoreAnnotate(train, annotate):
 #		'val_max'  : 255,
 #		'canny_lo' : 82,
 #		'canny_hi' : 127,
-#		'r_min'  :  10,
-#		'r_max'  : 900,
+#		'gray_min' : 82,
+#		'gray_max' : 127,
+#		'r_min'    : 1,
+#		'r_max'    : 90,
 #	},
 #	'wheel': {
 #		'name'     : 'wheel',
-#		'cls'    : 2,
+#		'cls'      : 2,
+#		'algo'     : 1,
 #		'hue_min'  : 0,
 #		'hue_max'  : 14,
 #		'sat_min'  : 107,
@@ -99,8 +103,10 @@ def scoreAnnotate(train, annotate):
 #		'val_max'  : 255,
 #		'canny_lo' : 82,
 #		'canny_hi' : 127,
-#		'r_min'  :  10,
-#		'r_max'  : 900,
+#		'gray_min' : 82,
+#		'gray_max' : 127,
+#		'r_min'    : 1,
+#		'r_max'    : 90,
 #	}
 #}
 
@@ -130,16 +136,19 @@ def empty(a): # passed to trackbar
 
 def openSettings(settings):
 	barmax = {
+		'algo'     : 3,
 		'hue_min'  : 255,
 		'hue_max'  : 255,
 		'sat_min'  : 255,
 		'sat_max'  : 255,
 		'val_min'  : 255,
 		'val_max'  : 255,
+		'gray_min' : 255,
+		'gray_max' : 255,
 		'canny_lo' : 255,
 		'canny_hi' : 255,
-		'r_min'  : 900,
-		'r_max'  : 900,
+		'r_min'    : 90,
+		'r_max'    : 90,
 	}
 	window_name = f'{settings["name"]} settings'
 	cv2.namedWindow( window_name, cv2.WINDOW_NORMAL)
@@ -188,36 +197,64 @@ def stackImages(scale,imgArray):
 #--------------- image processing ----------------------------------------# 
 
 def detectObjects(img, settings):
-	# mask based on hsv ranges
-	lower = np.array([settings['hue_min'],settings['sat_min'],settings['val_min']])
-	upper = np.array([settings['hue_max'],settings['sat_max'],settings['val_max']])
-	imgHsv = cv2.cvtColor(img,cv2.COLOR_BGR2HSV)
+	# fixed settings
+	gaus1 = 7
+	gaus2 = 7
+	gausblur = 1
+	dilate1 = 5
+	dilate2 = 5
+	dilateiter = 1
 
-	# step 1. make a mask by HSV settings
-	imgMask = cv2.inRange(imgHsv,lower,upper)
+	# initialize intermediate images
+	#width, height, depth = img.shape
+	imgMask = np.zeros((img.shape), np.uint8)
+	imgMask[:,:] = (0,0,255)    # (B, G, R)
+	imgMasked = imgMask.copy()
+	imgBlur = imgMask.copy() 
+	imgGray = imgMask.copy() 
+	imgCanny = imgMask.copy() 
+	imgDilate = imgMask.copy() 
+	imgMap = img.copy()
 
-	# step 2. apply the mask to the original.  no settings.
-	imgMasked = cv2.bitwise_and(img,img, mask=imgMask)
+	# algo = 0: hsv mask
+	# algo = 1: hsv mask plus blur and canny
+	# algo = 2: grayscale mask
+	# algo = 3: grayscale mask plus blur and canny
 
-	# step 3. apply Gaussian Blur.  settings fixed.
-	imgBlur = cv2.GaussianBlur(imgMasked, (7, 7), 1)
+	if settings['algo']  <= 1:  # hsv threshholds
+		# mask based on hsv ranges
+		lower = np.array([settings['hue_min'],settings['sat_min'],settings['val_min']])
+		upper = np.array([settings['hue_max'],settings['sat_max'],settings['val_max']])
+		imgThreshold = cv2.cvtColor(img,cv2.COLOR_BGR2HSV)
+		imgMask = cv2.inRange(imgThreshold,lower,upper)
+		imgEdged = imgMask.copy()   # skip steps 2,3,4,5,6
 
-	# step 4. convert to grayscale.  no settings.
-	imgGray = cv2.cvtColor(imgBlur, cv2.COLOR_BGR2GRAY)
+	elif settings['algo'] == 2 or settings['algo'] == 3:   # grayscale threshholds
+		imgThreshold = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+		ret, imgMask = cv2.threshold(imgThreshold, settings['gray_min'], settings['gray_max'], cv2.THRESH_BINARY)
+		imgEdged = imgMask.copy()
+		
+	if settings['algo']  == 1 or settings['algo']  == 3:   # blur and canny 
+		# step 2. apply the mask to the original.  no settings.
+		imgMasked = cv2.bitwise_and(img,img, mask=imgMask)
 
-	# step 5. canny edge detection.  Canny recommends hi:lo ratio around 2:1 or 3:1.
-	imgCanny = cv2.Canny(imgGray, settings['canny_lo'], settings['canny_hi'])
+		# step 3. apply Gaussian Blur.  settings fixed.
+		imgBlur = cv2.GaussianBlur(imgMasked, (gaus1, gaus2), gausblur)
 
-	# step 6. dilate, thicken, the edge lines.  settings fixed.
-	kernel = np.ones((5, 5))
-	imgDilate = cv2.dilate(imgCanny, kernel, iterations=1)
+		# step 4. convert to grayscale.  no settings.
+		imgGray = cv2.cvtColor(imgBlur, cv2.COLOR_BGR2GRAY)
+
+		# step 5. canny edge detection.  Canny recommends hi:lo ratio around 2:1 or 3:1.
+		imgCanny = cv2.Canny(imgGray, settings['canny_lo'], settings['canny_hi'])
+
+		# step 6. dilate, thicken, the edge lines.  settings fixed.
+		kernel = np.ones((dilate1, dilate2))
+		imgDilate = cv2.dilate(imgCanny, kernel, iterations=dilateiter)
+		imgEdged = imgDilate.copy()
+
 
 	# step 7. find countours.  get an array of polygons, one for each object.
 	# work with a copy because supposedly findContours() alters the image
-	if settings['canny_lo'] > 0:
-		imgEdged = imgDilate.copy()
-	else:
-		imgEdged = imgMask.copy()   # skip steps 2,3,4,5,6
 	contours, _ = cv2.findContours(imgEdged, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
 
 	# find box of each contour and qualify by size
@@ -235,7 +272,6 @@ def detectObjects(img, settings):
 			annotate.append([cls,x,y,w,h,cx,cy,r])	
 
 	# draw the boxes on the original map
-	imgMap = img.copy()
 	for a in annotate:
 		color = (0,0,255) 
 		thickness = 2
@@ -246,25 +282,58 @@ def detectObjects(img, settings):
 		h = a[4]
 		imgMap = cv2.rectangle(imgMap, (x,y), (x+w,y+h), color, thickness) 
 
+	cv2.putText(imgMask,   'Mask',   (20,20), cv2.FONT_HERSHEY_PLAIN, 2, (255,255,255))
+	cv2.putText(imgMasked, 'Masked', (20,20), cv2.FONT_HERSHEY_PLAIN, 2, (255,255,255))
+	cv2.putText(imgBlur,   'Blur',   (20,20), cv2.FONT_HERSHEY_PLAIN, 2, (255,255,255))
+	cv2.putText(imgGray,   'Gray',   (20,20), cv2.FONT_HERSHEY_PLAIN, 2, (255,255,255))
+	cv2.putText(imgCanny,  'Canny',  (20,20), cv2.FONT_HERSHEY_PLAIN, 2, (255,255,255))
+	cv2.putText(imgDilate, 'Dilate', (20,20), cv2.FONT_HERSHEY_PLAIN, 2, (255,255,255))
+
 	return annotate, [imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate, imgMap]
+
+# one image one cls
+def processImageClass(img, model, cls):
+	req = 'next'
+	if spec.manual:
+		openSettings(model[cls])
+		while True:
+			readSettings(model[cls])
+			annotate,images = detectObjects(img, model[cls])
+
+			# show the images
+			imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate, imgMap = images
+			stack = stackImages(0.7,([img,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap]))
+			cv2.imshow('Image Processing', stack)
+			key = cv2.waitKey(1)
+			if key & 0xFF == ord('q'):	# quit
+				req = 'quit'
+				break
+			elif key & 0xFF == 13:		# return, next image
+				req = 'next'
+				break
+		cv2.destroyAllWindows()
+	else:
+		annotate,_ = detectObjects(img, model[cls])
+	return annotate, req
+
 
 #--------------- main loop ----------------------------------------# 
 
 def main():
 	global spec
 
-	#example_folder = '/home/john/media/webapps/sk8mini/awacs/photos/training/'
+	example_folder = '/home/john/media/webapps/sk8mini/awacs/photos/training/'
 	#example_image = '00001.jpg'
 	#example_model = 'model.json'
 
 	# get command-line parameters 
 	parser = argparse.ArgumentParser()
-	parser.add_argument('-if' ,'--ifolder'        ,default=''                                                 ,help='input folder.'                                              ),
+	parser.add_argument('-if' ,'--ifolder'        ,default=example_folder                                     ,help='input folder.'                                              ),
 	parser.add_argument('-of' ,'--ofolder'        ,default=''                                                 ,help='output folder. default to input folder.'                    ),
 	parser.add_argument('-ii' ,'--iimage'         ,default='all'                                              ,help='input image filename.'                                      ),
 	parser.add_argument('-oi' ,'--oimage'         ,default=''                                                 ,help='output image filename. not in use.'                         ),
 	parser.add_argument('-im' ,'--imodel'         ,default='model.json'                                       ,help='input model filename.'                                      ),
-	parser.add_argument('-om' ,'--omodel'         ,default=''                                                 ,help='output model filename. default to input model.'             ),
+	parser.add_argument('-om' ,'--omodel'         ,default='newmodel.json'                                    ,help='output model filename. default to input model.'             ),
 	parser.add_argument('-ia' ,'--iannosufx'      ,default='_train'                                           ,help='input annotate filename suffix.'                                   ),
 	parser.add_argument('-oa' ,'--oannosufx'      ,default='_annot'                                           ,help='output annotate filename suffix.'                                  ),
 	parser.add_argument('-c'  ,'--cls'            ,default='all'                                              ,help='name of classifier to be processed. default to "all".'      ),
@@ -298,7 +367,7 @@ def main():
 	model = readModel(fname)
 
 	# loop all images in folder
-	firstfile = True
+	req = 'next'
 	totalerror = 0
 	numfiles = 0
 	for filename in os.listdir(spec.ifolder):
@@ -313,215 +382,23 @@ def main():
 				# loop classes for in model
 				for m in model:
 					if spec.cls == 'all' or spec.cls == m:
-						annotate += processImageClass(img, model, m, firstfile)
+						annot,req = processImageClass(img, model, m)
+						annotate += annot
+					if req == 'quit':
+						break
 				if spec.train:
 					error = scoreAnnotate(train, annotate)
 					totalerror += error
 					numfiles += 1
 					logging.debug(f'{numfiles} {basename} error: {error}')
 				writeAnnotate(annotate, spec.ofolder+basename+spec.oannosufx+'.csv')
-				firstfile = False
+		if req == 'quit':
+			break;
 
 	if spec.train:
 		meansqarederror = int(totalerror / numfiles)
 	if spec.manual or spec.train:
 		writeModel(model, spec.ofolder+spec.omodel)
 
-
-# one image one cls
-def processImageClass(img, model, cls, firstfile):
-	if spec.manual and firstfile:
-		openSettings(model[cls])
-		while True:
-			readSettings(model[cls])
-			annotate, images = detectObjects(img, model[cls])
-
-			# show the images
-			imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate, imgEdged = images
-			stack = stackImages(0.7,([img,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgEdged]))
-			cv2.imshow('Image Processing', stack)
-			if cv2.waitKey(1) & 0xFF == ord('q'):
-				break
-		cv2.destroyAllWindows()
-	else:
-		annotate, _ = detectObjects(img, model[cls])
-	return annotate
-
-
 if __name__ == "__main__":
 	main()
-
-
-
-
-'''
-input parameters
-read model
-for each image
-	read image
-	read annotation
-	loop thru classes
-		detectObjects, one image, one class
-			if manual, open settings for each class only on first image
-	write annotation file, one image, all classes
-
-if manual init
-	run separate loop - while settings open
-	one image, one class
-
-if --manual
-	on the first image, let the user initialize the model
-	separately for each class
-
-recommended usage if manual, one image, one class
-
-mode=detect
-mode=manual
-mode=train
-
-manual init of a class in a model, 
-	how do you add a new class?  edit the model json file.
-
-three different functions, depending on mode
-if mode=='manual'
-	manualModelInit()
-if mode=='train'
-	compare annotations, old and new, keep best, write out at the end
-if mode=='detect'
-	run one image at a time
-
-in production,
-	we want minimal code on the awacs to detect objects for each image
-	therefore, we do not want scoring, annotating, manual initing, etc linked in 
-
-detectObjects(img, model)
-	img and model have both been opened already
-
-the core loop
-	walks thru the steps
-	conditional compile? without all the debugging info	
-
-
-manual one image one classifiers
-manual one image all classifiers
-manual one image all classifiers write annotation
-manual one image all classifiers write annotation, read trainer annotation and calc error
-
-loop training
-	loop thru images
-		read first or specifed image
-		loop thru classes
-			processImage()
-		write annotation
-		
-		read next image, or exit
-	write error stats
-	adjust model parameter
-
-loopTraining()
-loopImages()
-loopClasses()
-processImage()
-
-loopTraining()
-	loopImages()
-		loopClasses()
-			annotation = annotateImageClass()
-			detectObjectsInOneImageForOneClass
-			add anno
-
-
-simplest case: call processImage() standalone, image and model in, annotation out
-	needs a wrapper to open the image and model, and to write the annotaion to a file
-
-manual results in a new starting model
-train results in a new ending model
-
-detect assume finished model, write annotations
-
-iannotation = 'training.json'
-oannotation - 'annotate.json'
-
-we might want to make the images and training.json files readonly
-'''
-
-
-
-'''
-presets out
-scoring
-
-
-usage:
-	input saved model
-	manually choose starting model 
-	process one image: image in, desired outcome in, model in, classifier and bbox list out, score out
-	score one image with one model
-		inputs: image, model, desired outcome
-		outputs: actual outcome, score
-	train model for one image
-	train model for multiple images
-		inputs: folder full of images, desired outcomes
-		
-
-	run one image repeatedly, thru all possible models, scoring each, return best model for the image
-	run multiple images repeatedly
-
-one object per image
-	classification, classifier
-	localization, bbox
-multiple objects per image
-	detection, list of classifier and bbox for each object in the image
-
-clustering
-threshhold
-segmentation
-edge detection, outline, mask, bbox 
-computer vision, same as object detection
-
-
-
-usage:
-
-realtime onboard awacs, function called for every frame
-
-
-
-
-object_list 
-# called in realtime from every awacs capture
-# called once for cones and once for vehicles
-# one model for each class
-
-
-def detect(img, model):
-	# write objects.json per image
-	return objects
-
-def train(fname, model):
-	# write model.json per folder
-	#oblistDesired = read object list
-	oblistActual = detectObjects()
-	score = score(oblistDesired, oblistActual)
-	if score < low_score:
-		best_model = model
-	return best_model
-
-def score(oblist1, oblist2):
-	#compare lists	
-	#do we want low score or high score?
-	#0 is equal
-	#absolute value of score, the lower the better
-	#compare each item in the list
-	#classifer, box
-	#box: l,t,r,b
-	#diff: l,t,r,b
-	#squared diff: l,t,r,b
-	#score = average of the 4 squared diffs
-	#"mean squared error"
-	#what about missing objects in actual list?
-	#what about extra objects in actual list?
-	score = 12
-	return score
-'''	
-
