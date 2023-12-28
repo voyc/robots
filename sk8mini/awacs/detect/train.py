@@ -10,13 +10,14 @@ import os
 import copy
 import cv2
 import numpy as np
-import csv
+#import csv
 import json
 import argparse
 import logging
 
 import lib.model
-
+import lib.score
+import lib.detection
 
 # used for both schedule and model
 def prettyPrint(json_dict):
@@ -47,11 +48,7 @@ def detectObjects(img,model,cls):
 	upper = np.array([sp[1]['value'], sp[3]['value'], sp[5]['value']])
 	imgMask = cv2.inRange(img,lower,upper)
 
-	print(lower, upper)
-
 	contours, _ = cv2.findContours(imgMask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-	if len(contours) > 3:
-		breakpoint()
 
 	#qualify by size
 	sz = mod['size']
@@ -70,17 +67,21 @@ def detectObjects(img,model,cls):
 			size = np.array([w,h])
 		
 		if inRange(size, lowerSize, upperSize):
-			detected.append(bbox)
+			row = [cls,x,y,w,h]
+			detected.append(row)
 
-	print(f'contours found: {len(contours)}, qualified by size: {len(detected)}')
+	#print(f'contours found: {len(contours)}, qualified by size: {len(detected)}')
 	return detected
 
-def readDetect(fname):
-	with open(fname) as f:
-		contents = csv.reader(f)
-		train = list(contents)
-		train = np.intp(train)
-	return train
+#def readDetect(fname):
+#	with open(fname) as f:
+#		contents = csv.reader(f)
+#		sdata = list(contents)
+##		train = np.intp(train)
+#		idata = []
+#		for line in reader:
+#			idata.append([int(line)])
+#	return idata
 
 def showDetect(image,detect):
 	img = copy.deepcopy(image)
@@ -96,23 +97,22 @@ def showDetect(image,detect):
 	cv2.imshow('test', img)
 	cv2.waitKey(0)
 
-#--------------- score ---------------------------------------------------------#
+#--------------- training ----------------------------------------------#
 
-def scoreFolder(model,folder, cls):
+def scoreFolder(model, cls, folder, trainsufx):
 	total_score = 0
 	for filename in os.listdir(folder):
 		basename, ext = os.path.splitext(filename)
 		if ext == '.jpg':
 			#print(f'open image {filename}')
-			img = cv2.imread(ifolder+filename, cv2.IMREAD_UNCHANGED)
-			train = readDetect(ifolder+basename+itrainsufx)
+			img = cv2.imread(folder+filename, cv2.IMREAD_UNCHANGED)
+			train = lib.detection.read(folder+basename+trainsufx)
 			detect = detectObjects(img,model,cls)
-			score = len(detect)  #score = score(train,detect)
+			score = lib.score.match(train,detect)
 			total_score += score
 	
 	return total_score
 
-#--------------- training ----------------------------------------------#
 
 def trainModel(model, cls, level):
 	example_schedule = [
@@ -184,25 +184,16 @@ def trainModel(model, cls, level):
 		if args.paging and not nloop % 50:
 			breakpoint()
 
-#		#print( skdepth, end='', flush=True)
-#		score = scoreFolder(model, folder, cls)
-#		#print(f'score:{score}')
-#
-#		if score < low_score:
-#			low_score = score
-#			#print(f'low score: {low_score}')
-#			# move all values from schedule to model	
-#			spec = model[cls]['spec']
-#			for n in range(skn):
-#				spec[n]['value'] = schedule[n]['value']
-#
-#			# move the schedule values to the model
-#				
-#			best_model = copy.deepcopy(model)
+		score = scoreFolder(model, cls, args.ifolder, args.itrainsufx)
+
+		if score < low_score:
+			low_score = score
+			print(f'new low score: {low_score}')
+			best_model = copy.deepcopy(model)
 		training = bumpSchedule()
 		nloop += 1
 
-	prettyPrint(best_model)
+	logging.info(lib.model.format(best_model))
 
 #--------------- main ----------------------------------------------#
 
