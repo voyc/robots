@@ -12,7 +12,12 @@ example filenames:
 00001.jpg - the image
 00001_detect.csv - the detection file
 00001_train.csv - a perfected detection file, used for training
-'''
+
+formats:
+bbox: l,t,w,h
+center: cx,cy,w,h
+realtime: cx,cy,ra
+''' 
 
 import csv
 

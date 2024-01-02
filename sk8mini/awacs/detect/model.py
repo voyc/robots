@@ -26,7 +26,7 @@ def format(model):
 		s += f"{model[n]['cls']} {model[n]['name']}\n"
 		for sp in model[n]['spec']:
 			s += f"{sp}\n"
-		s += f"model[n]['size']\n"
+		s += f"{model[n]['size']}\n"
 	return s
 
 # loop thru cls and spec

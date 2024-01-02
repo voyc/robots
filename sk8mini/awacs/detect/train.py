@@ -15,9 +15,9 @@ import json
 import argparse
 import logging
 
-import lib.model
-import lib.score
-import lib.detection
+import model as mod
+import score as scr
+import detection
 
 # used for both schedule and model
 def prettyPrint(json_dict):
@@ -106,10 +106,11 @@ def scoreFolder(model, cls, folder, trainsufx):
 		if ext == '.jpg':
 			#print(f'open image {filename}')
 			img = cv2.imread(folder+filename, cv2.IMREAD_UNCHANGED)
-			train = lib.detection.read(folder+basename+trainsufx)
+			train = detection.read(folder+basename+trainsufx)
 			detect = detectObjects(img,model,cls)
-			score = lib.score.match(train,detect)
-			total_score += score
+			error, mean, acls = scr.matchup(train,detect)
+			total_score += mean 
+			total_error += error
 	
 	return total_score
 
@@ -188,12 +189,13 @@ def trainModel(model, cls, level):
 
 		if score < low_score:
 			low_score = score
-			print(f'new low score: {low_score}')
+			logging.info(f'new low score: {low_score}')
 			best_model = copy.deepcopy(model)
 		training = bumpSchedule()
 		nloop += 1
 
-	logging.info(lib.model.format(best_model))
+	logging.info(mod.format(best_model))
+	return best_model
 
 #--------------- main ----------------------------------------------#
 
@@ -226,9 +228,9 @@ def main():
 	logging.debug(args)
 
 	# get model
-	model = lib.model.read(os.path.join(args.ifolder, args.imodel))
+	model = mod.read(os.path.join(args.ifolder, args.imodel))
 	if args.scratch:
-		lib.model.initialize(model,args.cls)
+		mod.initialize(model,args.cls)
 	best_model = copy.deepcopy(model)
 	for cls in model:
 		modcls = model[cls]
@@ -245,10 +247,11 @@ def main():
 		for level in range(numlevels):
 			if args.level != 'all' and int(args.level) != level:
 				continue
-			trainModel(model, cls, level)
+			model = trainModel(model, cls, level)  # overwrites the original model
 
-	#write best model
-	#writeModel(fname, model)
+	#write finished model
+	mod.write(model, os.path.join(args.ifolder, args.omodel))
+	logging.info(mod.format(model))
 
 if __name__ == "__main__":
 	main()
