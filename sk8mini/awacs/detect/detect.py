@@ -1,202 +1,14 @@
 '''
-detect.py - object detection by image processing
+detect.py - object detection library
+using image processing rather than a neural net
 originally taken from tello murtaza
-
-The image is a numpy array.
-
-There are multiple ways to manipulate the numpy array.
-  - a python for-loop (slow)
-  - a numpy vector math method (fast)
-  - methods of an image processing package, like:
-    . opencv: computer vision
-    . matplotlib: similar to MatLab
-    . scikit-learn, aka sklearn: machine learning
-    . scipy: optimization, linear regression, image processing, etc.
-
-Object detection can be done in multiple ways, including:
-  . computer vision, algorithmic
-  . neural net, non-algorithmic AI
-
-The active ingredient in this program is function 
-	annotate = detectObjects(image, model)
-
 See robots/autonomy/hippoc.py and https://www.youtube.com/watch?v=aJsPsY1hIhop
 '''
 
 import numpy as np
 import cv2
-from datetime import datetime
-import sys
-import json
-import argparse
-import logging
-import os
 
-# globals
-spec = None  # dict containing command-line parameters, initialized in main()
-
-#--------------- image file management ----------------------------------------# 
-
-def readImage(fname):
-	img = cv2.imread(fname, cv2.IMREAD_UNCHANGED)
-	logging.info(f'reading image from {fname}')
-	logging.debug(f'image shape: {img.shape}')
-	return img
-
-#--------------- annotate management ----------------------------------------# 
-
-#example_annotate = [   # input/output structure, a list of lists, saved to disk as csv
-#	[1, 533, 517, 20, 20, 543, 527, 20],   # cls, x,y,w,h,cx,cy,r
-#	[1, 72, 512, 31, 24, 87, 524, 27],
-#	[1, 186, 407, 27, 21, 199, 417, 24],
-#	[2, 482, 288, 8, 10, 486, 293, 9],
-#	[2, 500, 265, 7, 11, 503, 270, 9],
-#	[3, 471, 279, 30, 27, 486, 292, 28]
-#]
-
-def readAnnotate():
-	return
-
-def writeAnnotate(annotate, fname):
-	with open(fname, 'w') as f:
-		for a in annotate:
-			f.write( f'{a[0]}, {a[1]}, {a[2]}, {a[3]}, {a[4]}, {a[5]}, {a[6]}, {a[7]}\n')
-	logging.info(f'writing annotate to {fname}')
-	for a in annotate:
-		logging.debug( f'{a[0]}, {a[1]}, {a[2]}, {a[3]}, {a[4]}, {a[5]}, {a[6]}, {a[7]}')
-
-def scoreAnnotate(train, annotate):
-	error = 0
-	diff = len(train) - len(annotate)
-	error = diff * 10
-	return error
-
-#--------------- model management ----------------------------------------# 
-
-#example_model = {  # input/output structure, the model, a json dict saved to disk as string
-#	'cone': {
-#		'name'     : 'cone',
-#		'cls'      : 1,
-#		'algo'     : 1,
-#		'hue_min'  : 0,
-#		'hue_max'  : 127,
-#		'sat_min'  : 107,
-#		'sat_max'  : 255,
-#		'val_min'  : 89,
-#		'val_max'  : 255,
-#		'canny_lo' : 82,
-#		'canny_hi' : 127,
-#		'gray_min' : 82,
-#		'gray_max' : 127,
-#		'r_min'    : 1,
-#		'r_max'    : 90,
-#	},
-#	'wheel': {
-#		'name'     : 'wheel',
-#		'cls'      : 2,
-#		'algo'     : 1,
-#		'hue_min'  : 0,
-#		'hue_max'  : 14,
-#		'sat_min'  : 107,
-#		'sat_max'  : 255,
-#		'val_min'  : 89,
-#		'val_max'  : 255,
-#		'canny_lo' : 82,
-#		'canny_hi' : 127,
-#		'gray_min' : 82,
-#		'gray_max' : 127,
-#		'r_min'    : 1,
-#		'r_max'    : 90,
-#	}
-#}
-
-def readModel(fname):
-	with open(fname, 'r') as f:
-		model = json.load(f)
-	logging.info(f'reading model from {fname}')
-	logging.debug(json.dumps(model, indent=4))
-	logging.debug(f'model contains {len(model)} classifiers')
-	for m in model:
-		logging.debug(f'{model[m]["cls"]} {m}')
-	return model
-
-def writeModel(model, fname):
-	with open(fname, 'w') as f:
-		f.write(json.dumps(model, indent=4))
-	logging.info(f'writing model to {fname}')
-	logging.debug(json.dumps(model, indent=4))
-	logging.debug(f'model contains {len(model)} classifiers')
-	for m in model:
-		logging.debug(f'{model[m]["cls"]} {m}')
-
-#--------------- manual model initialization, aka "settings" ----------------------------------------# 
-
-def empty(a): # passed to trackbar
-	pass
-
-def openSettings(settings):
-	barmax = {
-		'algo'     : 3,
-		'hue_min'  : 255,
-		'hue_max'  : 255,
-		'sat_min'  : 255,
-		'sat_max'  : 255,
-		'val_min'  : 255,
-		'val_max'  : 255,
-		'gray_min' : 255,
-		'gray_max' : 255,
-		'canny_lo' : 255,
-		'canny_hi' : 255,
-		'r_min'    : 90,
-		'r_max'    : 90,
-	}
-	window_name = f'{settings["name"]} settings'
-	cv2.namedWindow( window_name, cv2.WINDOW_NORMAL)
-	cv2.resizeWindow(window_name, 600, 240) 
-	for setting in settings:
-		if setting != 'name' and setting != 'cls':
-			cv2.createTrackbar(setting, window_name, settings[setting], barmax[setting], empty)
-
-def readSettings(settings):
-	window_name = f'{settings["name"]} settings'
-	for setting in settings:
-		if setting != 'name' and setting != 'cls':
-			settings[setting] = cv2.getTrackbarPos(setting, window_name)
-
-def stackImages(scale,imgArray):
-	rows = len(imgArray)
-	cols = len(imgArray[0])
-	rowsAvailable = isinstance(imgArray[0], list)
-	width = imgArray[0][0].shape[1]
-	height = imgArray[0][0].shape[0]
-	if rowsAvailable:
-		for x in range ( 0, rows):
-			for y in range(0, cols):
-				if imgArray[x][y].shape[:2] == imgArray[0][0].shape [:2]:
-					imgArray[x][y] = cv2.resize(imgArray[x][y], (0, 0), None, scale, scale)
-				else:
-					imgArray[x][y] = cv2.resize(imgArray[x][y], (imgArray[0][0].shape[1], imgArray[0][0].shape[0]), None, scale, scale)
-				if len(imgArray[x][y].shape) == 2: imgArray[x][y]= cv2.cvtColor( imgArray[x][y], cv2.COLOR_GRAY2BGR)
-		imageBlank = np.zeros((height, width, 3), np.uint8)
-		hor = [imageBlank]*rows
-		hor_con = [imageBlank]*rows
-		for x in range(0, rows):
-			hor[x] = np.hstack(imgArray[x])
-		ver = np.vstack(hor)
-	else:
-		for x in range(0, rows):
-			if imgArray[x].shape[:2] == imgArray[0].shape[:2]:
-				imgArray[x] = cv2.resize(imgArray[x], (0, 0), None, scale, scale)
-			else:
-				imgArray[x] = cv2.resize(imgArray[x], (imgArray[0].shape[1], imgArray[0].shape[0]), None,scale, scale)
-			if len(imgArray[x].shape) == 2: imgArray[x] = cv2.cvtColor(imgArray[x], cv2.COLOR_GRAY2BGR)
-		hor= np.hstack(imgArray)
-		ver = hor
-	return ver
-
-#--------------- image processing ----------------------------------------# 
-
-def detectObjects(img, settings):
+def detectObjectsMurtaza(img, settings):
 	# fixed settings
 	gaus1 = 7
 	gaus2 = 7
@@ -291,114 +103,41 @@ def detectObjects(img, settings):
 
 	return annotate, [imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate, imgMap]
 
-# one image one cls
-def processImageClass(img, model, cls):
-	req = 'next'
-	if spec.manual:
-		openSettings(model[cls])
-		while True:
-			readSettings(model[cls])
-			annotate,images = detectObjects(img, model[cls])
 
-			# show the images
-			imgMask, imgMasked, imgBlur, imgGray, imgCanny, imgDilate, imgMap = images
-			stack = stackImages(0.7,([img,imgMask,imgMasked,imgBlur],[imgGray,imgCanny,imgDilate,imgMap]))
-			cv2.imshow('Image Processing', stack)
-			key = cv2.waitKey(1)
-			if key & 0xFF == ord('q'):	# quit
-				req = 'quit'
-				break
-			elif key & 0xFF == 13:		# return, next image
-				req = 'next'
-				break
-		cv2.destroyAllWindows()
-	else:
-		annotate,_ = detectObjects(img, model[cls])
-	return annotate, req
+def detectObjects(img,model,cls):
+	def inRange( a, lower, upper):  # comparing np arrays
+		return np.greater_equal(a, lower).all() and np.less_equal(a, upper).all()
 
+	mod = model[cls]
 
-#--------------- main loop ----------------------------------------# 
+	# algo 1 hsv
+	sp = mod['spec']
+	lower = np.array([sp[0]['value'], sp[2]['value'], sp[4]['value']])
+	upper = np.array([sp[1]['value'], sp[3]['value'], sp[5]['value']])
+	imgMask = cv2.inRange(img,lower,upper)
 
-def main():
-	global spec
+	contours, _ = cv2.findContours(imgMask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
 
-	example_folder = '/home/john/media/webapps/sk8mini/awacs/photos/training/'
-	#example_image = '00001.jpg'
-	#example_model = 'model.json'
+	#qualify by size
+	sz = mod['size']
+	lowerSize = np.array([sz[0][0], sz[1][0]])
+	upperSize = np.array([sz[0][1], sz[1][1]])
 
-	# get command-line parameters 
-	parser = argparse.ArgumentParser()
-	parser.add_argument('-if' ,'--ifolder'        ,default=example_folder                                     ,help='input folder.'                                              ),
-	parser.add_argument('-of' ,'--ofolder'        ,default=''                                                 ,help='output folder. default to input folder.'                    ),
-	parser.add_argument('-ii' ,'--iimage'         ,default='all'                                              ,help='input image filename.'                                      ),
-	parser.add_argument('-oi' ,'--oimage'         ,default=''                                                 ,help='output image filename. not in use.'                         ),
-	parser.add_argument('-im' ,'--imodel'         ,default='model.json'                                       ,help='input model filename.'                                      ),
-	parser.add_argument('-om' ,'--omodel'         ,default='newmodel.json'                                    ,help='output model filename. default to input model.'             ),
-	parser.add_argument('-ia' ,'--iannosufx'      ,default='_train'                                           ,help='input annotate filename suffix.'                                   ),
-	parser.add_argument('-oa' ,'--oannosufx'      ,default='_annot'                                           ,help='output annotate filename suffix.'                                  ),
-	parser.add_argument('-c'  ,'--cls'            ,default='all'                                              ,help='name of classifier to be processed. default to "all".'      ),
-	parser.add_argument('-v'  ,'--verbose'        ,default=False                ,action='store_true'          ,help='display additional output messages.'                        ),
-	parser.add_argument('-q'  ,'--quiet'          ,default=False                ,action='store_true'          ,help='suppresses all output.'                                     ),
-	parser.add_argument('-m'  ,'--manual'         ,default=False                ,action='store_true'          ,help='let user initialize the model manually'                     ),
-	parser.add_argument('-t'  ,'--train'          ,default=False                ,action='store_true'          ,help='train the model.'                                           ),
-	spec = parser.parse_args()	# returns Namespace object, use dot-notation
+	labels = []
+	for cnt in contours:
 
-	# set defaults for missing params
-	if spec.ifolder != '' and spec.ifolder[len(spec.ifolder)-1] != '/':
-		spec.ifolder += '/'
-	if spec.ofolder == '':
-		spec.ofolder = spec.ifolder
-	if spec.oimage == '':
-		spec.oimage = spec.iimage
-	if spec.omodel == '':
-		spec.omodel = spec.imodel
+		if False:
+			rect = cv2.minAreaRect(cnt) 
+			size = rect[1]
+		else:
+			bbox = cv2.boundingRect(cnt)
+			x, y, w, h = bbox
+			size = np.array([w,h])
+		
+		if inRange(size, lowerSize, upperSize):
+			row = [cls,x,y,w,h,0]
+			labels.append(row)
 
-	# logging
-	logging.basicConfig(format='%(message)s')
-	logging.getLogger('').setLevel(logging.INFO)
-	if spec.verbose:
-		logging.getLogger('').setLevel(logging.DEBUG)
-	if spec.quiet:
-		logging.getLogger('').setLevel(logging.CRITICAL)
-	logging.debug(spec)
+	#print(f'contours found: {len(contours)}, qualified by size: {len(labels)}')
+	return labels
 
-	# read model
-	fname = spec.ifolder+spec.imodel
-	model = readModel(fname)
-
-	# loop all images in folder
-	req = 'next'
-	totalerror = 0
-	numfiles = 0
-	for filename in os.listdir(spec.ifolder):
-		if spec.iimage == 'all' or spec.iimage == filename: 
-			basename, ext = os.path.splitext(filename)
-			if ext == '.jpg': 
-				annotate = []
-				img = readImage(spec.ifolder+filename)
-				if spec.train:
-					train = readAnnotate(spec.ifolder+basename+spec.iannosufx+'.csv')
-
-				# loop classes for in model
-				for m in model:
-					if spec.cls == 'all' or spec.cls == m:
-						annot,req = processImageClass(img, model, m)
-						annotate += annot
-					if req == 'quit':
-						break
-				if spec.train:
-					error = scoreAnnotate(train, annotate)
-					totalerror += error
-					numfiles += 1
-					logging.debug(f'{numfiles} {basename} error: {error}')
-				writeAnnotate(annotate, spec.ofolder+basename+spec.oannosufx+'.csv')
-		if req == 'quit':
-			break;
-
-	if spec.train:
-		meansqarederror = int(totalerror / numfiles)
-	if spec.manual or spec.train:
-		writeModel(model, spec.ofolder+spec.omodel)
-
-if __name__ == "__main__":
-	main()

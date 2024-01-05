@@ -5,10 +5,10 @@ import copy
 
 # one training set and three tests
 ifolder = '/home/john/media/webapps/sk8mini/awacs/photos/training/test/test/'
-iannosufx = '_annot_extra'
-iannosufx = '_annot_short'
-iannosufx = '_annot_equal'
-iannosufx = '_annot_testr'
+iannosufx = '_detect_extra'
+iannosufx = '_detect_short'
+iannosufx = '_detect_equal'
+iannosufx = '_detect_testr'
 
 c=0
 l=1

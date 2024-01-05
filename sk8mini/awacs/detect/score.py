@@ -11,7 +11,8 @@ during model training, we compare a detection list to its corresponding training
 import numpy as np
 import copy
 import cv2
-import detection
+
+import label
 
 penalty_missing = 1000
 penalty_extra = 900
@@ -42,7 +43,8 @@ wd  =18  # rotated size
 ht  =19
 ang =20  # angle
 
-def computeHeading():
+def computeHeading(angle):
+	heading = angle
 	# width, height, and angle returned from cv2.minRectArea() have to be interpreted.
 
 	# The angle returned from minRectArea() is from 0 to -90 degrees, ie, Quadrant IV, 
@@ -67,31 +69,32 @@ def computeHeading():
 	# ENU  east, north, up - world frame
 	# RPY  roll, pitch, yaw - vehicle body frame
 
-	longitudinal axis runs from west to east, from tail to nose, assigned to x
-	lateral axis runs from south to north, from right to left, assigned to y
+	# longitudinal axis runs from west to east, from tail to nose, assigned to x
+	# lateral axis runs from south to north, from right to left, assigned to y
 
 	# unit circle trignometry
 	# https://degreespatsuriwa.blogspot.com/2017/09/degrees-quadrant.html
 	# http://theo.x10hosting.com/examples/quadrants_1.jpg
 
 
-	this is the same system used by minAreaRect(),
-	0 degrees is horizontal pointing east
-	the direction of travel is along the x axis
+	# this is the same system used by minAreaRect(),
+	# 0 degrees is horizontal pointing east
+	# the direction of travel is along the x axis
 
-	at 0 degrees, the vehicle is pointing east 
-	the length of the vehicle is measured along the x-axis, an is therefore returned as width
-	the 
-	width is the x axis, the length or longest side of the vehicle
-	height is the y axis, the width or shortest side of the vehicle 
-	therefore width measures the x axis and height measures 
+	# at 0 degrees, the vehicle is pointing east 
+	# the length of the vehicle is measured along the x-axis, an is therefore returned as width
+	# the 
+	# width is the x axis, the length or longest side of the vehicle
+	# height is the y axis, the width or shortest side of the vehicle 
+	# therefore width measures the x axis and height measures 
 
-	heading is at 90 degrees to the computer graphics angle
+	# heading is at 90 degrees to the computer graphics angle
 
 	# step 1.  fix angle for width and height
 	# step 2.  compute the compass heading from the angle, two possible answers
 	#             we need to know difference between the nose and the tail of the vehicle
 	# 		we could use the comparison with the previous center, but that is inconclusive
+	return heading
 
 def correctWidthVsHeight(width,height,angle):
 	if width > height:
@@ -103,8 +106,6 @@ def correctWidthVsHeight(width,height,angle):
 		w = height
 		a = angle  
 
-at 0 
-	
 	return w,h,a
 
 def convertAngleToHeading(angle):
@@ -369,13 +370,12 @@ def main():
 	matchone('detect_testr')
 	matchone('detect_short')
 	matchone('detect_extra')
-	quit()
 
 	#print(detection.format(detect_equal))
-	#img = cv2.imread(imagefname, cv2.IMREAD_UNCHANGED)
-	#imgMap = draw(img, train, detect)
-	#cv2.imshow('matched', imgMap)
-	#cv2.waitKey(0) # wait indefinitely for keystroke
+	img = cv2.imread(imagefname, cv2.IMREAD_UNCHANGED)
+	imgMap = draw(img, train, detect_extra)
+	cv2.imshow('matched', imgMap)
+	cv2.waitKey(0) # wait indefinitely for keystroke
 
 if __name__ == '__main__':
 	main()
