@@ -56,8 +56,8 @@ def main():
 	image = cv2.imread(fname, cv2.IMREAD_UNCHANGED)
 	#image = draw.createImage()
 	selected = 3
-	image = draw.draw(image, label, options_label, selected)
-	image = draw.draw(image, truth, options_truth, selected)
+	image = draw.drawImage(image, label, options_label, selected)
+	image = draw.drawImage(image, truth, options_truth, selected)
 	draw.showImage(image)
 
 if __name__ == '__main__':

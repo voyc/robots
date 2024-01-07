@@ -17,7 +17,7 @@ import logging
 
 import model as mod
 import score as scr
-import detection
+import label
 
 # used for both schedule and model
 def prettyPrint(json_dict):
@@ -106,7 +106,7 @@ def scoreFolder(model, cls, folder, trainsufx):
 		if ext == '.jpg':
 			#print(f'open image {filename}')
 			img = cv2.imread(folder+filename, cv2.IMREAD_UNCHANGED)
-			train = detection.read(folder+basename+trainsufx)
+			train = label.read(folder+basename+trainsufx)
 			detect = detectObjects(img,model,cls)
 			error, mean, acls = scr.matchup(train,detect)
 			total_score += mean 

@@ -1,37 +1,41 @@
 '''
 label.py - label management library
 
-a label object is a two-dimensional list of integers, 
-one row for each detected object in an image
-the first column is the classifier
-the next four columns represent the bounding box for cones, or the center box for the sk8
-the fifth column is the heading of the sk8, 0 for cones
-this list is assumed to have been sorted, ala sorted(label)
+A label is a two-dimensional list of integers, 
+one row for each detected object in an image.
 
-Three use cases:
-	1. scoring: bbox, cbox+angle
-	2. future AI training: unknown, possibly keypoints 
-	3. realtime: cone centers, vehicle center and heading
-
-a label object is stored in a .csv file
+A label object is stored in a .csv file.
 example filenames:
 00001.jpg - the image
 00001_label.csv - the label file
 00001_truth.csv - a perfected label file, "ground truth", used for training
 
+Three use cases:
+	1. training: compare computed label to truth
+	2. serving: realtime data broadcast and used for navigation
+
+The typical label file in AI is a bbox, plus optional keypoints.
+
+sk8 Format
+	the first column is the classifier
+	the next five columns represent the rotated rectangle
+
+this list is assumed to have been sorted, ala sorted(label)
+
 ''' 
 
 import csv
+import math
 
 # index the columns of a label list
 cls = 0	# clsid 1:cone, 2:sk8
-l = 1	# bbox for cone, centerbox for sk8
-t = 2
-w = 3
+cx = 1	# centerpoint
+cy = 2
+w = 3   # size
 h = 4
-a = 5  # heading angle
-m = 6  # match, used temporarily during scoring
-e = 7  # error, used temporarily during scoring
+a = 5   # heading
+m = 6   # match, used temporarily during scoring
+e = 7   # error, used temporarily during scoring
 
 def read(fname):
 	label = []
@@ -49,7 +53,7 @@ def write(label, fname):
 		wr = csv.writer(f)
 		wr.writerows(label)
 
-# output formats
+# output string formats
 def format(label, format='display'):
 	s = ''
 	if format == 'realtime':
@@ -62,7 +66,38 @@ def format(label, format='display'):
 			s += str(row)+'\n'
 	return s
 
-def rbox2bbox(rbox)
+#------------------- data structures ------------------#
+'''	
+data structures:
+	rect - Rotated Rect, returned from minAreaRect()
+	rrect - modified version of rect
+	bbox - bounding box
+
+rect
+
+(cx,cy), (w,h), a = cv2.minAreaRect():
+
+when rect is upright, h > w
+when rect is supine,  w > h
+when rect is square, the 1st line segment is the top, not the side
+	therefore, a is never 0, it goes to 90
+	(in a similar way, hdg is never 360, it goes to 0)
+
+To better understand the rect, we can look at the four points returned from cv2.boxPoints(rect)
+	the first point is the left-top (lowest x, with lowest y as tie-breaker)
+	remaining points proceed clockwise
+	1st line segment is considered h
+	2nd line segment is considered w
+
+rrect
+
+3 adjustments are made from rect
+	w and h have been normalized so w < h regardless of orientation
+	a is replaced with heading
+	the structure is a list with 5 elements
+'''
+
+def rbox2bbox(rbox):
 	ctr = (rbox[0], rbox[1])
 	size = (rbox[2], rbox[3])
 	angle = rbox[4]
@@ -70,112 +105,6 @@ def rbox2bbox(rbox)
 	contour = cv2.boxPoints(rrect)	
 	bbox = cv2.boundingArea(contour)
 	return bbox
-
-def computeHeading(angle):
-	heading = angle
-	# width, height, and angle returned from cv2.minRectArea() have to be interpreted.
-
-	# The angle returned from minRectArea() is from 0 to -90 degrees, ie, Quadrant IV, 
-	# computed from horizontal to the easternmost side of the rotated rectangle.
-
-	# width and height are reversed depending on which side is being used to compute the angle
-	# 0 is horizontal, -90 is vertical
-
-	# The animated explanation at https://theailearner.com/tag/cv2-minarearect/
-	# would be more helpful if it was rotating counter-clockwise.
-
-	# step 1, determine longest dimension vs shortest dimension 
-	# for clsid=2, 'sk8', the long side is the height, the y-dimension
-	# the short side is the width, the x-dimension 
-
-	# the direction of travel is the x dimension
-	# roll occurs about the y axis
-
-	# convert relative to north=0 or 360
-
-	# orientation systems often used for vehicles, see https://en.wikipedia.org/wiki/Axes_conventions
-	# ENU  east, north, up - world frame
-	# RPY  roll, pitch, yaw - vehicle body frame
-
-	# longitudinal axis runs from west to east, from tail to nose, assigned to x
-	# lateral axis runs from south to north, from right to left, assigned to y
-
-	# unit circle trignometry
-	# https://degreespatsuriwa.blogspot.com/2017/09/degrees-quadrant.html
-	# http://theo.x10hosting.com/examples/quadrants_1.jpg
-
-
-	# this is the same system used by minAreaRect(),
-	# 0 degrees is horizontal pointing east
-	# the direction of travel is along the x axis
-
-	# at 0 degrees, the vehicle is pointing east 
-	# the length of the vehicle is measured along the x-axis, an is therefore returned as width
-	# the 
-	# width is the x axis, the length or longest side of the vehicle
-	# height is the y axis, the width or shortest side of the vehicle 
-	# therefore width measures the x axis and height measures 
-
-	# heading is at 90 degrees to the computer graphics angle
-
-	# step 1.  fix angle for width and height
-	# step 2.  compute the compass heading from the angle, two possible answers
-	#             we need to know difference between the nose and the tail of the vehicle
-	# 		we could use the comparison with the previous center, but that is inconclusive
-	return heading
-
-'''
-picture the rectangle on a x,y graph
-w is distance along the x axis
-h is distance along the y axis
-
-=if(and($C4>=90, $C4<180), 4, 0)
-=if(and($C4>=180, $C4<270), 3, 0)
-=if(and($C4>=270, $C4<=360), 2, 0)
-=if(and($C4>=0, $C4<90), 1, 0)
-
-=if(and($C4>=90, $C4<180), 4, if(and($C4>=180, $C4<270), 3, if(and($C4>=270, $C4<=360), 2, if(and($C4>=0, $C4<90), 1, 0))))
-
-
-
-=if($F4=4,0-($C4-90),-1)
-=if($F4=3,0-($C4-180),-1)
-=if($F4=2,0-($C4-270),-1)
-=if($F4=1,0-$C4,-1)
-
-=if($F4=4,0-($C4-90),if($F4=3,0-($C4-180),if($F4=2,0-($C4-270),if($F4=1,0-$C4,-1))))
-
-'''
-
-
-
-def correctWidthVsHeight(width,height,angle):
-	if width > height:
-		w = width
-		h = height
-		a = angle
-	else:
-		h = width
-		w = height
-		a = angle  
-
-	return w,h,a
-
-def convertAngleToHeading(angle):
-	heading = angle - 90
-	if heading < 0:
-		heading = 360 - heading
-	return heading
-
-def angle2heading(angle):
-	return heading
-
-#heading = a - 90
-#if heading < 0:
-#	heading = 360 - heading
-
-def heading2angle():
-	return angle
 
 def rrect2rbox(rrect):
 	ctr = rrect[0]
@@ -185,27 +114,57 @@ def rrect2rbox(rrect):
 	rbox = [ctr[0], ctr[1], size[0], size[1], heading]
 	return rbox
 
-# ------------------- unit test ------------------------- #
+# length of hypotenuse via pythagorean theorem
+def linelen(pt0, pt3):
+	a = pt3[1] - pt0[1]
+	b = pt3[0] - pt0[0]
+	hyp = math.sqrt(a**2 + b**2)
+	return hyp
 
-def main():
-	example_label = [
-		[1, 533, 517, 20, 20,   0],
-		[1, 186, 407, 27, 21, 180],
-		[2, 482, 288,  8, 10, 360],
-	]
-	s = format(example_label)
-	print(f'format\n{s}')
+#def rect2rrect(rect):
+def fudgeRect(rect):
+	# input a is 1 to 90, h and w are interchangeable
+	(cx,cy),(w,h),a = rect
 
-	fname = 'test.csv'
+	# output a is 1 to 180, h>w always
+	if w > h:
+		w,h = (h,w)
+		a += 90
 
-	print('write to file')
-	print(example_label)
-	write(example_label, fname)
+	cx = round(cx)
+	cy = round(cy)
+	w = round(w)
+	h = round(h)
+	a = round(a)
 
-	print('read back in')
-	t = read(fname)
-	print(t)
+	return (cx,cy),(w,h),a
 
-if __name__ == '__main__':
-	main()
+#-------------------------- angle vs heading -------------------#
+'''
+original angle returned from cv2.minAreaRect() is 1 to 90
+fudged angle is from 1 to 180
+heading is from 0 to 259
+
+angle implies two alternate headings: one to the east, one to the west
+additional data is required to narrow the choice to one heading.
+
+'''
+def reverseHeading(hdg):
+	rhdg = hdg + 180
+	if rhdg >= 360:
+		rhdg -= 360
+	return rhdg
+
+def angle2heading(angle, which='east'):
+	hdg = angle
+	rhdg = reverseHeading(hdg)
+	if which == 'east':
+		return hdg
+	elif which == 'west':
+		return rhdg
+	elif which == 'both':
+		return hdg,rhdg
+
+def heading2angle(hdg):
+	return hdg
 
