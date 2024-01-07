@@ -21,11 +21,3 @@ testimage.py
 testlabel.py
 testrealtime.py  rename to testserve.py
 testscore.py
-
-
-delete me:
-test_model.json
-test.csv
-sortall.py
-lib
-testlog.py
