@@ -7,11 +7,12 @@ import sys
 
 camurl = 'http://192.168.4.1'   # when connected to access point AWACS
 #camurl = 'http://192.168.1.102'  # when connected as station to JASMINE_2G, cam don't work
-imgdir = '/home/john/sk8mini/awacs/photos'
+imgdir = '/home/john/media/webapps/sk8mini/awacs/photos'
 dirname = f'{imgdir}/{time.strftime("%Y%m%d-%H%M%S")}'
 ext = 'jpg'
 saving = True
 showing = False  #True
+isverbose = True
 
 framesize = 12
 quality = 18
@@ -69,10 +70,19 @@ try:
 	framenum = 1
 	firsttime = True
 	msg = 'starting'
+	if isverbose:
+		print('starting')
 	while True:
+		if isverbose: 
+			print(f'framenum: {framenum}')
 		try:
 			msg = 'ok'
 			image = getImage('capture')
+			if len(image) <= 0:
+				print('got image but its empty')
+				continue
+			if isverbose: 
+				print('got image')
 		except:
 			msg = 'failed'
 		else:
@@ -83,10 +93,28 @@ try:
 				firsttime = False
 			if saving:
 				fname = f'{dirname}/{framenum:05}.{ext}'
+				if isverbose: 
+					print(f'goto save {fname}')
 				cv2.imwrite(fname, image)
+				if isverbose: 
+					print(f'save successful')
 		print(f'{framenum} {msg}')
 		framenum += 1   # max fps appears to be about 2
+		if isverbose: 
+			print(f'goto wait')
+'''
+try:
+    while True:
+        break
+        #replace break with your code
+
+except KeyboardInterrupt:
+    print("Press Ctrl-C to terminate while statement")
+    pass
+'''
 		char = cv2.waitKey(50)
+		if isverbose: 
+			print(f'back from wait')
 		if char == ord('q'):
 			break
 		else:

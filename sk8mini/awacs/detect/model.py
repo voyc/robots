@@ -49,6 +49,7 @@ def main():
 		"1":{
 		"cls":1,
 		"name":"cone",
+		"algo":0,
 		"spec":[
 			{"name":"hue_min", "value": 23, "lower":0, "upper":255, "way":1, "incr":[30,10,1]},
 			{"name":"hue_max", "value": 37, "lower":0, "upper":255, "way":-1, "incr":[30,10,1]},
@@ -62,6 +63,7 @@ def main():
 		"2":{
 		"cls":2,
 		"name":"sk8",
+		"algo":0,
 		"spec":[
 			{"name":"hue_min", "value":  0, "lower":0, "upper":255, "way":1, "incr":[30,10,1]},
 			{"name":"hue_max", "value": 17, "lower":0, "upper":255, "way":-1, "incr":[30,10,1]},

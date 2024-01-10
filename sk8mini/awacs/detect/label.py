@@ -139,6 +139,25 @@ def fudgeRect(rect):
 
 	return (cx,cy),(w,h),a
 
+def rect2label(cls,rect):
+	# input a is 1 to 90, h and w are interchangeable
+	(cx,cy),(w,h),a = rect
+
+	# output a is 1 to 180, h>w always
+	if w > h:
+		w,h = (h,w)
+		a += 90
+
+	cx = round(cx)
+	cy = round(cy)
+	w = round(w)
+	h = round(h)
+	a = round(a)
+	scr = 0
+
+	return [cls,cx,cy,w,h,a,scr]
+	
+
 #-------------------------- angle vs heading -------------------#
 '''
 original angle returned from cv2.minAreaRect() is 1 to 90

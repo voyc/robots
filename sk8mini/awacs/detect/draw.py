@@ -4,6 +4,7 @@ draw.py - library of drawing functions
 
 import cv2
 import numpy as np
+import copy
 
 #def draw(img, train, detect):
 #	imgMap = img.copy()
@@ -64,28 +65,30 @@ default_options = {
 
 def drawImage(image, label, options=default_options, selected=-1):
 	n = 0
+	imgOut = copy.deepcopy(image)
 	for row in label:
 		color = options['color_normal']
 		thickness = options['thickness_normal']
 		if n == selected:
 			color = options['color_selected']
 			thickness = options['thickness_selected']
-		cls = row[0]
-		x = row[1]
-		y = row[2]
-		w = row[3]
-		h = row[4]
+		#cls = row[0]
+		#x = row[1]
+		#y = row[2]
+		#w = row[3]
+		#h = row[4]
+		cls, x, y, w, h, hdg, scr = row
 
 		if options['shape'] == 'rectangle':
-			img = cv2.rectangle(image, (x,y), (x+w,y+h), color, thickness) 
+			imgOut = cv2.rectangle(imgOut, (x,y), (x+w,y+h), color, thickness) 
 		else:
 			cx = x + int(w/2)
 			cy = y + int(h/2)
 			r = int((row[3]+row[4])/4)
-			img = cv2.circle(image, (cx,cy), r, color, thickness) 
+			imgOut = cv2.circle(imgOut, (cx,cy), r, color, thickness) 
 		n += 1
 
-	return image
+	return imgOut
 
 def showImage(img):
 	cv2.imshow('show image', img)
