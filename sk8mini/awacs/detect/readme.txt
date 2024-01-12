@@ -6,6 +6,7 @@ tweak.py   - manually tweak a model, and detect objects
 nudge.py   - manually nudge labels in a label file
 train.py   - train a model, with a folder full of images
 review.py  - review the jpgs and labels in a folder
+sim.py     - realtime detection, simulate a camera
 
 library files, to be imported
 
@@ -17,9 +18,9 @@ detect.py - object detection library
 
 unit test programs
 
-testdetectMurtaza.py - archive
+testmurtaza.py - archive
 testdraw.py
 testimage.py
 testlabel.py
-testrealtime.py  rename to testserve.py  - sim.py, read a folder to simulate a camera
 testscore.py
+
