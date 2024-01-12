@@ -1,6 +1,5 @@
 '''
-testdetect.py - test the detect library
-
+tweak.py - tweak the model, while detecting objects in images
 '''
 
 import numpy as np
@@ -97,10 +96,8 @@ def processImageClass(img, model, cls):
 			labels,imgMask = detect.detectObjects(img, model, cls)
 
 			# show the images
-			imgMask3D = cv2.cvtColor(imgMask, cv2.COLOR_GRAY2BGR)
-
 			imgAnnotated = draw.drawImage(img,labels)
-			stack= np.hstack((img,imgMask3D, imgAnnotated))
+			stack= np.hstack((img,imgMask, imgAnnotated))
 			cv2.imshow(gwindow_name, stack)
 			key = cv2.waitKey(1)
 			if key & 0xFF == ord('q'):	# quit
@@ -118,6 +115,7 @@ def main():
 	global gspec
 
 	example_folder = '/home/john/media/webapps/sk8mini/awacs/photos/20240109-174051/keep/' 
+	example_folder = '/home/john/media/webapps/sk8mini/awacs/photos/train3/' 
 
 	#example_image = '00033.jpg'
 	#example_model = 'model.json'

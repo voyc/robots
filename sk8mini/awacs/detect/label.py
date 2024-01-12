@@ -33,7 +33,7 @@ cx = 1	# centerpoint
 cy = 2
 w = 3   # size
 h = 4
-a = 5   # heading
+hdg = 5   # heading
 m = 6   # match, used temporarily during scoring
 e = 7   # error, used temporarily during scoring
 

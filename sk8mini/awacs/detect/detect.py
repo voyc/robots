@@ -25,7 +25,16 @@ def detectObjects(img,model,cls):
 		maxgray = int(sp[1]['value'])
 		ret, imgMask = cv2.threshold(imgGray, mingray, maxgray, cv2.THRESH_BINARY)
 		
+	dilate1 = 5
+	dilate2 = 5
+	dilateiter = 1
+	kernel = np.ones((dilate1, dilate2))
+	imgMask = cv2.dilate(imgMask, kernel, iterations=dilateiter)
+
 	contours, _ = cv2.findContours(imgMask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+
+	imgMask = cv2.cvtColor(imgMask, cv2.COLOR_GRAY2BGR)
+	imgMask = cv2.drawContours(imgMask, contours, -1, (128,128,255), 3)
 
 	#qualify by size
 	labels = []
@@ -41,6 +50,6 @@ def detectObjects(img,model,cls):
 		if inRange(size, lowerSize, upperSize):
 			labels.append(label)
 
-	print(f'contours found: {len(contours)}, qualified by size: {len(labels)}')
+	#print(f'contours found: {len(contours)}, qualified by size: {len(labels)}')
 	return labels, imgMask
 

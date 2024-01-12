@@ -2,22 +2,24 @@ readme.txt
 
 UI programs to be run from the command-line 
 
-detect.py  - detect objects in one image, given a model
-nudge.py   - manually fixup a truth label list
-train.py   - train a folder full of images
+tweak.py   - manually tweak a model, and detect objects
+nudge.py   - manually nudge labels in a label file
+train.py   - train a model, with a folder full of images
+review.py  - review the jpgs and labels in a folder
 
 library files, to be imported
 
-draw.py  - drawing library
+draw.py   - drawing library
 label.py  - label management library
 model.py  - model management library
-score.py - scoring library
+score.py  - scoring library
+detect.py - object detection library
 
 unit test programs
 
-testdetect.py
+testdetectMurtaza.py - archive
 testdraw.py
 testimage.py
 testlabel.py
-testrealtime.py  rename to testserve.py
+testrealtime.py  rename to testserve.py  - sim.py, read a folder to simulate a camera
 testscore.py
