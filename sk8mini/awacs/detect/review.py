@@ -5,19 +5,13 @@ import argparse
 import math
 
 import draw
-import label as lab
+import label as labl
 
 gargs = None  # dict containing command-line parameters, initialized in main()
 ifolder = '/home/john/media/webapps/sk8mini/awacs/photos/20240109-174051/keep/'
 ifolder = '/home/john/media/webapps/sk8mini/awacs/photos/train3/'
 ilabelsufx = '_label'
 
-# length of hypotenuse via pythagorean theorem
-def linelen(ptA, ptB):
-	a = ptB[1] - ptA[1]
-	b = ptB[0] - ptA[0]
-	hyp = math.sqrt(a**2 + b**2)
-	return hyp
 
 
 def compare (sk8,led):
@@ -36,8 +30,8 @@ def compare (sk8,led):
 	sB = (x3,y3)
 	mctr = (mx,my)
 
-	lenA = linelen(sA,mctr)
-	lenB = linelen(sB,mctr)
+	lenA = labl.linelen(sA,mctr)
+	lenB = labl.linelen(sB,mctr)
 
 	if lenA < lenB:
 		reverse = True
@@ -65,8 +59,8 @@ def fixVehicle(label):
 			if sk8 is None:
 				sk8 = row
 			else:
-				distancesk8 = linelen((sk8[1],sk8[2]),centerimage)
-				distancerow = linelen((x,y),centerimage)
+				distancesk8 = labl.linelen((sk8[1],sk8[2]),centerimage)
+				distancerow = labl.linelen((x,y),centerimage)
 				if distancerow < distancesk8:
 					sk8 = row
 		elif cls == 3 and led is None:

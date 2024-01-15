@@ -1,14 +1,15 @@
 '''
-testlabel.py - test the label.py library
+testlabel.py - unit test the label.py library
 '''
-
 import numpy as np
 import cv2
 
-import label
+import label as labl
 
 def testrrect(hdg):
-	fname = f'/home/john/media/webapps/sk8mini/awacs/photos/training/test_angle_heading/rect_{hdg}.jpg'
+	# get contour from a test image
+	fname = f'photos/test_angles/rect_{hdg}.jpg'
+	print(fname)
 	img = cv2.imread(fname, cv2.IMREAD_UNCHANGED)
 	imgray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 	ret, thresh = cv2.threshold(imgray, 127, 255, 0)
@@ -17,26 +18,16 @@ def testrrect(hdg):
 
 	# original rect returned from minAreaRect()
 	rect = cv2.minAreaRect(cnt)
-	(cx,cy),(w,h),a = rect
-	#print(hdg, a, w, h)
 
-	# fudged rrect
-	rrect = label.fudgeRect(rect)
-	(cx,cy),(w,h),a = rrect
-	chdg = label.angle2heading(a)
-	print(hdg, a, w, h, chdg)
+	# rect converted to label
+	label = labl.labelFromRect(2, rect)
+	print(label)
 
 	# optional, examine points and lines in the rect
 	box = cv2.boxPoints(rect)
 	box = np.intp(box)
-	ln01= label.linelen(box[0], box[1])
-	ln03= label.linelen(box[0], box[3])
-	return rect
-
-
-
-
-# ------------------- unit test ------------------------- #
+	ln01= labl.linelen(box[0], box[1])
+	ln03= labl.linelen(box[0], box[3])
 
 def main():
 	testrrect('10')  
@@ -53,17 +44,20 @@ def main():
 		[1, 186, 407, 27, 21, 180],
 		[2, 482, 288,  8, 10, 360],
 	]
-	s = label.format(example_label)
-	print(f'format\n{s}')
+	s = labl.format(example_label)
+	print(f'\ndisplay\n{s}')
 
-	fname = 'test.csv'
+	s = labl.format(example_label, format='realtime')
+	print(f'realtime\n{s}')
 
-	print('write to file')
+	fname = 'temp_test.csv'
+
+	print('\nwrite to file')
 	print(example_label)
-	label.write(example_label, fname)
+	labl.write(example_label, fname)
 
 	print('read back in')
-	t = label.read(fname)
+	t = labl.read(fname)
 	print(t)
 
 if __name__ == '__main__':

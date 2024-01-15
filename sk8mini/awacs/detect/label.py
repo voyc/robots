@@ -27,15 +27,16 @@ this list is assumed to have been sorted, ala sorted(label)
 import csv
 import math
 
-# index the columns of a label list
-cls = 0	# clsid 1:cone, 2:sk8
-cx = 1	# centerpoint
-cy = 2
-w = 3   # size
-h = 4
+# index the 7 columns of a label list
+cls = 0	 # clsid 1:cone, 2:led, 3:sk8
+cx  = 1	 # centerpoint
+cy  = 2
+w   = 3   # size
+h   = 4
 hdg = 5   # heading
-m = 6   # match, used temporarily during scoring
-e = 7   # error, used temporarily during scoring
+scr = 7   # score, error
+m   = 8   # match, used temporarily during scoring
+# cls,cx,cy,w,h,hdg,scr = label
 
 def read(fname):
 	label = []
@@ -54,109 +55,113 @@ def write(label, fname):
 		wr.writerows(label)
 
 # output string formats
-def format(label, format='display'):
+def format(labels, format='display'):
 	s = ''
 	if format == 'realtime':
 		ctrs = []
-		for row in label:
-			ctrs.append([int(row[cls]), int(row[l] + (row[w])/2), int(row[t] + (row[h])/2), row[a]])
+		for label in labels:
+			cls,cx,cy,w,h,hdg,scr = label
+			if cls == 3:
+				ctrs.insert(0, (cx,cy,hdg))
+			else:
+				ctrs.append((cx,cy))
 		s = str(ctrs)
 	elif format == 'display':
-		for row in label:
-			s += str(row)+'\n'
+		for label in labels:
+			s += str(label)+'\n'
 	return s
 
 #------------------- data structures ------------------#
 '''	
 data structures:
-	rect - Rotated Rect, returned from minAreaRect()
-	rrect - modified version of rect
-	bbox - bounding box
+	label - [cls, cx,cy,w,h,hdg, scr] - sk8mini format
+	rect  - ((cx,cy), (wr,hr), angle) - rotated rect returned from cv2,minAreaRect(contour)
+	bbox  - left,top,w,h - bounding box returned from cv2.boundingRect(contour)
 
-rect
+also: 
+	labels - a list of of label objects
 
-(cx,cy), (w,h), a = cv2.minAreaRect():
+notes on rotated rect
+	when rect is upright, h > w
+	when rect is supine,  w > h
+	when rect is square, the 1st line segment is the top, not the side
+		therefore, a is never 0, it goes to 90
+		(in a similar way, hdg is never 360, it goes to 0)
 
-when rect is upright, h > w
-when rect is supine,  w > h
-when rect is square, the 1st line segment is the top, not the side
-	therefore, a is never 0, it goes to 90
-	(in a similar way, hdg is never 360, it goes to 0)
-
-To better understand the rect, we can look at the four points returned from cv2.boxPoints(rect)
+To better understand the rect, look at the four points returned from cv2.boxPoints(rect)
 	the first point is the left-top (lowest x, with lowest y as tie-breaker)
 	remaining points proceed clockwise
 	1st line segment is considered h
 	2nd line segment is considered w
-
-rrect
-
-3 adjustments are made from rect
-	w and h have been normalized so w < h regardless of orientation
-	a is replaced with heading
-	the structure is a list with 5 elements
 '''
 
-def rbox2bbox(rbox):
-	ctr = (rbox[0], rbox[1])
-	size = (rbox[2], rbox[3])
-	angle = rbox[4]
-	rrect = (ctr, size, angle)
-	contour = cv2.boxPoints(rrect)	
-	bbox = cv2.boundingArea(contour)
-	return bbox
+def labelFromBbox(cls,bbox):
+	# 1. calc centerpoint (cx,cy) from (left,top)
+	# 2. set hdg to 0
+	
+	left,top,w,h = bbox
+	cx = left + (w/2)
+	cy = top + (h/2)
 
-def rrect2rbox(rrect):
-	ctr = rrect[0]
-	size = rrect[1]
-	angle = rrect[2]
-	heading = angle2heading(angle)
-	rbox = [ctr[0], ctr[1], size[0], size[1], heading]
-	return rbox
+	cls = int(cls)
+	cx = round(cx)
+	cy = round(cy)
+	w = round(w)
+	h = round(h)
+	hdg = 0
+	scr = 0
+	return [cls,cx,cy,w,h,hdg,scr]
+
+def labelFromRect(cls, rect, which=False):
+	# 1. if necessary, rotate 90° so that h > w always
+	# 2. calc heading hdg from angle 
+
+	(cx,cy),(w,h),a = rect
+	if w > h:
+		w,h = (h,w)
+		a += 90
+
+	hdg = headingFromAngle(a, which)
+
+	cls = int(cls)
+	cx = round(cx)
+	cy = round(cy)
+	w = round(w)
+	h = round(h)
+	hdg = round(hdg)
+	scr = 0
+	return [cls,cx,cy,w,h,hdg,scr]
+
+def sizeFromLabel(label):
+	_,_,_,w,h,_,_ = label
+	size = (w,h)
+	return size
 
 # length of hypotenuse via pythagorean theorem
-def linelen(pt0, pt3):
-	a = pt3[1] - pt0[1]
-	b = pt3[0] - pt0[0]
+def linelen(ptA, ptB):
+	a = ptB[1] - ptA[1]
+	b = ptB[0] - ptA[0]
 	hyp = math.sqrt(a**2 + b**2)
 	return hyp
 
 #def rect2rrect(rect):
-def fudgeRect(rect):
-	# input a is 1 to 90, h and w are interchangeable
-	(cx,cy),(w,h),a = rect
+#def fudgeRect(rect):
+#	# input a is 1 to 90, h and w are interchangeable
+#	(cx,cy),(w,h),a = rect
+#
+#	# output a is 1 to 180, h>w always
+#	if w > h:
+#		w,h = (h,w)
+#		a += 90
+#
+#	cx = round(cx)
+#	cy = round(cy)
+#	w = round(w)
+#	h = round(h)
+#	a = round(a)
+#
+#	return (cx,cy),(w,h),a
 
-	# output a is 1 to 180, h>w always
-	if w > h:
-		w,h = (h,w)
-		a += 90
-
-	cx = round(cx)
-	cy = round(cy)
-	w = round(w)
-	h = round(h)
-	a = round(a)
-
-	return (cx,cy),(w,h),a
-
-def rect2label(cls,rect):
-	# input a is 1 to 90, h and w are interchangeable
-	(cx,cy),(w,h),a = rect
-
-	# output a is 1 to 180, h>w always
-	if w > h:
-		w,h = (h,w)
-		a += 90
-
-	cx = round(cx)
-	cy = round(cy)
-	w = round(w)
-	h = round(h)
-	a = round(a)
-	scr = 0
-
-	return [cls,cx,cy,w,h,a,scr]
-	
 
 #-------------------------- angle vs heading -------------------#
 '''
@@ -166,7 +171,6 @@ heading is from 0 to 259
 
 angle implies two alternate headings: one to the east, one to the west
 additional data is required to narrow the choice to one heading.
-
 '''
 def reverseHeading(hdg):
 	rhdg = hdg + 180
@@ -174,7 +178,7 @@ def reverseHeading(hdg):
 		rhdg -= 360
 	return rhdg
 
-def angle2heading(angle, which='east'):
+def headingFromAngle(angle, which='east'):
 	hdg = angle
 	rhdg = reverseHeading(hdg)
 	if which == 'east':
@@ -183,7 +187,5 @@ def angle2heading(angle, which='east'):
 		return rhdg
 	elif which == 'both':
 		return hdg,rhdg
-
-def heading2angle(hdg):
 	return hdg
 

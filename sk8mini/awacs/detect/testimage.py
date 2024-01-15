@@ -88,13 +88,23 @@ def drawVehicle(img, vehicle):
 	cv2.drawContours(imgBgr, [box], 0, (0,0,255),1)
 	drawLine(imgBgr, ctr, angle, 50)
 
+def averageBrightness(image):
+	imgHsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+	t = imgHsv[:,:,2]   # take the V channel, "value", brightness
+	mean = np.mean(t)
+	return mean
+
 # read image
-fname = '/home/john/media/webapps/sk8mini/awacs/photos/training/00095.jpg'
-#fname = '/home/john/media/webapps/sk8mini/awacs/photos/training/00002.jpg'
-#fname = '/home/john/media/webapps/sk8mini/awacs/photos/training/00001.jpg'
+fname = 'photos/training/00001.jpg'  # night  79
+fname = 'photos/training/00095.jpg'  # day 128
 imgBgr = cv2.imread(fname, cv2.IMREAD_UNCHANGED)
+brightness = averageBrightness(imgBgr)
+print(brightness)
+
+
 imgHsv = cv2.cvtColor(imgBgr, cv2.COLOR_BGR2HSV)
 imgGray = cv2.cvtColor(imgBgr, cv2.COLOR_BGR2GRAY)
+
 
 # mask based on hsv ranges
 lower = np.array([23, 114,  57])
@@ -162,11 +172,15 @@ qualify by size
 '''
 
 # find vehicle by deck color
-lower = np.array([ 0, 117,  47])  #00002, 00095
-upper = np.array([17, 195, 128])
 lower = np.array([ 0, 127,   0])  #00001
 upper = np.array([63, 255, 128])
+lower = np.array([ 0, 117,  47])  #00002, 00095
+upper = np.array([17, 195, 128])
 imgMaskVehicle = cv2.inRange(imgHsv,lower,upper)
+showImage(imgMaskVehicle)
+
+kernel = np.ones((5, 5))
+imgMaskVehicle = cv2.dilate(imgMaskVehicle, kernel, iterations=1)
 showImage(imgMaskVehicle)
 
 contours, _ = cv2.findContours(imgMaskVehicle, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
