@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 import copy
 import math
+import colorsys
 
 def createImage(shape=(600,600,3), color=(255,255,255)):
 	image = np.zeros(shape, np.uint8)
@@ -33,7 +34,7 @@ color_stack = [
 	(255,128,255)  # ltmagenta
 ]
 
-radius_stack = [ 8, 0, 5]
+radius_stack = [ 11, 12, 12, 12, 3, 35, 8, 35 ]
 
 def drawImage(image, labels, options={}, selected=-1):
 	options = default_options | options
@@ -81,13 +82,16 @@ def drawMap(image, labels, options, selected):
 	return imgOut
 
 def titleImage(img, title):
-	cv2.putText(img, title, (20,40), cv2.FONT_HERSHEY_PLAIN, 2, (0,0,0), 2)
-	return img
+	imgOut = copy.deepcopy(img)
+	cv2.putText(imgOut, title, (20,40), cv2.FONT_HERSHEY_PLAIN, 2, (0,0,0), 2)
+	return imgOut
 
-def showImage(img):
-	cv2.imshow('show image', img)
+def showImage(*args, windowname='show', cols=0):
+	img = stack(*args, cols=cols)
+	cv2.imshow(windowname, img)
 	key = cv2.waitKey(0)
 	cv2.destroyAllWindows()
+	return key
 
 def drawLine(img, ctr, angle, length=100):
 	x = ctr[0]
@@ -105,4 +109,121 @@ def drawVehicle(img, vehicle):
 	angle = vehicle[2]	
 	cv2.drawContours(img, [box], 0, (0,0,255),1)
 	drawLine(img, ctr, angle, 50)
+
+def stack(*args, cols=0):
+	#  input can be list or separate args
+	imglist = []
+	if type(args[0]) is list:
+		imglist = args[0]
+	else:
+		for img in args:
+			imglist.append(img)
+
+	# convert depth if necessary
+	a = []
+	n = 0
+	for img in imglist:
+		if len(img.shape) < 3:
+			gray = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+			a.append(gray)
+		else:
+			a.append(img)
+		n += 1
+
+	# check width
+	screenwd = 1910
+	screenht =  900
+	wd = a[0].shape[0]	
+	ht = a[0].shape[1]	
+	num = len(a)
+	numrows = 1
+	numcols = num
+
+	if cols > 0:
+		numcols = cols
+		numrows = math.ceil(num/numcols)
+	else:
+		# go to two rows if necessary
+		if screenwd < (num * wd):
+			numrows = 2
+			numcols = math.ceil(num / 2)
+
+	# next, shrink the images if necessary
+	newwd = newht = 0
+	if screenwd < (numcols * wd):
+		newwd = int(screenwd / numcols)
+		newht = int((newwd/wd) * ht)
+	elif screenht < (numrows * ht):
+		newht = int(screenht / numrows)
+		newwd = int((newht/ht) * wd)
+	
+	if newwd > 0:
+		b = []
+		for img in a:
+			resized = cv2.resize(img, dsize=[newwd,newht])
+			b.append(resized)
+	else:
+		b = a	
+
+	# stack cols
+	ar = [ [0]*numcols for i in range(numrows)]
+	n = 0
+	for img in b:
+		nrow = math.floor(n / numcols)
+		ncol = n - (nrow * numcols)
+		ar[nrow][ncol] = img
+		n += 1
+
+	# add extra blank if odd
+	if hasattr(ar[numrows-1], '__len__'):
+		blank = np.zeros((ar[0][0].shape), np.uint8)
+		ar[numrows-1][numcols-1] = blank
+
+	# stack rows
+	img = []
+	for row in ar:
+		rowimg = np.hstack( row)
+		img.append(rowimg)
+	if numrows ==  1:
+		imgOut = img[0]
+	else:
+		imgOut = np.vstack(img)
+
+	return imgOut	
+
+def HSVfromBGR(b,g,r):
+	# https://math.stackexchange.com/questions/556341/rgb-to-hsv-color-conversion-algorithm
+	r /= 255
+	g /= 255
+	b /= 255
+	maxc = max(r, g, b)
+	minc = min(r, g, b)
+	v = maxc
+	if minc == maxc:
+	    return 0.0, 0.0, v
+	s = (maxc-minc) / maxc
+	rc = (maxc-r) / (maxc-minc)
+	gc = (maxc-g) / (maxc-minc)
+	bc = (maxc-b) / (maxc-minc)
+	if r == maxc:
+	    h = 0.0+bc-gc
+	elif g == maxc:
+	    h = 2.0+rc-bc
+	else:
+	    h = 4.0+gc-rc
+	h = (h/6.0) % 1.0
+	h *= 180	
+	s *= 255
+	v *= 255
+	return h,s,v 
+
+def BGRfromHSV(h,s,v):
+	h /= 180
+	s /= 255
+	v /= 255
+	(r,g,b) = colorsys.hsv_to_rgb(h,s,v)
+	r *= 255
+	g *= 255
+	b *= 255
+	return b,g,r
 

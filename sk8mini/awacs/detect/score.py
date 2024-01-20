@@ -11,6 +11,7 @@ during model training, we compare a label list to its corresponding truth list
 import numpy as np
 import copy
 import cv2
+import math
 
 import label as lab
 
@@ -25,6 +26,14 @@ def mseVector(predicted, actual):
 	squared_differences = np.square(differences)
 	mean = squared_differences.mean()
 	return mean
+
+def rmse(predicted, actual):
+	mse = mseVector(predicted, actual)
+	rmse = math.sqrt(mse)
+	return int(rmse)
+	
+def probability(error, maxerror):
+	return 1 - (error / maxerror)
 
 # match each train object to one detect object, by scoring all possible pairs
 def matchup(train,detect):

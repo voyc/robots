@@ -8,6 +8,9 @@ import os
 
 import label as labl
 
+def inRange( a, lower, upper):
+	return np.greater_equal(a, lower).all() and np.less_equal(a, upper).all()
+
 def getFrameList(path):
 	flist = []
 	for filename in os.listdir(path):
@@ -23,12 +26,15 @@ def averageBrightness(image):
 	return mean
 
 def detectObjectsCls(img,modcls):
-	def inRange( a, lower, upper):  # comparing np arrays
+	def inRange( a, lower, upper):  # compare np arrays, True if a between lower and upper
 		return np.greater_equal(a, lower).all() and np.less_equal(a, upper).all()
 
-	#modcls = model[cls]
 	cls = int(modcls['cls'])
 	sp = modcls['values']
+
+	dilate1 = 5
+	dilate2 = 5
+	dilateiter = 1
 
 	if modcls['algo']  == 0:  # hsv color values
 		[cn,cx,sn,sx,vn,vx,wn,wx,hn,hx] = modcls['values']
@@ -36,9 +42,10 @@ def detectObjectsCls(img,modcls):
 		#upper = np.array([sp[1], sp[3], sp[5]])
 		lower = np.array([cn,sn,vn])
 		upper = np.array([cx,sx,vx])
-		imgMask = cv2.inRange(img,lower,upper)
+		imgHsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+		imgMask = cv2.inRange(imgHsv,lower,upper)
 
-	else:
+	elif modcls['algo'] < 3:
 		[gray,wn,wx,hn,hx] = modcls['values']
 		if modcls['algo'] == 1:   # grayscale white
 			threshtype = cv2.THRESH_BINARY
@@ -46,12 +53,17 @@ def detectObjectsCls(img,modcls):
 			threshtype = cv2.THRESH_BINARY_INV
 		imgGray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 		ret, imgMask = cv2.threshold(imgGray, gray, 255, threshtype)
+
+	elif modcls['algo'] == 3:  # canny
+		[vn,vx,ds,di,wn,wx,hn,hx] = modcls['values']
+		imgGray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+		imgMask = cv2.Canny(imgGray, vn, vx)
+		dilate1 = dilate2 = ds
+		dilateiter = di
 		
-	dilate1 = 5
-	dilate2 = 5
-	dilateiter = 1
 	kernel = np.ones((dilate1, dilate2))
 	imgMask = cv2.dilate(imgMask, kernel, iterations=dilateiter)
+	#imgMask = cv2.erode(imgMask, kernel, iterations=dilateiter) # not with donuts
 
 	contours, _ = cv2.findContours(imgMask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
 

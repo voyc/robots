@@ -66,8 +66,20 @@ import cv2
 import os
 import math
 
-def showImage(img):
-	cv2.imshow('show image', img)
+def showImage(*args):
+	print(len(args))
+	a = []
+	for img in args:
+		if len(img.shape) < 3:
+			newimg = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+			a.append(newimg)
+		else:
+			a.append(img)
+	print(len(a))
+	for img in a:
+		print(img.shape)
+	imgOut = np.hstack(a)
+	cv2.imshow('show image', imgOut)
 	key = cv2.waitKey(0)
 	cv2.destroyAllWindows()
 
@@ -95,16 +107,15 @@ def averageBrightness(image):
 	return mean
 
 # read image
-fname = 'photos/training/00001.jpg'  # night  79
-fname = 'photos/training/00095.jpg'  # day 128
+model = 'photos/training/day_model.json'
+fname = 'photos/20231216-092941/00148.jpg'   # donut 119
+fname = 'photos/20231216-092941/00134.jpg'   # donut 143
+fname = 'photos/20231216-092941/00103.jpg'   # donut 173
 imgBgr = cv2.imread(fname, cv2.IMREAD_UNCHANGED)
 brightness = averageBrightness(imgBgr)
-print(brightness)
-
 
 imgHsv = cv2.cvtColor(imgBgr, cv2.COLOR_BGR2HSV)
 imgGray = cv2.cvtColor(imgBgr, cv2.COLOR_BGR2GRAY)
-
 
 # mask based on hsv ranges
 lower = np.array([23, 114,  57])
@@ -118,73 +129,42 @@ imgInvertedMask = cv2.bitwise_not(imgMaskYellow)
 imgMaskBlack = cv2.inRange(imgGray, 10, 50)  # looking for black
 imgMaskWhite = cv2.inRange(imgGray, 100, 250)  # looking for white
 
-#showImage(imgMaskYellow)
-#showImage(imgMaskBlack)
-#showImage(imgMaskWhite)
 
-contours, _ = cv2.findContours(imgMaskYellow, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-#print(len(contours))
-#img = cv2.drawContours(imgBgr, contours, -1, (0,0,255),1)
-#showImage(img)
+# make square mask around vehicle
+sz = np.array([ 50, 50])
+ctr = np.array([323,145])
+lt = ctr - sz
+rb = ctr + sz
+l,t = lt
+r,b = rb
+color = (255,255,255)
+thickness = -1
 
-imgCanny = cv2.Canny(imgGray, 50, 70)
-#showImage(imgGray)
-#showImage(imgCanny)
-#showImage(imgMaskYellow)
+imgCrop = imgBgr[t:b, l:r]
 
-#paramloop
-#	pairloop
-params = [
-	(0,17),
-	(117,195),
-	(47,128)
-]
+imgVehicleMask = np.zeros(sz, np.uint8)
+imgVehicleMask = cv2.rectangle(imgVehicleMask, lt, rb, color, thickness) 
 
-#       x  y   a
-#00001 50 30  54
-#00002 45 22   9   # horizontal, xdim=w, ydim=h  when x-axis is horizontal
-#00095 50 30  54   # vertical,   xdim=h, ydim=w  when x-axis is vertical  ?
-#(57.881370544433594, 37.80196762084961)
-# 00001: (44.904972076416016, 66.58959197998047), 10.619654655456543)
+# remove background
+#imgCropInv = cv2.bitwise_not(imgCrop)
+#imgMasked = cv2.bitwise_and(imgBgr,imgBgr, mask=imgVehicleMask)
+draw.showImage(imgVehicleMask)
 
-#file      xdim  ydim  angle    w    h     r
-#00001.jpg   44    66     10   52   65    33    x-axis crosswise, 10dgr ccw from horizontal
-#00002.jpg   29    65     84   67   33    33    x-axis crosswise, 86dgr ccw from horizontal
-#00095.jpg   57    37     49   58   57    30    x-axis lengthwise, 49dgr ccw from horizontal
-'''
-xdim = rect[1][0]
-ydim = rect[1][1]
-
-if xdim < ydim:
-	beam = xdim
-	leng = ydim
-	a = angle + 90
-else:
-	leng = xdim
-	beam = ydim
-	a = angle 
-
-heading = a - 90
-if heading < 0:
-	heading = 360 - heading
-
-qualify by size
-'''
-
-# find vehicle by deck color
-lower = np.array([ 0, 127,   0])  #00001
-upper = np.array([63, 255, 128])
-lower = np.array([ 0, 117,  47])  #00002, 00095
-upper = np.array([17, 195, 128])
-imgMaskVehicle = cv2.inRange(imgHsv,lower,upper)
-showImage(imgMaskVehicle)
+# canny edge detection
+imgCanny = cv2.Canny(imgCrop, 50, 70)
 
 kernel = np.ones((5, 5))
-imgMaskVehicle = cv2.dilate(imgMaskVehicle, kernel, iterations=1)
+imgClosed = cv2.morphologyEx(imgCanny, cv2.MORPH_CLOSE, kernel)
+
+showImage(imgCrop, imgCanny, imgClosed)
+quit()
+
+# dilate
+imgMaskVehicle = cv2.dilate(imgCanny, kernel, iterations=3)
+
 showImage(imgMaskVehicle)
 
 contours, _ = cv2.findContours(imgMaskVehicle, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-#print(len(contours))
 
 
 for cnt in contours:
@@ -198,10 +178,10 @@ for cnt in contours:
 	if w<25 or h<25:
 		continue
 
-	print(fname)
-	print(rect)
-	print(cv2.boundingRect(cnt))
-	print(cv2.minEnclosingCircle(cnt))
+	#print(fname)
+	#print(rect)
+	#print(cv2.boundingRect(cnt))
+	#print(cv2.minEnclosingCircle(cnt))
     
 
 	ctr = rect[0]
@@ -209,10 +189,8 @@ for cnt in contours:
 	angle = rect[2]
 	#print(f'ctr:{ctr}, angle:{angle}')
 
-	#cv2.drawContours(imgBgr, [box], 0, (0,0,255),1)
-	#drawLine(imgBgr, ctr, angle, 50)
-
 	vehicle = (box, ctr, angle)
+	print(ctr)
 	drawVehicle(imgBgr, vehicle)
 
 

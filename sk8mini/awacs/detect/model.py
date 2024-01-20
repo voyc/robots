@@ -38,8 +38,7 @@ def format(model, style):
 			s += '\n'
 	elif style == 'simple':
 		extractValues(model)
-		for n in model:
-			modcls = model[n]
+		for modcls in model:
 			for param in modcls:
 				if param != 'spec':
 					s += f"{param}: {str(modcls[param])} \n"
@@ -47,8 +46,7 @@ def format(model, style):
 	return s
 
 def extractValues(model):
-	for n in model:
-		modcls = model[n]
+	for modcls in model:
 		values = []
 		for sp in modcls['spec']:
 			values.append(sp['value'])

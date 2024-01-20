@@ -27,6 +27,7 @@ this list is assumed to have been sorted, ala sorted(label)
 import csv
 import math
 
+# global constants
 # index the 7 columns of a label list
 cls = 0	 # clsid 1:cone, 2:led, 3:sk8
 cx  = 1	 # centerpoint
@@ -34,8 +35,9 @@ cy  = 2
 w   = 3   # size
 h   = 4
 hdg = 5   # heading
-scr = 7   # score, error
-m   = 8   # match, used temporarily during scoring
+scr = 6   # score, error
+m   = 7   # match, used temporarily during scoring
+
 # cls,cx,cy,w,h,hdg,scr = label
 
 def read(fname):
@@ -112,7 +114,7 @@ def labelFromBbox(cls,bbox):
 	scr = 0
 	return [cls,cx,cy,w,h,hdg,scr]
 
-def labelFromRect(cls, rect, which=False):
+def labelFromRect(cls, rect, which=False, score=0):
 	# 1. if necessary, rotate 90° so that h > w always
 	# 2. calc heading hdg from angle 
 
@@ -129,7 +131,7 @@ def labelFromRect(cls, rect, which=False):
 	w = round(w)
 	h = round(h)
 	hdg = round(hdg)
-	scr = 0
+	scr = score
 	return [cls,cx,cy,w,h,hdg,scr]
 
 def sizeFromLabel(label):

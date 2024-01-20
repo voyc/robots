@@ -42,20 +42,20 @@ def readSettings(modcls):
 #--------------- inner loop per cls ------------------------------------# 
 
 # one image one cls
-def processImageClass(img, model, cls):
+def processImageCls(fnum, img, model, modcls):
 	req = 'next'
 	if gargs.manual:
-		logging.debug(cls)
-		logging.debug(model[cls])
-		openSettings(model[cls])
+		logging.debug(modcls)
+		openSettings(modcls)
 		while True:
-			readSettings(model[cls])
+			readSettings(modcls)
 			mod.extractValues(model)
-			labels,imgMask = detect.detectObjectsCls(img, model, cls)
+			labels,imgMask = detect.detectObjectsCls(img, modcls)
 
 			# show the images
 			imgAnnotated = draw.drawImage(img,labels)
-			stack= np.hstack((img,imgMask, imgAnnotated))
+			imgTitle = draw.titleImage(img,fnum)
+			stack= np.hstack((imgTitle,imgMask, imgAnnotated))
 			cv2.imshow(gwindow_name, stack)
 			key = cv2.waitKey(1)
 			if key & 0xFF == ord('q'):	# quit
@@ -66,7 +66,7 @@ def processImageClass(img, model, cls):
 				break
 		cv2.destroyAllWindows()
 	else:
-		labels,_ = detect.detectObjectsCls(img, model, cls)
+		labels,_ = detect.detectObjectsCls(img, modcls)
 	return labels, req
 
 #--------------- outer loop per frame ---------------------------------# 
@@ -85,6 +85,9 @@ def main():
 	parser.add_argument('-m'  ,'--manual'     ,default=False   ,action='store_true'  ,help='let user initialize the model manually'),
 	gargs = parser.parse_args()	# returns Namespace object, use dot-notation
 
+	if gargs.cls != 'all':
+		gargs.cls = int(gargs.cls)
+		print(f"processing cls {gargs.cls}")
 
 	modelfqname = gargs.model
 	ch = input(f"model file {modelfqname} will be overwritten. Coninue? (y/n) ")
@@ -116,19 +119,20 @@ def main():
 
 	ndx = 0
 	lastframe = len(jlist)-1
-	while True:
+	while ndx <= lastframe:
 		fnum = jlist[ndx]
 		fqname = os.path.join(gargs.dir,fnum+'.jpg')
 		img = cv2.imread(fqname, cv2.IMREAD_UNCHANGED)
-		logging.info(f'reading image from {fqname}')
+		logging.debug(f'reading image from {fqname}')
 		logging.debug(f'image shape: {img.shape}')
 
 		# loop classes for in model
 		labels = []
-		for m in model:
-			if gargs.cls == 'all' or gargs.cls == m:
-				label,req = processImageClass(img, model, m)
-				labels += label
+		for modcls in model:
+			if gargs.cls == 'all' or gargs.cls == modcls['cls']:
+				clslabels,req = processImageCls(fnum, img, model, modcls)
+				labels += clslabels
+				logging.info(f"[{modcls['values']}], # {fnum}, {len(clslabels)}, ")
 			if req == 'quit':
 				break
 
@@ -137,8 +141,7 @@ def main():
 			break;
 		if not gargs.manual and ndx >= lastframe:
 			break
-		if ndx < lastframe:
-			ndx += 1
+		ndx += 1
 
 	mod.write(model, modelfqname)
 
