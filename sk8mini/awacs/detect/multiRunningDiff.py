@@ -1,5 +1,5 @@
 '''
-makeBackground.py - make a background image by comparing from two input images
+multiRunningDiff.py - take a diff between each frame and the previous
 '''
 import cv2
 import numpy as np
@@ -9,40 +9,125 @@ import copy
 
 import detect
 import draw
+import frame as frm 
+import score
+import label as labl
 
 gargs = None
+gframendx = 0
+gframelist = []
 
-def inRange( a, lower, upper):
-	return np.greater_equal(a, lower).all() and np.less_equal(a, upper).all()
+def getFrame():
+	global gframendx, gframelist
+	if gframendx == 0:
+		gframelist = frm.getFrameList(gargs.idir)
+	if gframendx >= len(gframelist):
+		return None
+	if gargs.maxframes > 0 and gframendx > gargs.maxframes:
+		return None
+	fnum = gframelist[gframendx]
+	frame = cv2.imread(frm.fqjoin(gargs.idir, fnum, gargs.iext), cv2.IMREAD_UNCHANGED)
+	gframendx += 1
+	return frame
+
+def diffFrames(current,previous):
+	diff = cv2.absdiff(current, previous)
+
+	imgDiff1 = cv2.absdiff(current, previous)	
+	imgDiff2 = cv2.absdiff(previous, imgDiff1)
+	imgDiff3 = cv2.absdiff(current, imgDiff2)
+
+	imgDiff2a = cv2.absdiff(current, imgDiff1)
+	imgDiff4 = cv2.absdiff(previous, imgDiff2a)
+
+	#draw.showImage(previousframe, frame, imgDiff1, imgDiff2, imgDiff2a, imgDiff3, imgDiff4)
+	return imgDiff4
+
+def labelsFromMask(mask, cls, dim, maxcount):
+	labels = []
+	cnts,_ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+	armse = []
+	for cnt in cnts:
+		rect = cv2.minAreaRect(cnt) 
+		size = rect[1]
+		rmse = score.rmse(dim, size)
+		armse.append(rmse)
+		label = labl.labelFromRect(cls, rect, which=False, score=rmse)
+		labels.append(label)
+
+	# sort the labels ascending by error
+	sortedlabels = sorted(labels, key=lambda a: a[labl.scr])
+
+	# take the n with lowest score
+	bestlabels = sortedlabels[0:maxcount]
+
+	# convert error to probability
+	maxerror = max(armse)
+	for label in bestlabels:
+		rmse = label[labl.scr]
+		prob = score.probability(rmse, maxerror)
+		label[labl.scr] = prob
+	return bestlabels
+
+def looper():
+	previousframe = getFrame()
+	diffs = []
+	masks = []
+	labelsets = []
+	aframes = []
+	
+	while True:
+		frame = getFrame()
+		if frame is None:
+			break;
+
+		diff = diffFrames(frame, previousframe)
+		diffs.append(diff)
+
+		gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
+
+		t, mask = cv2.threshold(gray, 0,  255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+		kernelsize = 3
+		dilateiterations = 3
+		kernel = np.ones((kernelsize, kernelsize))
+		mask = cv2.dilate(mask, kernel, iterations=dilateiterations)
+		#mask = cv2.erode(mask, kernel, iterations=dilateiterations)
+		masks.append(mask)
+
+		labels = labelsFromMask(mask, 2, (50,70), 1)
+		labelsets.append(labels)
+
+		aframe = draw.drawImage(mask,labels)
+		aframes.append(aframe)
+
+
+		previousframe = frame
+
+	draw.showImage(aframes,cols=10)
+	#draw.showImage(diffs+masks+aframes, cols=len(aframes))
+	return 
 
 def main():
 	global gargs
-	idir = 'photos/20231216-092941/bestof'  # day
+	idir = 'photos/20231216-092941/'  # day
+	iext = 'jpg'
+	maxframes = 0
 
 	# get command-line parameters 
 	parser = argparse.ArgumentParser()
 	parser.add_argument('-id' ,'--idir'    ,default=idir        ,help='input folder'        )
+	parser.add_argument('-ie' ,'--iext'    ,default=iext        ,help='input extension'     )
+	parser.add_argument('-mf' ,'--maxframes',type=int, default=maxframes  ,help='maximum number of frames to process'   )
 	gargs = parser.parse_args()	# returns Namespace object, use dot-notation
 
-	# two input files
-	jlist = detect.getFrameList(gargs.idir)
-	img1 = cv2.imread(os.path.join(gargs.idir, jlist[0] + '.jpg'), cv2.IMREAD_UNCHANGED)
-	img2 = cv2.imread(os.path.join(gargs.idir, jlist[len(jlist)-1] + '.jpg'), cv2.IMREAD_UNCHANGED)
-
-	# diff
-	imgDiff = cv2.absdiff(img1, img2)	
-	imgDiff2 = cv2.absdiff(img2, imgDiff)
-	imgDiff3 = cv2.absdiff(img1, imgDiff2)
-
-	imgDiff2a = cv2.absdiff(img1, imgDiff)
-	imgDiff4 = cv2.absdiff(img2, imgDiff2a)
+	looper()
+	return
 
 	# convert diff to mask
 	imgGray = cv2.cvtColor(imgDiff, cv2.COLOR_BGR2GRAY)
 	t, imgMask = cv2.threshold(imgGray, 0,  255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
 	
 	draw.showImage(imgDiff, imgDiff2, imgDiff3, imgDiff4)
-	return
 
 	# get contours
 	imgLabeled = copy.deepcopy(imgDiff)

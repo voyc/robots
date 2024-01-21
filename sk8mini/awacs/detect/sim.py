@@ -100,7 +100,6 @@ def main():
 
 		# display jpg	
 		img = draw.drawImage(img,labels, {'format':'sbs'})
-		img = draw.titleImage(img,fnum)
 		cv2.imshow(f'sim {gargs.idir}', img)
 
 		# animate and allow manual interaction

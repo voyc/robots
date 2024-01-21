@@ -7,6 +7,7 @@ import numpy as np
 import copy
 import math
 import colorsys
+import os
 
 def createImage(shape=(600,600,3), color=(255,255,255)):
 	image = np.zeros(shape, np.uint8)
@@ -16,7 +17,8 @@ def createImage(shape=(600,600,3), color=(255,255,255)):
 default_options = {
 	"format": "overlay",   # overlay, map, sbs
 	"thickness_normal": 2,
-	"thickness_selected": 4
+	"thickness_selected": 4,
+	"title": ''
 }
 
 color_stack = [
@@ -47,6 +49,9 @@ def drawImage(image, labels, options={}, selected=-1):
 
 	if imgformat == 'sbs':
 		imgOut = np.hstack((image, imgLay, imgMap))
+
+	if options['title']:
+		imgOut = titleImage(imgOut, options['title'])
 	return imgOut
 
 def drawOverlay(image, labels, options, selected):
@@ -86,11 +91,14 @@ def titleImage(img, title):
 	cv2.putText(imgOut, title, (20,40), cv2.FONT_HERSHEY_PLAIN, 2, (0,0,0), 2)
 	return imgOut
 
-def showImage(*args, windowname='show', cols=0):
+def showImage(*args, windowname='show', cols=0, fps=0):
 	img = stack(*args, cols=cols)
 	cv2.imshow(windowname, img)
-	key = cv2.waitKey(0)
-	cv2.destroyAllWindows()
+	delay = 0
+	if fps:
+		delay = round(1000/fps)
+	key = cv2.waitKey(delay)
+	#cv2.destroyAllWindows()
 	return key
 
 def drawLine(img, ctr, angle, length=100):
@@ -175,7 +183,7 @@ def stack(*args, cols=0):
 		n += 1
 
 	# add extra blank if odd
-	if hasattr(ar[numrows-1], '__len__'):
+	if not hasattr(ar[numrows-1][numcols-1], '__len__'):
 		blank = np.zeros((ar[0][0].shape), np.uint8)
 		ar[numrows-1][numcols-1] = blank
 
