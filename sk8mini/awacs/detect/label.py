@@ -46,8 +46,13 @@ def read(fname):
 		reader = csv.reader(f)
 		for srow in reader:
 			irow = []
+			n = 0
 			for cell in srow:
-				irow.append(int(cell))		
+				if n == scr:
+					irow.append(float(cell))
+				else:
+					irow.append(int(cell))
+				n += 1
 			label.append(irow)
 		return label
 

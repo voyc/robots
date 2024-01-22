@@ -8,14 +8,14 @@ def fqjoin(path, base, ext):
 		ext = '.' + ext
 	return os.path.join(path,base+ext)
 
-def getFrameList(path):
+def getFrameList(path, nozero=True):
 	flist = []
 	for filename in os.listdir(path):
 		fnum, ext = os.path.splitext(filename)
 		if ext == '.jpg':
 			flist.append(fnum)
 	slist = sorted(flist)
-	#if slist[0] == '00000':
-	#	slist.pop(0)
+	if nozero and slist[0] == '00000':
+		slist.pop(0)
 	return slist
 
