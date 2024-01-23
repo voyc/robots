@@ -1,5 +1,5 @@
 '''
-sim.py - simulate realtime object detection
+simOrg.py - simulate realtime object detection
 '''
 import cv2
 import numpy as np

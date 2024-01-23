@@ -14,6 +14,10 @@ def createImage(shape=(600,600,3), color=(255,255,255)):
 	image[:,:] = color
 	return image
 
+def createMask(shape=(600,600), color=(0,0,0)):
+	image = np.zeros(shape, np.uint8)
+	return image
+
 default_options = {
 	"format": "overlay",   # overlay, map, sbs
 	"thickness_normal": 2,
