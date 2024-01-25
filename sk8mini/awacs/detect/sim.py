@@ -15,10 +15,10 @@ sim.py - offline
 		getOptions() from argparse
 		getFrame() from disk
 		detectObjects()
+		write labelset to disk
 		manual frame navigation
-			show nth
 			pause, forward, back, speedup, slowdown
-			write labelset to disk
+			show nth frames
 
 separate programs, all based on sim.py
 	awacs.py - get frame from cam, all manual options removed
@@ -50,14 +50,22 @@ import frame as frm
 import score as scr
 import label as lbl
 
+
+#global constants - can be tweaked with trackbars
+gthresholdDiffT = 5      # runningDiff, otsu T value, below which the mask is assumed to blank, meaning there's no difference
+gthresholdHome = 5       # runningDiff, pct increase in mean distance, below which are assumed to be an object
+gthresholdSk8Size = 100  # runningDiff, radius of Sk8
+	
 # global variables
 gargs = None     # fixed constants set at startup
 gframendx = -1   # used by getFnum() only
 gframelist = []  # used by getFnum() only
-gfnum = ''  # temp debugging
+gfnum = ''       # debugging info, for titles and logging
+gdebugframe = []  # debugging info, temp images, masks, etc.
+gdebugframes = [] # a list of intermediate frames, saved for here for debugging display
 
 def getFnum(increment, loop=False):
-	global gframendx, gframelist
+	global gframendx, gframelist, gfnum
 	if gframendx == -1:
 		gframelist = frm.getFrameList(gargs.idir)
 	gframendx += increment
@@ -69,15 +77,17 @@ def getFnum(increment, loop=False):
 	if gframendx < 0:
 		gframendx = len(gframelist)-1
 	fnum = gframelist[gframendx]
+	gfnum = fnum
 	return fnum
 
+# camera simulation
 def getFrame(increment):
 	fnum = getFnum(increment)
 	if not fnum:
-		return None, None
+		return None
 	fnum = gframelist[gframendx]
 	frame = cv2.imread(frm.fqjoin(gargs.idir, fnum, gargs.iext), cv2.IMREAD_UNCHANGED)
-	return frame,fnum
+	return frame
 
 # an object detection algorithm
 def diffFrames(current,previous):
@@ -86,37 +96,13 @@ def diffFrames(current,previous):
 	imgDiff3 = cv2.absdiff(previous, imgDiff2)
 	return imgDiff3
 
+# for debugging
 def printObjectArray(objarray):
 	for obj in objarray:
-		print(obj)
+		logging.debug(obj)
 	
-def findSequenceBreaks(means):
-	sortedmeans = sorted(means)
-	meanobjs = [{'mean':sortedmeans[0], 'interval':0, 'pct':0}]
-	prevmean = 0
-	for mean in sortedmeans:
-		interval = mean - prevmean 
-		if prevmean > 0:
-			meanobj = {'mean':mean, 'interval':interval, 'pct':0}
-			meanobjs.append(meanobj)
-		prevmean = mean
-	
-	sortedmeanobjs = sorted(meanobjs,  key=lambda a: a['interval'])
-	printMeanObjects(sortedmeanobjs)
-
-	bigjump = sortedmeanobjs[len(sortedmeanobjs)-2]
-	bpoint = bigjump['mean']
-
-	if bpoint <= 0:
-		breakpoint()
-
-	logging.debug(f'findSequenceBreaks bigjump:{bigjump}, bpoint:{bpoint}')
-	return bpoint
-		
-def findBreakPct(apts):
+def findProposedCenter(apts):
   	# input array of {'ctr':ctr, 'distances':distances, 'mean':mean}
-
-	homethreshold = 5
 
 	# sort by mean
 	apts = sorted(apts,  key=lambda a: a['mean'])
@@ -132,72 +118,15 @@ def findBreakPct(apts):
 		pt['pct'] = pct
 		prevmean = pt['mean']
 
-	#	if pct > homethreshold:
-	#		homepts.append(pt['ctr'])
+		if pct < gthresholdHome:
+			homepts.append(pt['ctr'])
 	
 	# find proposed center of homepts
-	#homepts = np.array(homepts)
-	#proctr = (np.mean(homepts[:,0]),np.mean(homepts[:,1]))
-	#logging.debug(f'proctr: {proctr}')
+	homepts = np.array(homepts)
+	proctr = (np.mean(homepts[:,0]),np.mean(homepts[:,1]))
+	logging.debug(f'proctr: {proctr}')
 
-	# sort by pct 
-	apts = sorted(apts,  key=lambda a: a['pct'])
-	printObjectArray(apts)
-	
-	# choose breakpoint as greatest pct jump between points
-	maxapt = apts[len(apts)-1]
-	bpoint = maxapt['mean']
-
-	# debug: sort by mean
-	apts = sorted(apts,  key=lambda a: a['mean'])
-	printObjectArray(apts)
-
-	return bpoint
-
-def findBreakVehicle(apts):
-  	# input array of {'ctr':ptA, 'distances':distances, 'mean':mean}
-
-	# sort by mean
-	apts = sorted(apts,  key=lambda a: a['mean'])
-
-	# calc interval
-	prevmean = 0
-	for pt in apts:
-		interval = pt['mean'] - prevmean 
-		pt['interval'] = interval
-		prevmean = pt['mean']
-	
-	# sort by interval
-	apts = sorted(apts,  key=lambda a: a['interval'])
-	printObjectArray(apts)
-
-	# find center of first five points with the shortest mean distances
-	ctr5 = []
-	for pt in apts:
-		ctr5.append(pt['ctr'])
-		if len(ctr5) >= 5:
-			break
-	ctr5 = np.array(ctr5)
-	proposedctr = (np.mean(ctr5[:,0]),np.mean(ctr5[:,1]))
-	logging.debug(f'proposedctr: {proposedctr}')
-	
-	# calc distance between each and all the points within the vehicle radius of the proposed center
-	for pt in apts:
-		pt['dctr'] = lbl.linelen(pt['ctr'], proposedctr)
-
-	apts = sorted(apts,  key=lambda a: a['dctr'])
-
-	vehiclethreshold = 50
-	bpoint = 0
-	means = []
-	for pt in apts:
-		if pt['dctr'] > vehiclethreshold:
-			bpoint = pt['mean']
-		means.append(pt['mean'])
-	if bpoint == 0:
-		bpoint = np.max(means)
-		
-	return bpoint
+	return proctr
 
 def calcDistances(ctrs):
 	apts = []  # all point objects
@@ -222,43 +151,45 @@ def calcDistances(ctrs):
 		apts.append(pt)	
 
 
-	# if the means for all points are less than the vehicle size
-	# that indicates there is only the one object, the vehicle 
-	# all points are qualified
-	bpoint = 0
-	vehiclesizethreshold = 50
-	if np.max(means) < vehiclesizethreshold:
-		print(f'calcDistances: no outliers')
-		bpoint = np.max(means)	
+	qctrs = []  # qualified centerpoints
+	dctrs = []  # disqualified centerpoints
+
+	keepall = False
+	if np.max(means) < gthresholdSk8Size:
+		# if the means for all points are less than the vehicle size
+		# that indicates there is only the one object, the vehicle 
+		# all points are qualified
+		logging.debug(f'calcDistances: no outliers')
+		for pt in apts:
+			qctrs.append(pt['ctr'])
 	else:
 		# if some points have larger means
 		# there must be additional objects and outlier points
 		# these outliers will increase the means for all points
-		# find the first point with a big jump in mean distances
-		bpoint = findBreakPct(apts) 
-		#bpoint = findSequenceBreaks(means)
+		proctr = findProposedCenter(apts) 
+		for pt in apts:
+			lenPro = lbl.linelen(pt['ctr'],proctr)
+			logging.debug(f'lenPro: {lenPro}')
+			if lenPro < gthresholdSk8Size:
+				qctrs.append(pt['ctr'])
+			else:
+				dctrs.append(pt['ctr'])
+	
+	printObjectArray(apts)
 
-		# logically the bpoint must be within the range of means values
-		# if it's above or below, then it's not really a bpoint
-		if bpoint <= np.min(means) or bpoint > np.max(means):
-			breakpoint()	
+	if len(qctrs) <= 0:
+		cx,cy = proctr
+		qctrs.append([cx-50,cy-50])
+		qctrs.append([cx+50,cy-50])
+		qctrs.append([cx+50,cy+50])
+		qctrs.append([cx-50,cy+50])
 
-	# take only the points that come befoe this big jump
-	# the other points are considered too outliers
-	qctrs = []  # qualified centerpoints
-	dctrs = []  # disqualified centerpoints
-	for pt in apts:
-		if pt['mean'] < bpoint:
-			qctrs.append(pt['ctr'])
-		else:
-			dctrs.append(pt['ctr'])
+	qctrs = np.array(qctrs)
+	qctrs = np.intp(qctrs)
+
+	logging.debug(f'qctrs: {qctrs}')
 
 	logging.debug(f'calcDistances num input pts:{len(ctrs)}, num output ctrs:{len(qctrs)}')
-
-	# we must take at least some
-	if len(qctrs) <= 0:
-		breakpoint()
-	
 	return [qctrs, dctrs, means]
 	
 		
@@ -282,12 +213,15 @@ def clustering(mask, cls, dim, maxcount, t):
 		ctrs.append(ctr)
 		sizes.append(size)
 	
+	{'ctr':ctr, 'size':size, 'cnt':cnt}
+
 	# qualify points based on distances from other points
 	[qpts,dpts,means] = calcDistances(ctrs)
 
 	# make convex hull out of qualified points
 	qpts = np.array(qpts)
-	hull = cv2.convexHull(qpts)
+	#hull = cv2.convexHull(qpts)
+	hull = detect.combineContours(cnts)  # qualified contours
 
 	# find rotated rect and make label of convex hull
 	rect = cv2.minAreaRect(hull) 
@@ -332,9 +266,8 @@ def preprocessMask(mask):
 	#mask = cv2.erode(mask, kernel, iterations=dilateiterations)
 	return mask
 
-def detectRunningDiff(fnum, frame, previousframe):
-	global gfnum
-	gfnum = fnum  # temp for use in calcSequenceBreaks
+def detectRunningDiff(frame, previousframe):
+	global gdebugframe
 	cls = 2  # fix this
 
 	# diff from previous frame
@@ -345,26 +278,35 @@ def detectRunningDiff(fnum, frame, previousframe):
 	t, mask = cv2.threshold(gray, 0,  255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
 	
 	# if otsu t value is too low, it means there's no diff, no movement
-	diffThreshold = 5
-	if t < diffThreshold:
+	logging.info(f'diff otsu t:{t}')
+
+	if t < gthresholdDiffT:
 		logging.debug(f'low t {t}, no movement')
-		return [[cls,0,0,0,0,0,0]], [diff, gray, mask, [[],[],[]] ]
+		gdebugframe = [diff, gray, mask, [[],[],[]] ]
+		return [[cls,0,0,0,0,0,0]]
 
 	# preprocess mask
 	labels, cluster = clustering(mask, cls, (50,70), 1, t)
 	
-	return labels, [diff, gray, mask, cluster]
+	gdebugframe = [diff, gray, mask, cluster]
+	return labels
 
-def processFrame(frame, fnum, previousframe):
-	return detectRunningDiff(fnum, frame, previousframe)
+def processFrame(frame, previousframe):
+	model = {'algo': 'rdiff'}
+	if model['algo'] == 'color':
+		labels = detectColor(frame)
+	elif model['algo'] == 'rdiff':
+		labels = detectRunningDiff(frame, previousframe)
+	logging.info(labels)
+	return labels
 
 # main loop thru all frames, cam vs awacs
 def looper():
-	previousframe,_ = getFrame(1)
+	previousframe = getFrame(1)
 	framecnt = 0
 	increment = 1
 
-	# debugging
+	# debugging, save for groups of frames
 	labelsets = []
 	frames = []
 	diffs = []
@@ -374,18 +316,19 @@ def looper():
 	clusters = []
 
 	while True:
-		frame,fnum = getFrame(increment)
+		frame = getFrame(increment)
 		if frame is None:
 			break;
 		framecnt += 1
-		logging.info(f'frame:{framecnt}, fnum:{fnum}')
+		logging.info(f'frame:{framecnt}, fnum:{gfnum}')
 
-		labels, [diff, gray, mask, cluster] = processFrame(frame, fnum, previousframe)
+		labels = processFrame(frame, previousframe)
+		[diff, gray, mask, cluster] = gdebugframe
 
 		# debugging: change title when labels indicates no movement
-		title = fnum
+		title = gfnum
 		if labels[0][lbl.scr] == 0:
-			title = f'{fnum} no movement'
+			title = f'{gfnum} no movement'
 
 		# annotate labels on top of frame
 		aframe = draw.drawImage(frame,labels,options={"title":title})
@@ -407,15 +350,12 @@ def looper():
 		aframes.append(aframe)
 
 		if gargs.olabelsufx:
-			lbl.write(labels,frm.fqjoin(gargs.idir, fnum, gargs.olabelsufx))
+			lbl.write(labels,frm.fqjoin(gargs.idir, gfnum, gargs.olabelsufx))
 
 
 		if gargs.nthshow > 0 and (framecnt % gargs.nthshow) == 0:
-			# debugging choice of images to show
-			#imagearray = diffs+masks+aframes
-			#columncount = len(diffs)
 			imagearray = aframes
-			columncount = 6
+			imagearray = diffs+masks+aframes
 
 			# debugging reset arrays
 			labelsets = []
@@ -428,10 +368,10 @@ def looper():
 
 			waiting = True
 			while waiting:
-				key = draw.showImage(imagearray, fps=gargs.fps, cols=columncount)
+				key = draw.showImage(imagearray, fps=gargs.fps, grid=gargs.grid, screen=gargs.screen)
 				if key == ord('q'):
 					waiting = False
-				elif key == ord('n'):
+				elif key == ord('n') or gargs.fps > 0:
 					increment = 1   # n next
 					waiting = False
 				elif key == ord('p'):
@@ -450,6 +390,8 @@ def getOptions():
 	defiext = 'jpg'
 	defnthshow = 0
 	deffps = 0
+	defgrid = '1x1'
+	defscreen = '1910x900'
 	defolabelsufx = 'label.csv'
 
 	# get command-line parameters 
@@ -458,17 +400,25 @@ def getOptions():
 	parser.add_argument('-ie' ,'--iext'                           ,default=defiext      ,help='input extension'     )
 	parser.add_argument('-ns' ,'--nthshow'   ,type=int            ,default=defnthshow   ,help='stop and refresh UI every nth frame'   )
 	parser.add_argument('-fps','--fps'       ,type=int            ,default=deffps       ,help='fps, when nthshow is 0'   )
+	parser.add_argument('-g'  ,'--grid'                           ,default=defgrid      ,help='display grid as colsxrows'   )
+	parser.add_argument('-scr','--screen'                         ,default=defscreen    ,help='screen size as widxht'   )
 	parser.add_argument('-ol' ,'--olabelsufx'                     ,default=defolabelsufx,help='suffix of output label file'   )
-	parser.add_argument('-v'  ,'--verbose'   ,action='store_true' ,default=False   ,help='display additional output messages'    ),
+	parser.add_argument('-d'  ,'--debug'     ,action='store_true' ,default=False   ,help='display additional logging'    ),
 	parser.add_argument('-q'  ,'--quiet'     ,action='store_true' ,default=False   ,help='suppresses all output'                 ),
 	parser.add_argument('-m'  ,'--manual'    ,action='store_true' ,default=False   ,help='let user initialize the model manually'),
 	args = parser.parse_args()	# returns Namespace object, use dot-notation
+
+	# split screen and grid
+	wd,ht = args.screen.split('x')
+	args.screen = np.array([wd,ht],dtype='int_')
+	cols,rows = args.grid.split('x')
+	args.grid = np.array([cols,rows],dtype='int_')
 	return args
 
-def setupLogging(verbose,quiet):
+def setupLogging(debug,quiet):
 	logging.basicConfig(format='%(message)s')
 	logging.getLogger('').setLevel(logging.INFO)
-	if gargs.verbose:
+	if gargs.debug:
 		logging.getLogger('').setLevel(logging.DEBUG)
 	if gargs.quiet:
 		logging.getLogger('').setLevel(logging.CRITICAL)
@@ -478,7 +428,8 @@ def setupLogging(verbose,quiet):
 def main():
 	global gargs
 	gargs = getOptions()
-	setupLogging(gargs.verbose, gargs.quiet)
+
+	setupLogging(gargs.debug, gargs.quiet)
 	looper()
 
 if __name__ == "__main__":

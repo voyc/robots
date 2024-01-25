@@ -66,6 +66,8 @@ import cv2
 import os
 import math
 
+import draw
+
 def showImage(*args):
 	print(len(args))
 	a = []
@@ -108,7 +110,6 @@ def averageBrightness(image):
 
 # read image
 model = 'photos/training/day_model.json'
-fname = 'photos/20231216-092941/00148.jpg'   # donut 119
 fname = 'photos/20231216-092941/00134.jpg'   # donut 143
 fname = 'photos/20231216-092941/00103.jpg'   # donut 173
 imgBgr = cv2.imread(fname, cv2.IMREAD_UNCHANGED)
@@ -157,17 +158,27 @@ kernel = np.ones((5, 5))
 imgClosed = cv2.morphologyEx(imgCanny, cv2.MORPH_CLOSE, kernel)
 
 showImage(imgCrop, imgCanny, imgClosed)
-quit()
 
 # dilate
 imgMaskVehicle = cv2.dilate(imgCanny, kernel, iterations=3)
 
-showImage(imgMaskVehicle)
+#showImage(imgMaskVehicle)
+showImage(imgCanny)
 
-contours, _ = cv2.findContours(imgMaskVehicle, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+contours, _ = cv2.findContours(imgCanny, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+print(f'num contours: {len(contours)}')
 
-
+polygon = []
+counter = 0
 for cnt in contours:
+	counter += 1
+	print(f'{counter} len cnt: {len(cnt)}')
+	for c in cnt:
+		print(c[0])
+		polygon.append(c[0])
+
+	#polygon += cnt
+
 	rect = cv2.minAreaRect(cnt)
 	box = cv2.boxPoints(rect)
 	box = np.intp(box)
@@ -192,10 +203,23 @@ for cnt in contours:
 	vehicle = (box, ctr, angle)
 	print(ctr)
 	drawVehicle(imgBgr, vehicle)
-
-
 showImage(imgBgr)
 
+poly = [[83,38],[82,56],[74,71],[71,74],[30,74],[28,73],[15,55],[15,37],[16,36],[18,35],[34,28],[59,27],[67,27],[81,35]]
+poly = np.array(poly)
+print(poly)
+
+polygon = np.array(polygon)
+print(polygon)
+
+hull = cv2.convexHull(polygon)
+print(hull)
+
+mask = draw.createMask((100,100))
+#mask = cv2.polylines(mask, polygon, True, (255,255,255), 1)
+#mask = cv2.polylines(mask, hull, True, (255,255,255), 1)
+cv2.drawContours(mask, [hull], -1, color, cv2.FILLED)
+showImage(mask)
 
 '''
 		
@@ -217,4 +241,3 @@ showImage(imgBgr)
 	imgEdged = imgDilate.copy()
 
 '''
-

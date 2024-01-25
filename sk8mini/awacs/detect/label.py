@@ -39,6 +39,10 @@ scr = 6   # score, error
 m   = 7   # match, used temporarily during scoring
 
 # cls,cx,cy,w,h,hdg,scr = label
+# label = [cls,cx,cy,w,h,hdg,scr]
+
+lbl.nomovement = [cls,-1,-1,-1,-1,-1,1]  # no object, full confidence, no movement
+lbl.notfound   = [cls,-1,-1,-1,-1,-1,0]  # no object, no confidence, lost
 
 def read(fname):
 	label = []

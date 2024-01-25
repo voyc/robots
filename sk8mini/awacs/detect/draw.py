@@ -95,8 +95,9 @@ def titleImage(img, title):
 	cv2.putText(imgOut, title, (20,40), cv2.FONT_HERSHEY_PLAIN, 2, (0,0,0), 2)
 	return imgOut
 
-def showImage(*args, windowname='show', cols=0, fps=0):
-	img = stack(*args, cols=cols)
+def showImage(*args, windowname='show', fps=0, grid=[1,1], screen=(1910,900)):
+	cols,rows = grid
+	img = stack(*args, cols=cols, rows=rows)
 	cv2.imshow(windowname, img)
 	delay = 0
 	if fps:
@@ -122,7 +123,7 @@ def drawVehicle(img, vehicle):
 	cv2.drawContours(img, [box], 0, (0,0,255),1)
 	drawLine(img, ctr, angle, 50)
 
-def stack(*args, cols=0):
+def stack(*args, screen=(1910,900), cols=1, rows=1):
 	#  input can be list or separate args
 	imglist = []
 	if type(args[0]) is list:
@@ -143,8 +144,8 @@ def stack(*args, cols=0):
 		n += 1
 
 	# check width
-	screenwd = 1910
-	screenht =  900
+	screenwd = screen[0]
+	screenht = screen[1]
 	wd = a[0].shape[0]	
 	ht = a[0].shape[1]	
 	num = len(a)
