@@ -52,16 +52,21 @@ import label as lbl
 
 
 #global constants - can be tweaked with trackbars
-gthresholdDiffT = 5      # runningDiff, otsu T value, below which the mask is assumed to blank, meaning there's no difference
-gthresholdHome = 5       # runningDiff, pct increase in mean distance, below which are assumed to be an object
-gthresholdSk8Size = 100  # runningDiff, radius of Sk8
+gthresholdDiffT     =   5  # runningDiff, otsu T value, below which the mask is assumed to blank, meaning there's no difference
+gthresholdPctMean   =   5  # runningDiff, pct increase in mean distance, below which are assumed to be an object
+gthresholdSk8Radius = 100  # runningDiff, radius of Sk8
+
+gmodel = {
+	'clsid':2,
+	'algo':'rdiff',
+	'dim':(50,70)
+}
 	
 # global variables
 gargs = None     # fixed constants set at startup
 gframendx = -1   # used by getFnum() only
 gframelist = []  # used by getFnum() only
 gfnum = ''       # debugging info, for titles and logging
-gdebugframe = []  # debugging info, temp images, masks, etc.
 gdebugframes = [] # a list of intermediate frames, saved for here for debugging display
 
 def getFnum(increment, loop=False):
@@ -89,7 +94,6 @@ def getFrame(increment):
 	frame = cv2.imread(frm.fqjoin(gargs.idir, fnum, gargs.iext), cv2.IMREAD_UNCHANGED)
 	return frame
 
-# an object detection algorithm
 def diffFrames(current,previous):
 	imgDiff1 = cv2.absdiff(current, previous)	
 	imgDiff2 = cv2.absdiff(current, imgDiff1)
@@ -101,134 +105,78 @@ def printObjectArray(objarray):
 	for obj in objarray:
 		logging.debug(obj)
 	
-def findProposedCenter(apts):
-  	# input array of {'ctr':ctr, 'distances':distances, 'mean':mean}
+def findProposedCenter(cntds, threshold):
+  	# input list of dicts 
+	# {'ctr':ctr, 'meandistance':mean, 'cnt':cnt, 'qualified':False}
 
-	# sort by mean
-	apts = sorted(apts,  key=lambda a: a['mean'])
+	# sort by meandistance
+	cntds = sorted(cntds,  key=lambda a: a['meandistance'])
 
-	# calc pct
+	# calc pct increase in meandistance from one point to the next
 	homepts = []
-	prevmean = apts[0]['mean']
+	prevmean = cntds[0]['meandistance']
 	pct = 1
-	for pt in apts:
+	for cntd in cntds:
 		if prevmean > 0:
-			pct = ((pt['mean'] - prevmean) / prevmean) * 100 
+			pct = ((cntd['meandistance'] - prevmean) / prevmean) * 100 
 			pct = max(pct,1)
-		pt['pct'] = pct
-		prevmean = pt['mean']
+		prevmean = cntd['meandistance']
 
-		if pct < gthresholdHome:
-			homepts.append(pt['ctr'])
+		# save centerpoints within the meandistance threshold
+		if pct < threshold:
+			homepts.append(cntd['ctr'])
 	
-	# find proposed center of homepts
+	# find center of homepts
 	homepts = np.array(homepts)
-	proctr = (np.mean(homepts[:,0]),np.mean(homepts[:,1]))
-	logging.debug(f'proctr: {proctr}')
+	proposedcenter = (np.mean(homepts[:,0]),np.mean(homepts[:,1]))
+	logging.debug(f'proposedcenter: {proposedcenter}')
 
-	return proctr
+	return proposedcenter 
 
-def calcDistances(ctrs):
-	apts = []  # all point objects
+# calculate the distance between each point and every other point 
+# save the mean distance for each point, return the largest
+def calcMeanDistance(cntds):
 	means = []
-
-	# input is an array of centerpoints of the contours found in the mask
-	# calculate the distance between each point and every other point
-	# this results in an array for each point, containing the distances to all other points
-	for ptA in ctrs:
+	for cntd in cntds:
 		distances = []
-		for ptB in ctrs:
+		ptA = cntd['ctr']
+		for cntd2 in cntds:	
+			ptB = cntd2['ctr']
 			lenAB = lbl.linelen(ptA,ptB)
 			distances.append(lenAB)
-
-		# take the mean of all distances for this point
+		# save the mean of these distances
 		mean = np.mean(distances)
+		cntd['meandistance'] = mean  # input array is updated
 		means.append(mean)
+	return np.max(means) # return largest
 
-		# save the array and mean distance for each point
-		#pt = {'ctr':ptA, 'distances':distances, 'mean':mean}
-		pt = {'ctr':ptA, 'mean':mean}
-		apts.append(pt)	
+# given input list of contour descriptors, based on mutual proximity,
+# find the likely center of our object and disqualify outlier points
+def qualifyByProximity(cntds, proctr, threshold):
+	qctrs = []
+	dctrs = []
+	for cntd in cntds:
+		lenpro = lbl.linelen(cntd['ctr'], proctr)
+		logging.debug(f'qualifyByProximity distance from center: {lenpro}')
+		if threshold <= 0 or lenpro < threshold:
+			cntd['qualified'] = True
+			qctrs.append(cntd['ctr'])
+		else:
+			dctrs.append(cntd['ctr'])
+	return qctrs, dctrs
 
-
-	qctrs = []  # qualified centerpoints
-	dctrs = []  # disqualified centerpoints
-
-	keepall = False
-	if np.max(means) < gthresholdSk8Size:
-		# if the means for all points are less than the vehicle size
-		# that indicates there is only the one object, the vehicle 
-		# all points are qualified
-		logging.debug(f'calcDistances: no outliers')
-		for pt in apts:
-			qctrs.append(pt['ctr'])
-	else:
-		# if some points have larger means
-		# there must be additional objects and outlier points
-		# these outliers will increase the means for all points
-		proctr = findProposedCenter(apts) 
-		for pt in apts:
-			lenPro = lbl.linelen(pt['ctr'],proctr)
-			logging.debug(f'lenPro: {lenPro}')
-			if lenPro < gthresholdSk8Size:
-				qctrs.append(pt['ctr'])
-			else:
-				dctrs.append(pt['ctr'])
-	
-	printObjectArray(apts)
-
-	if len(qctrs) <= 0:
-		cx,cy = proctr
-		qctrs.append([cx-50,cy-50])
-		qctrs.append([cx+50,cy-50])
-		qctrs.append([cx+50,cy+50])
-		qctrs.append([cx-50,cy+50])
-
-	qctrs = np.array(qctrs)
-	qctrs = np.intp(qctrs)
-
-	logging.debug(f'qctrs: {qctrs}')
-
-	logging.debug(f'calcDistances num input pts:{len(ctrs)}, num output ctrs:{len(qctrs)}')
-	return [qctrs, dctrs, means]
-	
-		
-
-# an object detection algorithm
-# choose contours that are within proximity of one another
-# then make one new contour via convexHull of the centerpoints
-# alternative: use all the points of the chosen contours, not just the centers
-def clustering(mask, cls, dim, maxcount, t):  
-	ctrs = []
-	sizes = []
+# return a convex hull enclosing all of the qualified contours
+def combineContours(cntds):
 	polygon = []
-	cnts,_ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-	for cnt in cnts:
-		rect = cv2.minAreaRect(cnt) 
-		ctr = rect[0]
-		size = rect[1]
-		mean = np.mean(size)
-		ctr = np.intp(ctr)
-		#if size > (5,5) and size < (100,100):
-		ctrs.append(ctr)
-		sizes.append(size)
-	
-	{'ctr':ctr, 'size':size, 'cnt':cnt}
-
-	# qualify points based on distances from other points
-	[qpts,dpts,means] = calcDistances(ctrs)
-
-	# make convex hull out of qualified points
-	qpts = np.array(qpts)
-	#hull = cv2.convexHull(qpts)
-	hull = detect.combineContours(cnts)  # qualified contours
-
-	# find rotated rect and make label of convex hull
-	rect = cv2.minAreaRect(hull) 
-	rmse = scr.calcRMSE(dim, rect[1])
-	label = lbl.labelFromRect(cls, rect, which=False, score=rmse)
-	logging.debug(f'clustered label:{label}')
-	return [label],[qpts,dpts,means] 
+	for cntd in cntds:
+		if cntd['qualified'] == True:
+			for pt in cntd['cnt']:
+				polygon.append(pt[0])
+	polygon = np.array(polygon)
+	hull = None
+	if len(polygon) > 0:
+		hull = cv2.convexHull(polygon)
+	return hull
 
 # an object detection algorithm
 def labelsFromMask(mask, cls, dim, maxcount):  # with size closest to expected dimensions 
@@ -266,37 +214,87 @@ def preprocessMask(mask):
 	#mask = cv2.erode(mask, kernel, iterations=dilateiterations)
 	return mask
 
-def detectRunningDiff(frame, previousframe):
-	global gdebugframe
-	cls = 2  # fix this
-
-	# diff from previous frame
+# object detection by comparing current frame to previous frame, output labels
+def detectRunningDiff(model, frame, previousframe, cls):
+	# diff current and previous frames
 	diff = diffFrames(frame, previousframe)
+	gdebugframes.append({'name':'diff', 'frame':diff})
 
-	# make mask via otsu threshold
+	# convert to gray and make mask via otsu threshold
 	gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
 	t, mask = cv2.threshold(gray, 0,  255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+	gdebugframes.append({'name':'gray', 'frame':gray})
+	gdebugframes.append({'name':'mask', 'frame':mask})
 	
 	# if otsu t value is too low, it means there's no diff, no movement
 	logging.info(f'diff otsu t:{t}')
-
 	if t < gthresholdDiffT:
 		logging.debug(f'low t {t}, no movement')
-		gdebugframe = [diff, gray, mask, [[],[],[]] ]
-		return [[cls,0,0,0,0,0,0]]
+		return [lbl.nomovement]
 
-	# preprocess mask
-	labels, cluster = clustering(mask, cls, (50,70), 1, t)
-	
-	gdebugframe = [diff, gray, mask, cluster]
-	return labels
+	# find contours in the mask
+	cnts,_ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-def processFrame(frame, previousframe):
-	model = {'algo': 'rdiff'}
+	# make a list of contour descriptors, dicts describing and including each contour
+	cntds = []
+	for cnt in cnts:
+		rect = cv2.minAreaRect(cnt) 
+		cntd = {'ctr':np.intp(rect[0]), 'size':rect[1], 'cnt':cnt, 'meandistance':0, 'qualified':False}
+		cntds.append(cntd)
+
+	# calculate mean distance for each contour center
+	maxmean = calcMeanDistance(cntds)
+
+	# if the means for all points are less than the vehicle size,
+	# that indicates there is only the one object: the vehicle 
+	# all points are qualified
+	threshold = gthresholdSk8Radius
+	if maxmean < threshold:
+		threshold = 0
+		logging.debug(f'detectRunningDiff: one center only, no outliers')
+
+	# if some points have larger means
+	# there must be additional objects and outlier points
+	# these outliers will increase the means for all points
+	proctr = findProposedCenter(cntds, gthresholdPctMean)
+	qctrs, dctrs = qualifyByProximity(cntds, proctr, threshold) 
+	hull = []
+	if len(qctrs) <= 0:
+		label = lbl.notfound
+		logging.info(f'clustered object not found')
+	else:
+		# make convex hull out of qualified points
+		#hull = cv2.convexHull(qpts)  # make hull from centers only
+		hull = combineContours(cntds) # make hull from all points of the contour
+
+		# find rotated rect and make label of convex hull
+		rect = cv2.minAreaRect(hull) 
+		rmse = scr.calcRMSE(model['dim'], rect[1])
+		label = lbl.labelFromRect(cls, rect, which=False, score=rmse)
+		logging.debug(f'clustered label:{label}')
+
+	cover = makeClusteredOverlay(frame, qctrs, dctrs, proctr, hull)
+	gdebugframes.append({'name':'cover', 'frame':cover})
+	return [label]
+
+def makeClusteredOverlay(frame, qpts, dpts, proctr, hull):
+	cover = draw.createImage(frame.shape, color=(0,0,0))
+	if len(hull):
+		cv2.drawContours(cover, [hull], -1, (255,0,0), 1)
+
+	proctr = np.array(proctr, dtype='int_')
+	cover = cv2.circle(cover, proctr, 4, (255,0,0), -1)
+	for qpt in qpts:
+		cover = cv2.circle(cover, qpt, 2, (0,255,0), -1)
+	for dpt in dpts:
+		cover = cv2.circle(cover, dpt, 2, (0,0,255), -1)
+	return cover	
+
+def processFrame(model, frame, previousframe):
 	if model['algo'] == 'color':
 		labels = detectColor(frame)
 	elif model['algo'] == 'rdiff':
-		labels = detectRunningDiff(frame, previousframe)
+		labels = detectRunningDiff(model, frame, previousframe, model['clsid'])
 	logging.info(labels)
 	return labels
 
@@ -307,13 +305,7 @@ def looper():
 	increment = 1
 
 	# debugging, save for groups of frames
-	labelsets = []
-	frames = []
-	diffs = []
-	grays = []
-	masks = []
 	aframes = []
-	clusters = []
 
 	while True:
 		frame = getFrame(increment)
@@ -322,8 +314,8 @@ def looper():
 		framecnt += 1
 		logging.info(f'frame:{framecnt}, fnum:{gfnum}')
 
-		labels = processFrame(frame, previousframe)
-		[diff, gray, mask, cluster] = gdebugframe
+		labels = processFrame(gmodel, frame, previousframe)
+		#[diff, gray, mask, cluster] = gdebugframe
 
 		# debugging: change title when labels indicates no movement
 		title = gfnum
@@ -332,39 +324,21 @@ def looper():
 
 		# annotate labels on top of frame
 		aframe = draw.drawImage(frame,labels,options={"title":title})
-
-		# debug: draw points from clustering
-		[qpts, dpts, means] = cluster
-		for qpt in qpts:
-			aframe = cv2.circle(aframe, qpt, 2, (0,255,0), -1)
-		for dpt in dpts:
-			aframe = cv2.circle(aframe, dpt, 2, (0,0,255), -1)
-
-		# debugging
-		labelsets.append(labels)
-		frames.append(frame)
-		diffs.append(diff)
-		grays.append(gray)
-		masks.append(mask)
-		clusters.append(cluster)
 		aframes.append(aframe)
 
 		if gargs.olabelsufx:
 			lbl.write(labels,frm.fqjoin(gargs.idir, gfnum, gargs.olabelsufx))
 
+		cover = getDebugFrames('cover')[0]
+		cv2.imwrite('cover.jpg', cover)
 
 		if gargs.nthshow > 0 and (framecnt % gargs.nthshow) == 0:
 			imagearray = aframes
-			imagearray = diffs+masks+aframes
+			imagearray = aframes+getDebugFrames('mask')+getDebugFrames('cover')
 
 			# debugging reset arrays
-			labelsets = []
-			frames = []
-			diffs = []
-			gray = []
-			masks = []
-			clusters = []
 			aframes = []
+			gdebugframes = []
 
 			waiting = True
 			while waiting:
@@ -384,6 +358,12 @@ def looper():
 
 	cv2.destroyAllWindows()
 
+def getDebugFrames(name):
+	out = []
+	for frm in gdebugframes:
+		if frm['name'] == name:
+			out.append(frm['frame'])
+	return out
 
 def getOptions():
 	defidir = 'photos/20231216-092941/'  # day

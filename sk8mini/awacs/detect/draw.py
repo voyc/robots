@@ -60,12 +60,12 @@ def drawImage(image, labels, options={}, selected=-1):
 
 def drawOverlay(image, labels, options, selected):
 	imgOut = copy.deepcopy(image)
-	n = 0
+	ndx = 0
 	for label in labels:
 		cls, x, y, w, h, hdg, scr = label
 		color = color_stack[cls-1]
 		thickness = options['thickness_normal']
-		if n == selected:
+		if ndx == selected:
 			thickness = options['thickness_selected']
 		rect = ((x,y), (w,h), hdg)
 		box = cv2.boxPoints(rect)
@@ -75,7 +75,7 @@ def drawOverlay(image, labels, options, selected):
 		if cls == 3:
 			drawLine(imgOut, (x,y), hdg, w)
 			#cv2.putText(imgOut, f'{hdg}', box[1], cv2.FONT_HERSHEY_PLAIN, 2, color)
-		n += 1
+		ndx += 1
 	return imgOut
 
 def drawMap(image, labels, options, selected):
@@ -133,22 +133,22 @@ def stack(*args, screen=(1910,900), cols=1, rows=1):
 			imglist.append(img)
 
 	# convert depth if necessary
-	a = []
-	n = 0
+	aray = []
+	ndx = 0
 	for img in imglist:
 		if len(img.shape) < 3:
 			gray = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-			a.append(gray)
+			aray.append(gray)
 		else:
-			a.append(img)
-		n += 1
+			aray.append(img)
+		ndx += 1
 
 	# check width
 	screenwd = screen[0]
 	screenht = screen[1]
-	wd = a[0].shape[0]	
-	ht = a[0].shape[1]	
-	num = len(a)
+	wd = aray[0].shape[0]	
+	ht = aray[0].shape[1]	
+	num = len(aray)
 	numrows = 1
 	numcols = num
 
@@ -171,21 +171,21 @@ def stack(*args, screen=(1910,900), cols=1, rows=1):
 		newwd = int((newht/ht) * wd)
 	
 	if newwd > 0:
-		b = []
-		for img in a:
+		bray = []
+		for img in aray:
 			resized = cv2.resize(img, dsize=[newwd,newht])
-			b.append(resized)
+			bray.append(resized)
 	else:
-		b = a	
+		bray = aray	
 
 	# stack cols
 	ar = [ [0]*numcols for i in range(numrows)]
-	n = 0
-	for img in b:
-		nrow = math.floor(n / numcols)
-		ncol = n - (nrow * numcols)
+	ndx = 0
+	for img in bray:
+		nrow = math.floor(ndx / numcols)
+		ncol = ndx - (nrow * numcols)
 		ar[nrow][ncol] = img
-		n += 1
+		ndx += 1
 
 	# add extra blank if odd
 	if not hasattr(ar[numrows-1][numcols-1], '__len__'):
@@ -240,3 +240,43 @@ def BGRfromHSV(h,s,v):
 	b *= 255
 	return b,g,r
 
+def overlayTransparent(background, foregrond):
+	# make working copies
+	composite = copy.deepcopy(background)
+	overlay   = copy.deepcopy(foreground)
+	
+	# both of these images must have an alpha channel
+	composite = cv2.cvtColor(composite, cv2.COLOR_BGR2BGRA)
+	overlay = cv2.cvtColor(overlay, cv2.COLOR_BGR2BGRA)
+	
+	# in overlay, make black transparent
+	tmp = cv2.cvtColor(overlay, cv2.COLOR_BGR2GRAY) 
+	_, alpha = cv2.threshold(tmp,20, 255, cv2.THRESH_BINARY) 
+	b, g, r, a = cv2.split(overlay) 
+	rgba = [b, g, r, alpha] 
+	overlay = cv2.merge(rgba, 4) 
+	  
+	# normalize alpha channels from 0-255 to 0-1
+	alpha_composite = composite[:,:,3] / 255.0
+	alpha_overlay = overlay[:,:,3] / 255.0
+	
+	# calc beta, so that alpha + beta = 1
+	beta_composite = 1 - alpha_composite
+	beta_overlay = 1 - alpha_overlay
+	
+	# in composite, set adjusted colors, one pixel at a time
+	for color in range(0, 3):
+		composite[:,:,color] = \
+			alpha_overlay * overlay[:,:,color] + \
+			alpha_composite * composite[:,:,color] * beta_overlay
+	
+	# set adjusted alpha
+	composite[:,:,3] = (1 - beta_overlay * beta_composite)
+	
+	# denormalize back to 0-255
+	composite[:,:,3] = composite[:,:,3] * 255
+	
+	# all images must have same shape for display
+	composite = cv2.cvtColor(composite, cv2.COLOR_BGRA2BGR) 
+	return composite
+	
