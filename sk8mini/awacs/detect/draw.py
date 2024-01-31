@@ -72,7 +72,7 @@ def drawOverlay(image, labels, options, selected):
 		box = np.intp(box)
 		imgOut = cv2.drawContours(imgOut, [box], 0, color, thickness)
 
-		if cls == 3:
+		if cls == 2:
 			drawLine(imgOut, (x,y), hdg, w)
 			#cv2.putText(imgOut, f'{hdg}', box[1], cv2.FONT_HERSHEY_PLAIN, 2, color)
 		ndx += 1
@@ -97,7 +97,7 @@ def titleImage(img, title):
 
 def showImage(*args, windowname='show', fps=0, grid=[1,1], screen=(1910,900)):
 	cols,rows = grid
-	img = stack(*args, cols=cols, rows=rows)
+	img = stack(*args, cols=cols, rows=rows, screen=screen)
 	cv2.imshow(windowname, img)
 	delay = 0
 	if fps:

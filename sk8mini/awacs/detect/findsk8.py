@@ -1,15 +1,5 @@
 '''
-finddonut.py - find donut, to isolate vehicle, in multiple photos
-
-donut has a white ring with a black center
-
-there are two ways to find a white color
-	1. hsv with high sat 
-	2. grayscale threshhold of high gray value, method binary
-
-there are two ways to find a black color
-	1. hsv with low value
-	2. grayscale threshold of low gray value, method binary inverted
+findsk8.py - find sk8, multiple hard-coded steps
 '''
 import cv2
 import numpy as np
@@ -19,57 +9,37 @@ import copy
 
 import detect 
 import score 
-import label as labl
+import label as lbl
 import draw
 import model as modl
 
 # global constants
-galgo = 'gray'
-gwindowname = 'find donuts'
+gwindowname = 'find sk8'
 gwindowsize = (1200, 900)
-gdonutspecsgray = [
-	{ "name":"min_gray", "upper": 255 },
-	{ "name":"max_gray", "upper": 255 },
-	{ "name":"min_wd" , "upper": 200 },
-	{ "name":"min_ht" , "upper": 200 },
-]
-gdonutspecswhite = [
-	{ "name":"gray"   , "upper": 255 },
-	{ "name":"width"  , "upper": 200 },
-	{ "name":"height" , "upper": 200 },
-]
-gdonutspecshsv = [
-	{ "name":"min_hue", "upper": 180 },
-	{ "name":"max_hue", "upper": 180 },
-	{ "name":"min_sat", "upper": 255 },
-	{ "name":"max_sat", "upper": 255 },
-	{ "name":"min_val", "upper": 255 },
-	{ "name":"max_val", "upper": 255 },
-	{ "name":"min_wd" , "upper": 200 },
-	{ "name":"max_wd" , "upper": 200 },
-	{ "name":"min_ht" , "upper": 200 },
-	{ "name":"max_ht" , "upper": 200 }
-]
-gvalueshsv = [138, 180, 171, 250, 145, 222, 39, 73, 40, 120]
-gvalueswhite = [0, 25, 25]
-gvaluesgray = [65,115, 40, 40]
 
 # global variables
 gargs = None
-gimage = None
-gflag = True
-gdonutspecs = None
-gvalues = None
-
-if galgo == 'white':
-	gdonutspecs = gdonutspecswhite
-	gvalues = gvalueswhite
-elif galgo == 'gray':
-	gdonutspecs = gdonutspecsgray
-	gvalues = gvaluesgray
-elif galgo == 'hsv':
-	gdonutspecs = gdonutspecshsv
-	gvalues = gvalueshsv
+gflag = False
+gvalues = [0,50,0,50, 100, 0, 20, 40, 80, 50, 100] 
+gvalues = [3,18,6,29,  71, 2, 10, 40, 80, 50, 100] 
+gmodel = { 
+	"cls": 7,
+	"name": "wheel",
+	"algo": "gray",
+	"rotate": 1,
+	"dim": [ 12, 16 ],
+	"dimsk8": [ 50, 70 ],
+	"count": 4
+}
+gsk8specs = [
+	{ "name": "wd_min", "lower": 0, "upper": 100, },
+	{ "name": "wd_max", "lower": 0, "upper": 100, },
+	{ "name": "ht_min", "lower": 0, "upper": 100, },
+	{ "name": "ht_max", "lower": 0, "upper": 100, },
+	{ "name": "dist"  , "lower": 0, "upper": 200, },
+	{ "name": "num_min", "lower": 0, "upper": 100, },
+	{ "name": "num_max", "lower": 0, "upper": 100, },
+]
 
 #------------- add to draw.py  ------------------
 
@@ -107,33 +77,139 @@ def fqjoin(path, base, ext):
 
 #------------------------------------------------
 
-def findDonutHSV(full, values, cls):
-	hn,hx,sn,sx,vn,vx,wdn,wdx,htn,htx = values
-	lower = (hn,sn,vn)
-	upper = (hx,sx,vx)
-	mask = cv2.inRange(full, lower, upper)
-	dim = (wdn, htn)
-	label = chooseContourBySize(mask,cls,dim,1)
-	return mask,label 
+'''
+find wheels
+find best cluster of wheels
+make tiny square from center of best cluster
+look for sk8 in tiny
+	try hsv
+	try gray
+	try silt
+	try cnn
+find led in tiny
+'''
 
-def findDonutGray(full, values, cls):
-	gn,gx,wdn,htn = values
+
+def findSk8(full, values, cls):
+	mask,labelswheels = findWheels(full, values, 3)
+	labelsclustered = clusterLabels(labelswheels, values)
+#	labelsk8 = combineLabelCenters(labels)
+	#center from labelsk8
+
+	#labelled = findLed()
+	#orientSkateByLed(labelsk8, labelsk8)
+
+	return mask, labelsclustered
+
+def combineLabels(labels, cls):
+	pts = []
+	for label in labels:
+		_,x,y,_,_,_,_ = labels
+		pts.append((x,y))
+	hull = cv2.convexHull(pts)
+	rect = cv2.minAreaRect(hull)
+	(cx,cy), (w,h), a = rect
+	label = [cls,cx,cy,w,h,a,0]
+	return label
+
+def choosePolygonBySize(polys, cls, dim, maxcount):
+	pass
+
+def clusterLabels(labels, values):
+	_,_,_,_, dist, nwn, nwx = values
+
+	def qualify(clusters, nwn, nwx):
+		qualifiednums = []
+		clusternum = 0
+		for cluster in clusters:
+			clusternum += 1
+			if len(cluster) >= nwn and len(cluster) <= nwx: 
+				qualifiednums.append(clusternum)
+		return qualifiednums
+
+	def assign(ctr,clusters,distance):
+		clusternum = 1
+		for cluster in clusters:
+			# check the distance of the input pt to every point in the cluster
+			inside = True 
+			for pt in cluster:
+				ll = lbl.linelen(pt,ctr)
+				if ll > distance:
+					inside = False
+					break
+			if inside == True:
+				break 
+			clusternum += 1
+		if clusternum >= len(clusters):
+			clusters.append([ctr])
+		else:
+			clusters[clusternum-1].append(ctr)
+		return clusternum
+
+	clusters = []  # clusterndx[0:len], clusternum[ndx+1]
+	labeldicts = []
+	for label in labels:
+		_,x,y,w,h,_,_ = label
+		ctr = (x,y)
+		clusternum = assign(ctr,clusters,dist)
+		labeldict = {'ctr:':ctr, 'size':(w,h), 'label':label, 'cluster':clusternum}
+		labeldicts.append(labeldict)
+
+	clusternums = qualify(clusters, nwn, nwx)
+	if len(clusternums) > 1:
+		print(f'further qualification is required {len(clusternums)}')
+	if len(clusternums) <= 0:
+		print('no qualified clusters')
+		clusternum = 0
+	else:
+		clusternum = clusternums[0]
+	clusteredlabels = []
+	for labeldict in labeldicts:
+		if labeldict['cluster'] == clusternum:
+			clusteredlabels.append(labeldict['label'])
+		else:
+			labeldict['label'][lbl.cls] = 1
+			clusteredlabels.append(labeldict['label'])
+
+	return clusteredlabels
+
+#	rect, pts for each cluster
+#	qualify by size, choose one
+
+
+def findWheels(full, values, cls):
+	#wdn, wdx, htn, htx,_,_,_ = values 
 	gray = cv2.cvtColor(full, cv2.COLOR_BGR2GRAY)
 	gavg = np.mean(gray)
-	#gmin = np.min(gray)
-	#gmax = np.max(gray)
-
-	#gnp = (gn/gavg)*100
-	#gxp = (gx/gavg)*100
-	#print(gavg, gmin, gmax, gnp, gxp)
-
-
 	lower = 0
+
+	# see google sheets "Wheels Regression Line" for this equation
 	upper = (.191 * gavg + 11.2)
+
+	# the following two lines produce equivalent results when lower is 0
 	mask = cv2.inRange(gray, lower, upper)
-	dim = (wdn, htn)
-	label = chooseContourBySize(mask,cls,dim,1)
-	return mask,label 
+	t, mask = cv2.threshold(gray, upper, 255, cv2.THRESH_BINARY_INV)
+
+	# make labels list of wheels qualified by size
+	labels = qualifyContours(mask,cls,values)
+
+	# cluster
+	#clusters = cluster(labels)
+	#print(clusters)
+
+
+	# cluster the centerpoints of the wheels
+	# choose the cluster of the sk8
+	# make tiny image as box around the centerpoint of the chosen cluster
+	# within the tiny image
+	# 	make a convex hull of the wheels
+	# 	take rrect
+	# 	find the led, adjust the heading of the sk8
+
+	
+
+
+	return mask,labels
 
 def findDonutWhite(full, values, cls):
 	gray, wd, ht = values
@@ -157,6 +233,48 @@ def findDonutWhite(full, values, cls):
 
 	return imgMask, rects
 
+def qualifyContours(img, cls, values):
+	wdn,wdx,htn,htx,_,_,_ = values
+	lower = np.array((wdn,htn))
+	upper = np.array((wdx,htx))
+	qualified = []
+	cnts,_ = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+	for cnt in cnts:
+		rect = cv2.minAreaRect(cnt) 
+		label = lbl.labelFromRect(cls, rect)
+		_,_,_,w,h,_,_ = label
+		size = np.array((w,h))
+		if all(size >= lower) and all(size <= upper):
+			qualified.append(label)
+	return qualified
+	
+def choosePolygonBySize(polys, cls, dim, maxcount):
+	qualified = []
+	armse = []
+	for poly in polys:
+		rect = cv2.minAreaRect(poly) 
+		size = rect[1]
+		rmse = score.calcRMSE(dim, size)
+		armse.append(rmse)
+		label = lbl.labelFromRect(cls, rect, which=False, score=rmse)
+		qualified.append(label)
+
+	# sort the labels ascending by error
+	sortqualified = sorted(qualified, key=lambda a: a[lbl.scr])
+
+	# choose the label with lowest error
+	if len(sortqualified) <= 0:
+		lowlabel = [0,0,0,0,0,0,0]
+	else:
+		lowlabel = sortqualified[0]
+
+		# convert error to probability
+		lowerror = lowlabel[lbl.scr]
+		maxerror = max(armse)
+		prob = score.calcProbability(lowerror, maxerror)
+		lowlabel[lbl.scr] = prob
+	return lowlabel
+	
 def chooseContourBySize(img, cls, dim, maxcount):
 	qualified = []
 	cnts,_ = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -166,11 +284,11 @@ def chooseContourBySize(img, cls, dim, maxcount):
 		size = rect[1]
 		rmse = score.calcRMSE(dim, size)
 		armse.append(rmse)
-		label = labl.labelFromRect(cls, rect, which=False, score=rmse)
+		label = lbl.labelFromRect(cls, rect, which=False, score=rmse)
 		qualified.append(label)
 
 	# sort the labels ascending by error
-	sortqualified = sorted(qualified, key=lambda a: a[labl.scr])
+	sortqualified = sorted(qualified, key=lambda a: a[lbl.scr])
 
 	# choose the label with lowest error
 	if len(sortqualified) <= 0:
@@ -179,10 +297,10 @@ def chooseContourBySize(img, cls, dim, maxcount):
 		lowlabel = sortqualified[0]
 
 		# convert error to probability
-		lowerror = lowlabel[labl.scr]
+		lowerror = lowlabel[lbl.scr]
 		maxerror = max(armse)
 		prob = score.calcProbability(lowerror, maxerror)
-		lowlabel[labl.scr] = prob
+		lowlabel[lbl.scr] = prob
 	return lowlabel
 	
 def cutout(img, rect, square=None):
@@ -213,18 +331,11 @@ def readAllFrames(idir, ext):
 		ndx += 1
 	return fulls, grays
 
-def findAllDonuts(fulls, algo, values, cls):
+def processAllFrames(fulls, values, cls):
 	masks = []
 	labels = []
 	for full in fulls:
-		if algo == 'hsv':
-			mask,label = findDonutHSV(full, values, cls)
-		elif algo == 'black':
-			pass
-		elif algo == 'white':
-			mask,label = findDonutWhite(full, values, cls)
-		elif algo == 'gray':
-			mask,label = findDonutGray(full, values, cls)
+		mask,label = findSk8(full, values, cls)
 		masks.append(mask)
 		labels.append(label)
 	return masks, labels
@@ -253,7 +364,7 @@ def calcColors(gvalues, shape, cols):
 def annotateAll(imgs, labels):
 	aimgs = []
 	for n in range(0,len(imgs)):
-		aimg = draw.drawImage(imgs[n], [labels[n]])
+		aimg = draw.drawImage(imgs[n], labels[n])
 		aimgs.append(aimg)
 	return aimgs
 
@@ -274,8 +385,8 @@ def main():
 	# create the trackbar window
 	cv2.namedWindow( gwindowname, cv2.WINDOW_NORMAL)
 	cv2.resizeWindow(gwindowname, gwindowsize[0], gwindowsize[1]) 
-	addTrackbars(gwindowname, gdonutspecs, gvalues, onTrackbar, onMouse)
-	gvalues = readTrackbars(gwindowname, gdonutspecs)
+	addTrackbars(gwindowname, gsk8specs, gvalues, onTrackbar, onMouse)
+	gvalues = readTrackbars(gwindowname, gsk8specs)
 	gflag = True
 
 	# read all the frames
@@ -285,7 +396,7 @@ def main():
 	while True:
 		if gflag is True:
 			gflag = False
-			masks,labels = findAllDonuts(fulls, galgo, gvalues, 2)
+			masks,labels = processAllFrames(fulls, gvalues, 2)
 			afulls = annotateAll(fulls, labels)
 			gimage = draw.stack(grays+masks+afulls, cols=len(fulls))
 			cv2.imshow(gwindowname, gimage)
@@ -298,10 +409,11 @@ def main():
 
 def onTrackbar(newvalue):
 	global gvalues, gflag
-	gvalues = readTrackbars(gwindowname, gdonutspecs)
+	gvalues = readTrackbars(gwindowname, gsk8specs)
 	gflag = True 
 
 def onMouse(event, x, y, flags, param):
+	return
 	global gvalues, gflag
 	if event == cv2.EVENT_LBUTTONDOWN:
 		# draw circle here (etc...)
@@ -319,7 +431,7 @@ def onMouse(event, x, y, flags, param):
 		vn = max(v - vr,0)
 		vx = min(v + vr,255)
 		gvalues[0:6] = np.intp([hn,hx,sn,sx,vn,vx])
-		setTrackbars(gwindowname, gdonutspecs, gvalues)
+		setTrackbars(gwindowname, gsk8specs, gvalues)
 		gflag = True 
 
 

@@ -6,7 +6,8 @@ import numpy as np
 import cv2
 import os
 
-import label as labl
+import label as lbl
+import score as scr
 
 def inRange( a, lower, upper):
 	return np.greater_equal(a, lower).all() and np.less_equal(a, upper).all()
@@ -24,6 +25,63 @@ def averageBrightness(image):
 	t = imgHsv[:,:,2]   # take the V channel, "value", brightness
 	mean = np.mean(t)
 	return mean
+
+#----- begin new --------------------------------
+def detectColor(modcls, frame):
+	#"values": [0, 69, 108, 156, 77, 148, 14, 40, 15, 40],  #night
+        #"values": [ 27, 76, 119, 255, 101, 196, 11, 27, 11, 27], #day
+	[cn,cx,sn,sx,vn,vx,wn,wx,hn,hx] = modcls['values']
+	lower = np.array([cn,sn,vn])
+	upper = np.array([cx,sx,vx])
+	hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+	mask = cv2.inRange(hsv,lower,upper)
+
+	mask = preprocessMask(mask)
+	labels = labelsFromMask(mask, modcls['cls'], modcls['dim'], modcls['count'])
+
+	return labels, mask
+
+def labelsFromMask(mask, cls, dim, maxcount):  # with size closest to expected dimensions 
+	labels = []
+	cnts,_ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+	armse = []
+	for cnt in cnts:
+		rect = cv2.minAreaRect(cnt) 
+		size = rect[1]
+		rmse = scr.calcRMSE(dim, size)
+		armse.append(rmse)
+		label = lbl.labelFromRect(cls, rect, which=False, score=rmse)
+		labels.append(label)
+
+	if len(labels) <= 0:
+		return [lbl.notfound]
+
+	# sort the labels ascending by error
+	sortedlabels = sorted(labels, key=lambda a: a[lbl.scr])
+
+	# take the n with lowest score
+	if maxcount > 0:
+		bestlabels = sortedlabels[0:maxcount]
+	else:
+		bestlabels = sortedlabels
+
+	# convert error to probability
+	maxerror = max(armse)
+	for label in bestlabels:
+		rmse = label[lbl.scr]
+		prob = scr.calcProbability(rmse, maxerror)
+		label[lbl.scr] = prob
+	return bestlabels
+
+def preprocessMask(mask):
+	kernelsize = 3
+	dilateiterations = 3
+	kernel = np.ones((kernelsize, kernelsize))
+	#mask = cv2.dilate(mask, kernel, iterations=dilateiterations)
+	#mask = cv2.erode(mask, kernel, iterations=dilateiterations)
+	return mask
+
+#----- end new --------------------------------
 
 def detectObjectsCls(img,modcls):
 	def inRange( a, lower, upper):  # compare np arrays, True if a between lower and upper
@@ -75,12 +133,12 @@ def detectObjectsCls(img,modcls):
 	for cnt in contours:
 		if modcls['rotate']:
 			rect = cv2.minAreaRect(cnt) 
-			label = labl.labelFromRect(cls,rect)
+			label = lbl.labelFromRect(cls,rect)
 		else:
 			bbox = cv2.boundingRect(cnt)
-			label = labl.labelFromBbox(cls,bbox)
+			label = lbl.labelFromBbox(cls,bbox)
 
-		size = labl.sizeFromLabel(label)
+		size = lbl.sizeFromLabel(label)
 
 		#lensp = len(sp)
 		#wn = lensp - 4
@@ -97,6 +155,9 @@ def detectObjectsCls(img,modcls):
 
 	#print(f'contours found: {len(contours)}, qualified by size: {len(labels)}')
 	return labels, imgMask
+
+def detectObjectsCls(img, modcls):
+	return detectColor(modcls, img)
 
 def detectObjects(img,model):
 	labels = []

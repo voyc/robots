@@ -21,8 +21,6 @@ def main():
 	model = mod.read(gargs.model)
 	print(f'read {gargs.model}')
 
-	values = mod.extractValues(model)
-
 	s = mod.format(model, gargs.format)
 	print(f'{s}\n')
 

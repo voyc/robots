@@ -11,8 +11,9 @@ import os
 
 import model as mod
 import detect
-import label as lab
+import label as lbl
 import draw
+import frame as frm
 
 gargs = None  # dict containing command-line parameters, initialized in main()
 gwindow_name = ''
@@ -27,11 +28,12 @@ def openSettings(modcls):
 	gwindow_name = f'{modcls["name"]} settings'
 	cv2.namedWindow( gwindow_name, cv2.WINDOW_NORMAL)
 	cv2.resizeWindow(gwindow_name, 1200, 600) 
-	specs = modcls['spec']
-	for spec in specs:
-		name = spec['name']
-		value = spec['value']
-		upper = spec['upper']
+	spec = modcls['spec']
+	values = modcls['values']
+	for ndx in range(0,len(spec)):
+		name = spec[ndx]['name']
+		value = values[ndx]
+		upper = spec[ndx]['upper']
 		cv2.createTrackbar(name, gwindow_name, value, upper, empty)
 
 def readSettings(modcls):
@@ -49,15 +51,17 @@ def processImageCls(fnum, img, model, modcls):
 		openSettings(modcls)
 		while True:
 			readSettings(modcls)
-			mod.extractValues(model)
 			labels,imgMask = detect.detectObjectsCls(img, modcls)
+
+			labels,imgMask = detect.detectColor(modcls, img)
 
 			# show the images
 			imgAnnotated = draw.drawImage(img,labels)
 			imgTitle = draw.titleImage(img,fnum)
-			stack= np.hstack((imgTitle,imgMask, imgAnnotated))
-			cv2.imshow(gwindow_name, stack)
-			key = cv2.waitKey(1)
+			#stack= np.hstack((imgTitle,imgMask, imgAnnotated))
+			#cv2.imshow(gwindow_name, stack)
+			#key = cv2.waitKey(1)
+			key = draw.showImage(imgTitle, imgMask, imgAnnotated)
 			if key & 0xFF == ord('q'):	# quit
 				req = 'quit'
 				break
@@ -77,7 +81,7 @@ def main():
 	# get command-line parameters 
 	parser = argparse.ArgumentParser()
 	parser.add_argument('-id' ,'--dir'        ,default=''                            ,help='input folder'                          ),
-	parser.add_argument('-im' ,'--model'      ,default='model.json'                  ,help='input model filename'                  ),
+	parser.add_argument('-im' ,'--model'      ,default='model'                       ,help='input model filename'                  ),
 	parser.add_argument('-oa' ,'--labelsufx'  ,default='_label'                      ,help='output label filename suffix'          ),
 	parser.add_argument('-c'  ,'--cls'        ,default='all'                         ,help='classifier id to processed'            ),
 	parser.add_argument('-v'  ,'--verbose'    ,default=False   ,action='store_true'  ,help='display additional output messages'    ),
@@ -89,7 +93,7 @@ def main():
 		gargs.cls = int(gargs.cls)
 		print(f"processing cls {gargs.cls}")
 
-	modelfqname = gargs.model
+	modelfqname = frm.fqjoin(gargs.dir, gargs.model, 'json')
 	ch = input(f"model file {modelfqname} will be overwritten. Coninue? (y/n) ")
 	if ch != 'y':
 		quit()
@@ -136,7 +140,8 @@ def main():
 			if req == 'quit':
 				break
 
-		lab.write(labels, os.path.join(gargs.dir, fnum+gargs.labelsufx+'.csv'))
+		lbl.write(labels, os.path.join(gargs.dir, fnum+gargs.labelsufx+'.csv'))
+
 		if req == 'quit':
 			break;
 		if not gargs.manual and ndx >= lastframe:

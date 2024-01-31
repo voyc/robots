@@ -147,7 +147,7 @@ def main():
 	global gargs,gimage,gwindowname, gvalues, gflag
 	idir = 'photos/20231216-092941/bestof'
 	iext = '.jpg'
-	bgnum = '00000'
+	bgnum = '00095'
 
 	# get command-line parameters 
 	parser = argparse.ArgumentParser()

@@ -12,7 +12,6 @@ def read(fname):
 	return model
 
 def write(model, fname, expand=False):
-	extractValues(model)
 	with open(fname, 'w') as f:
 		if expand:
 			f.write(json.dumps(model, indent=4))
@@ -37,21 +36,12 @@ def format(model, style):
 					s += f"{param}: {str(modcls[param])} \n"
 			s += '\n'
 	elif style == 'simple':
-		extractValues(model)
 		for modcls in model:
 			for param in modcls:
 				if param != 'spec':
 					s += f"{param}: {str(modcls[param])} \n"
 			s += '\n'
 	return s
-
-def extractValues(model):
-	for modcls in model:
-		values = []
-		for sp in modcls['spec']:
-			values.append(sp['value'])
-		modcls['values'] = values
-	return values
 
 # loop thru cls and spec
 def initialize(model, cls='all'):
@@ -66,3 +56,8 @@ def initialize(model, cls='all'):
 			else:
 				sp['value'] = sp['upper']
 
+def getModcls(model, cls):
+	for modcls in model:
+		if modcls['cls'] == cls:
+			return modcls
+	return None

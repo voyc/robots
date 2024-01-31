@@ -49,6 +49,7 @@ import draw
 import frame as frm 
 import score as scr
 import label as lbl
+import model as mod
 
 
 #global constants - can be tweaked with trackbars
@@ -56,11 +57,7 @@ gthresholdDiffT     =   5  # runningDiff, otsu T value, below which the mask is 
 gthresholdPctMean   =   5  # runningDiff, pct increase in mean distance, below which are assumed to be an object
 gthresholdSk8Radius = 100  # runningDiff, radius of Sk8
 
-gmodel = {
-	'clsid':2,
-	'algo':'rdiff',
-	'dim':(50,70)
-}
+gmodel = []
 	
 # global variables
 gargs = None     # fixed constants set at startup
@@ -69,6 +66,17 @@ gframelist = []  # used by getFnum() only
 gfnum = ''       # debugging info, for titles and logging
 gdebugframes = [] # a list of intermediate frames, saved for here for debugging display
 
+gtweakname = ''     # named window for trackbars
+gtweakspecs = []    # for use between onMouse and onTrackbar
+gtweakvalues = []   # for use between onMouse and onTrackbar
+gtweakopen = False
+
+GUI_EVENT_NONE       = 0
+GUI_EVENT_TRACKBAR = 1
+GUI_EVENT_MOUSE    = 2
+gguievent = GUI_EVENT_NONE
+
+#---------------- frame functions -----------------------
 def getFnum(increment, loop=False):
 	global gframendx, gframelist, gfnum
 	if gframendx == -1:
@@ -94,6 +102,82 @@ def getFrame(increment):
 	frame = cv2.imread(frm.fqjoin(gargs.idir, fnum, gargs.iext), cv2.IMREAD_UNCHANGED)
 	return frame
 
+#--------------- tweak window ---------------------------------# 
+
+def donothing(a): # default trackbar callback
+	pass
+
+def onTrackbar(newvalue):
+	global gguievent
+	print('onTrackbar')
+	#global gtweakvalues, gguievent
+	#gtweakvalues = readTrackbars(gtweakname, gtweakspecs)
+	gguievent = GUI_EVENT_TRACKBAR
+
+def onMouse(event, x, y, flags, param):
+	global gguievent
+	if event == cv2.EVENT_LBUTTONDOWN:
+		gguievent = GUI_EVENT_MOUSE
+
+def processGuiEvent( event):
+	print('processGuiEvent')
+	if event == GUI_EVENT_TRACKBAR:
+		values = readTrackbars(gtweakname, gtweakspecs)
+
+	elif event == GUI_EVENT_MOUSE:
+		[b,g,r] = gimage[y,x]
+		h,s,v = draw.HSVfromBGR(b,g,r)
+		#print(f'({x},{y}) : ({b},{g},{r}) : ({h},{s},{v}) ')
+		
+		hr = 20
+		sr = 50
+		vr = 50
+		hn = max(h - hr,0)
+		hx = min(h + hr,180)
+		sn = max(s - sr,0)
+		sx = min(s + sr,255)
+		vn = max(v - vr,0)
+		vx = min(v + vr,255)
+		values = np.intp([hn,hx,sn,sx,vn,vx])
+		setTrackbars(gtweakname, gtweakspecs, values)
+		values = readTrackbars(gtweakname, gtweakspecs)
+	return values
+
+def openTweak(modcls):
+	global gtweakname, gtweakspecs, gtweakvalues
+
+	windowname = f'{modcls["name"]} settings'
+	cv2.namedWindow( windowname, cv2.WINDOW_NORMAL)
+	cv2.resizeWindow(windowname, 500, 600) 
+	cv2.moveWindow(windowname, 1400, 100) 
+
+	spec = modcls['spec']
+	values = modcls['values']
+	for ndx in range(0,len(spec)):
+		name = spec[ndx]['name']
+		value = values[ndx]
+		upper = spec[ndx]['upper']
+		cv2.createTrackbar(name, windowname, value, upper, onTrackbar)
+	cv2.setMouseCallback(windowname, onMouse)
+	
+	gtweakspecs = spec
+	gtweakvalues = values
+	gtweakname = windowname
+
+def setTrackbars(windowname, specs, values):
+	for n in range(0,len(specs)):
+		cv2.setTrackbarPos(specs[n]['name'], windowname, values[n])
+
+def readTrackbars(windowname, specs):
+	print('readTrackbars')
+	values = []
+	for spec in specs:
+		value = cv2.getTrackbarPos(spec['name'], windowname)
+		values.append( value)
+	return values
+
+#--------------- inner loop per cls ------------------------------------# 
+
 def diffFrames(current,previous):
 	imgDiff1 = cv2.absdiff(current, previous)	
 	imgDiff2 = cv2.absdiff(current, imgDiff1)
@@ -101,7 +185,7 @@ def diffFrames(current,previous):
 	return imgDiff3
 
 # for debugging
-def printObjectArray(objarray):
+def logObjectArray(objarray):
 	for obj in objarray:
 		logging.debug(obj)
 	
@@ -195,10 +279,15 @@ def labelsFromMask(mask, cls, dim, maxcount):  # with size closest to expected d
 	sortedlabels = sorted(labels, key=lambda a: a[lbl.scr])
 
 	# take the n with lowest score
-	bestlabels = sortedlabels[0:maxcount]
+	if maxcount > 0:
+		bestlabels = sortedlabels[0:maxcount]
+	else:
+		bestlabels = sortedlabels
 
 	# convert error to probability
-	maxerror = max(armse)
+	#maxerror = max(armse)
+	maxerror = 2 * dim[0] * dim[1]
+
 	for label in bestlabels:
 		rmse = label[lbl.scr]
 		prob = scr.calcProbability(rmse, maxerror)
@@ -215,7 +304,10 @@ def preprocessMask(mask):
 	return mask
 
 # object detection by comparing current frame to previous frame, output labels
-def detectRunningDiff(model, frame, previousframe, cls):
+def detectRunningDiff(modcls, frame, previousframe):
+	global gdebugframes
+	cls = modcls['cls']
+
 	# diff current and previous frames
 	diff = diffFrames(frame, previousframe)
 	gdebugframes.append({'name':'diff', 'frame':diff})
@@ -230,6 +322,7 @@ def detectRunningDiff(model, frame, previousframe, cls):
 	logging.info(f'diff otsu t:{t}')
 	if t < gthresholdDiffT:
 		logging.debug(f'low t {t}, no movement')
+		gdebugframes.append({'name':'cover', 'frame':draw.createMask(frame.shape)})
 		return [lbl.nomovement]
 
 	# find contours in the mask
@@ -269,13 +362,47 @@ def detectRunningDiff(model, frame, previousframe, cls):
 
 		# find rotated rect and make label of convex hull
 		rect = cv2.minAreaRect(hull) 
-		rmse = scr.calcRMSE(model['dim'], rect[1])
+		rmse = scr.calcRMSE(modcls['dim'], rect[1])
 		label = lbl.labelFromRect(cls, rect, which=False, score=rmse)
 		logging.debug(f'clustered label:{label}')
 
 	cover = makeClusteredOverlay(frame, qctrs, dctrs, proctr, hull)
 	gdebugframes.append({'name':'cover', 'frame':cover})
 	return [label]
+
+def detectColor(modcls, frame):
+	global gdebugframes
+	#"values": [0, 69, 108, 156, 77, 148, 14, 40, 15, 40],  #night
+        #"values": [ 27, 76, 119, 255, 101, 196, 11, 27, 11, 27], #day
+
+	[cn,cx,sn,sx,vn,vx,wn,wx,hn,hx] = modcls['values']
+	lower = np.array([cn,sn,vn])
+	upper = np.array([cx,sx,vx])
+	hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+	mask = cv2.inRange(hsv,lower,upper)
+	gdebugframes.append({'name':'mask', 'frame':mask})
+
+	mask = preprocessMask(mask)
+	labels = labelsFromMask(mask, modcls['cls'], modcls['dim'], modcls['count'])
+
+	return labels
+
+def detectGray(modcls, frame):
+	global gdebugframes
+	#"values": [0, 69, 108, 156, 77, 148, 14, 40, 15, 40],  #night
+        #"values": [ 27, 76, 119, 255, 101, 196, 11, 27, 11, 27], #day
+
+	[gn,gx,wn,wx,hn,hx] = modcls['values']
+	lower = np.array([cn,sn,vn])
+	upper = np.array([cx,sx,vx])
+	hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+	mask = cv2.inRange(hsv,lower,upper)
+	gdebugframes.append({'name':'mask', 'frame':mask})
+
+	mask = preprocessMask(mask)
+	labels = labelsFromMask(mask, modcls['cls'], modcls['dim'], modcls['count'])
+
+	return labels
 
 def makeClusteredOverlay(frame, qpts, dpts, proctr, hull):
 	cover = draw.createImage(frame.shape, color=(0,0,0))
@@ -290,17 +417,34 @@ def makeClusteredOverlay(frame, qpts, dpts, proctr, hull):
 		cover = cv2.circle(cover, dpt, 2, (0,0,255), -1)
 	return cover	
 
-def processFrame(model, frame, previousframe):
-	if model['algo'] == 'color':
-		labels = detectColor(frame)
-	elif model['algo'] == 'rdiff':
-		labels = detectRunningDiff(model, frame, previousframe, model['clsid'])
-	logging.info(labels)
+def processFrame(model, cls, frame, previousframe):
+	global gmodel, gtweakopen, gguievent
+	print('processFrame')
+
+	modcls = mod.getModcls(model,cls)
+
+	if gargs.tweak:
+		if gtweakopen:
+			if gguievent != GUI_EVENT_NONE:
+				values = processGuiEvent(gguievent)
+				print(f'values:{values}')
+				modcls['values'] = values
+				gguievent = GUI_EVENT_NONE
+		else:
+			openTweak(modcls)
+			gtweakopen = True
+
+	if modcls['algo'] == 'color':
+		labels = detectColor(modcls, frame)
+	elif modcls['algo'] == 'rdiff':
+		labels = detectRunningDiff(modcls, frame, previousframe)
+	logging.info(f'labels: {labels}')
 	return labels
 
 # main loop thru all frames, cam vs awacs
 def looper():
-	previousframe = getFrame(1)
+	global gdebugframes, gguievent
+	previousframe = getFrame(1)   # set previousframe and then in process...() set the first frame to no labels
 	framecnt = 0
 	increment = 1
 
@@ -311,17 +455,19 @@ def looper():
 		frame = getFrame(increment)
 		if frame is None:
 			break;
+		increment = 1
 		framecnt += 1
 		logging.info(f'frame:{framecnt}, fnum:{gfnum}')
-
-		labels = processFrame(gmodel, frame, previousframe)
+	
+		#labels = processFrame(gmodel, 1, frame, previousframe)
+		labels = processFrame(gmodel, 2, frame, previousframe)
 		#[diff, gray, mask, cluster] = gdebugframe
-
+	
 		# debugging: change title when labels indicates no movement
 		title = gfnum
-		if labels[0][lbl.scr] == 0:
+		if len(labels) <= 0 or labels[0][lbl.scr] == 0:
 			title = f'{gfnum} no movement'
-
+	
 		# annotate labels on top of frame
 		aframe = draw.drawImage(frame,labels,options={"title":title})
 		aframes.append(aframe)
@@ -329,8 +475,8 @@ def looper():
 		if gargs.olabelsufx:
 			lbl.write(labels,frm.fqjoin(gargs.idir, gfnum, gargs.olabelsufx))
 
-		cover = getDebugFrames('cover')[0]
-		cv2.imwrite('cover.jpg', cover)
+		#cover = getDebugFrames('cover')[0]
+		#cv2.imwrite('cover.jpg', cover)
 
 		if gargs.nthshow > 0 and (framecnt % gargs.nthshow) == 0:
 			imagearray = aframes
@@ -342,14 +488,21 @@ def looper():
 
 			waiting = True
 			while waiting:
-				key = draw.showImage(imagearray, fps=gargs.fps, grid=gargs.grid, screen=gargs.screen)
+				cols, rows = gargs.grid
+				img = draw.stack(imagearray, cols=cols, rows=rows, screen=gargs.screen)
+				cv2.imshow( 'show', img)
+				key = cv2.waitKey(1)
 				if key == ord('q'):
 					waiting = False
 				elif key == ord('n') or gargs.fps > 0:
 					increment = 1   # n next
 					waiting = False
 				elif key == ord('p'):
-					increment = -1  # p previous
+					increment = -(gargs.nthshow*2)+1  # p previous
+					waiting = False
+
+				elif gguievent != GUI_EVENT_NONE or key == ord('t'):
+					increment = -gargs.nthshow+1  # t tweak
 					waiting = False
 
 			if key == ord('q'):        # q quit
@@ -372,20 +525,31 @@ def getOptions():
 	deffps = 0
 	defgrid = '1x1'
 	defscreen = '1910x900'
-	defolabelsufx = 'label.csv'
+	defolabelsufx = ''   # 'label.csv'
+	defimodel = 'model'
 
 	# get command-line parameters 
+	# file inputs
 	parser = argparse.ArgumentParser()
 	parser.add_argument('-id' ,'--idir'                           ,default=defidir      ,help='input folder'        )
 	parser.add_argument('-ie' ,'--iext'                           ,default=defiext      ,help='input extension'     )
+	parser.add_argument('-m'  ,'--imodel'                         ,default=defimodel,    help='input model file'),
+
+	# file outputs
+	parser.add_argument('-ol' ,'--olabelsufx'                     ,default=defolabelsufx,help='suffix of output label file'   )
+
+	# onscreen display options
 	parser.add_argument('-ns' ,'--nthshow'   ,type=int            ,default=defnthshow   ,help='stop and refresh UI every nth frame'   )
 	parser.add_argument('-fps','--fps'       ,type=int            ,default=deffps       ,help='fps, when nthshow is 0'   )
 	parser.add_argument('-g'  ,'--grid'                           ,default=defgrid      ,help='display grid as colsxrows'   )
 	parser.add_argument('-scr','--screen'                         ,default=defscreen    ,help='screen size as widxht'   )
-	parser.add_argument('-ol' ,'--olabelsufx'                     ,default=defolabelsufx,help='suffix of output label file'   )
+
+	# logging options
 	parser.add_argument('-d'  ,'--debug'     ,action='store_true' ,default=False   ,help='display additional logging'    ),
 	parser.add_argument('-q'  ,'--quiet'     ,action='store_true' ,default=False   ,help='suppresses all output'                 ),
-	parser.add_argument('-m'  ,'--manual'    ,action='store_true' ,default=False   ,help='let user initialize the model manually'),
+
+	# processing options
+	parser.add_argument('-t'  ,'--tweak'     ,action='store_true' ,default=False   ,help='enable manual model tweaking'          ),
 	args = parser.parse_args()	# returns Namespace object, use dot-notation
 
 	# split screen and grid
@@ -393,6 +557,7 @@ def getOptions():
 	args.screen = np.array([wd,ht],dtype='int_')
 	cols,rows = args.grid.split('x')
 	args.grid = np.array([cols,rows],dtype='int_')
+
 	return args
 
 def setupLogging(debug,quiet):
@@ -406,10 +571,12 @@ def setupLogging(debug,quiet):
 
 # setup, then launch looper()
 def main():
-	global gargs
+	global gargs,gmodel
 	gargs = getOptions()
 
 	setupLogging(gargs.debug, gargs.quiet)
+
+	gmodel = mod.read(frm.fqjoin(gargs.idir, gargs.imodel, 'json'))
 	looper()
 
 if __name__ == "__main__":
