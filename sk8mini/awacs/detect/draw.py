@@ -22,7 +22,26 @@ default_options = {
 	"format": "overlay",   # overlay, map, sbs
 	"thickness_normal": 2,
 	"thickness_selected": 4,
-	"title": ''
+	"title": '',
+	"color":"red"
+}
+
+bgr_color_stack = {
+	'white':    (255,255,255),
+	'black':    (  0,  0,  0),
+	'red':      (  0,  0,255),
+	'blue':     (255,  0,  0),
+	'green':    (  0,255,  0),
+	'yellow':   (  0,255,255),
+	'magenta':  (255,  0,255),
+	'cyan':     (255,255,  0),
+	'pink':     (128,128,255),
+	'ltblue':   (255,128,128),
+	'ltgreen':  (128,255,128),
+	'ltyellow': (128,255,255),
+	'ltcyan':   (255,255,128),
+	'ltmagenta':(255,128,255),
+	'brown':    (  0,128,128) 
 }
 
 color_stack = [
@@ -64,6 +83,7 @@ def drawOverlay(image, labels, options, selected):
 	for label in labels:
 		cls, x, y, w, h, hdg, scr = label
 		color = color_stack[cls-1]
+		color = bgr_color_stack[options['colors'][cls]]
 		thickness = options['thickness_normal']
 		if ndx == selected:
 			thickness = options['thickness_selected']

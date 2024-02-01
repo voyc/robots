@@ -19,3 +19,19 @@ def getFrameList(path, nozero=True):
 		slist.pop(0)
 	return slist
 
+framecache = []
+
+def getCached(name):
+	out = []
+	for fdict in framecache:
+		if fdict['name'] == name:
+			out.append(fdict['frame'])
+	return out
+
+def cache(name, frame):
+	global framecache
+	framecache.append({'name':name, 'frame':frame})
+
+def clearCache():
+	global framecache
+	framecache = []
