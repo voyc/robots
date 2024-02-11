@@ -33,9 +33,6 @@ with separate programs
 with options all packed into sim
 	program can get unmanageable
 	change for one option can trigger modifications to all other options
-
-first lets streamline sim.py, implement convex hull algorithms
-
 '''
 import cv2
 import numpy as np
@@ -59,10 +56,14 @@ gthresholdSk8Radius = 100  # runningDiff, radius of Sk8
 
 # global variables
 gargs = None     # fixed constants set at startup
+ggrid = [1,1]    # calculate based on gargs
 gmodel = []      # read from disk
 gframendx = -1   # used by getFnum() only
 gframelist = []  # used by getFnum() only
-gfnum = ''       # debugging info, for titles and logging
+gfnum = ''       # for titles and logging
+gclscolors = []  # from model
+gclsids = []     # from model
+gwarnings = []   # list frames with errors that prevent successful detection
 
 # global variables for tweak window
 gtweakname = ''     # named window for trackbars
@@ -164,7 +165,6 @@ def setTrackbars(windowname, specs, values):
 		cv2.setTrackbarPos(specs[n]['name'], windowname, values[n])
 
 def readTrackbars(windowname, specs):
-	print('readTrackbars')
 	values = []
 	for spec in specs:
 		value = cv2.getTrackbarPos(spec['name'], windowname)
@@ -309,7 +309,6 @@ def preprocessMask(mask):
 
 # object detection by comparing current frame to previous frame, output labels
 def detectRunningDiff(modcls, frame, previousframe):
-	global gframes
 	cls = modcls['cls']
 
 	# diff current and previous frames
@@ -379,7 +378,6 @@ def detectRunningDiff(modcls, frame, previousframe):
 	return [label]
 
 def detectColor(modcls, frame):
-	global gframes
 	#"values": [0, 69, 108, 156, 77, 148, 14, 40, 15, 40],  #night
         #"values": [ 27, 76, 119, 255, 101, 196, 11, 27, 11, 27], #day
 
@@ -394,10 +392,10 @@ def detectColor(modcls, frame):
 	mask = preprocessMask(mask)
 	labels = labelsFromMask(mask, modcls['cls'], modcls['dim'], modcls['count'])
 
+	labels = qualifyLabelsBySize(labels, [wn,wx,hn,hx])
 	return labels
 
 def detectGray(modcls, frame):
-	global gframes
 	#"values": [0, 69, 108, 156, 77, 148, 14, 40, 15, 40],  #night
         #"values": [ 27, 76, 119, 255, 101, 196, 11, 27, 11, 27], #day
 
@@ -429,60 +427,35 @@ def makeClusteredOverlay(frame, qpts, dpts, proctr, hull):
 
 def processFrame(model, cls, frame, previousframe, labels):
 	global gmodel, gtweakopen, gguievent
-	print('processFrame')
-
 	modcls = mod.getModcls(model,cls)
-
 	if gargs.clstweak and gargs.clstweak == modcls['cls']:
 		if gtweakopen:
 			if gguievent != GUI_EVENT_NONE:
 				values = processGuiEvent(gguievent)
-				print(f'values:{values}')
 				modcls['values'] = values
 				gguievent = GUI_EVENT_NONE
 		else:
 			openTweak(modcls)
 			gtweakopen = True
 
-	'''
-	0_model.mson
-
-	1 cone algo=color
-	2 sk8  algo=rdiff
-	3 donut2 algo=1
-	4 donut3 algo=1
-	5 donut4 algo=1
-	6 led    algo=1 led
-	7 wheel algo=wheel
-	8 deck   algo=3
-
-	9 wheelbase algo=wheelbase
-	10 sk8box  algo=sk8box
-	23 disqualified wheels, rejected by clustering algorithm
-
-	[1,2,7]
-
-	'''
-
-
-
+	olabels = []
 	if modcls['algo'] == 'color':
-		labels = detectColor(modcls, frame)
+		olabels = detectColor(modcls, frame)
 	elif modcls['algo'] == 'rdiff':
-		labels = detectRunningDiff(modcls, frame, previousframe)
+		olabels = detectRunningDiff(modcls, frame, previousframe)
 	elif modcls['algo'] == 'wheel':
-		labels = detectWheels(modcls, frame, previousframe, labels)
-	logging.info(f'labels: {labels}')
-	return labels
+		olabels = detectWheels(modcls, frame, previousframe, labels)
+	elif modcls['algo'] == 'led':
+		olabels = detectLed(modcls, frame, previousframe, labels)
+	logging.debug(f'labels: {labels}')
+	return olabels
 
 # main loop thru all frames, cam vs awacs
 def looper():
-	global gframes, gguievent
+	global gguievent
 	previousframe = getFrame(1)   # set previousframe and then in process...() set the first frame to no labels
 	framecnt = 0
 	increment = 1
-
-	colortable = makeColorTable()
 
 	while True:
 		frame = getFrame(increment)
@@ -501,8 +474,8 @@ def looper():
 			labels += processFrame(gmodel, cls, frame, previousframe, labels)
 	
 		# annotate labels on top of frame
-		title = f'{gfnum} no movement'
-		aframe = draw.drawImage(frame,labels,options={"title":title, "colors":colortable})
+		title = f'{gfnum}'
+		aframe = draw.annotateImage(frame,labels,gmodel,options={"title":title}, selected=-1)
 		frm.cache('aframe', aframe)
 
 		if gargs.olabelsufx:
@@ -511,23 +484,28 @@ def looper():
 		# show the output, keyboard navigation, mouse and trackbar events
 		if gargs.nthshow > 0 and (framecnt % gargs.nthshow) == 0:
 			imagearray = []
-			for name in gargs.dnames:
-				imagearray += frm.getCached(name)
+			for name in gargs.workframes:
+				iarray = frm.getCached(name)
+				imagearray += iarray
+				if len(iarray) < gargs.nthshow:
+					warn(f'{gfnum}: too few cached images for {name}: {len(iarray)}')
 			frm.clearCache() # reset for next set
 
 			waiting = True
 			while waiting:
-				cols, rows = gargs.grid
-				img = draw.stack(imagearray, cols=cols, rows=rows, screen=gargs.screen)
+				img = draw.stack(imagearray, grid=ggrid, screen=gargs.screen)
 				cv2.imshow( 'show', img)
 				key = cv2.waitKey(1)
 				if key == ord('q'):
 					waiting = False
-				elif key == ord('n') or gargs.fps > 0:
-					increment = 1   # n next
+				elif key == ord('n') or gargs.fps > 0:    # n next
+					increment = 1                     
 					waiting = False
-				elif key == ord('p'):
-					increment = -(gargs.nthshow*2)+1  # p previous
+				elif key == ord('p'):                     # p previous
+					increment = -(gargs.nthshow*2)+1
+					waiting = False
+				elif key == ord('w'):                     # w write model
+					mod.write(gmodel,frm.fqjoin(gargs.idir, gargs.imodel, 'json'))
 					waiting = False
 
 				elif gguievent != GUI_EVENT_NONE or key == ord('t'):
@@ -545,12 +523,10 @@ def getOptions():
 	defiext = 'jpg'
 	defnthshow = 0
 	deffps = 0
-	defgrid = '1x1'
-	defscreen = '1910x900'
+	defscreen = [1910,900]
 	defolabelsufx = ''   # 'label.csv'
-	defimodel = 'model'
-	defdnames = 'aframe'
-
+	defimodel = '0_model'
+	defworkframes = 'aframe'
 	defclsrun = [1,2,7]
 	defclsshow = 1
 	defclstweak = 1
@@ -569,9 +545,8 @@ def getOptions():
 	# onscreen display options
 	parser.add_argument('-ns' ,'--nthshow'   ,type=int            ,default=defnthshow   ,help='stop and refresh UI every nth frame'   )
 	parser.add_argument('-fps','--fps'       ,type=int            ,default=deffps       ,help='fps, when nthshow is 0'   )
-	parser.add_argument('-g'  ,'--grid'      ,nargs=2  ,type=int  ,default=defgrid      ,help='display grid as cols,rows'   )
 	parser.add_argument('-scr','--screen'    ,nargs=2  ,type=int  ,default=defscreen    ,help='screen size as wid,ht'   )
-	parser.add_argument('-dn' ,'--dnames'    ,nargs='*'           ,default=defdnames    ,help='list of display names'   )
+	parser.add_argument('-dn' ,'--workframes',nargs='*'           ,default=defworkframes,help='list of working frames to display'   )
 
 	# logging options
 	parser.add_argument('-v'  ,'--verbose'   ,action='store_true' ,default=False   ,help='display additional logging'    ),
@@ -587,16 +562,50 @@ def getOptions():
 	return args
 
 def checkOptions(args):
-	if args.nthshow == 0:
-		logging.info('--nthshow is 0.  No display.')
-
-	else:
-		wd,ht = args.screen
-		cols,rows = args.grid
-		if not (cols * rows == args.nthshow * len(args.dnames)):
-			logging.info('Display dimensions are inconsistent. Check grid, nthshow, dnames.')
-			return False
+	global ggrid
+	numframes = args.nthshow
+	screendim = args.screen
+	numworkframes = len(args.workframes)
+	ggrid = calcGrid(numframes, screendim, numworkframes)
 	return True
+
+def calcGrid(numframes, screendim, numworkframes):
+	arscreen = 0.0
+	if numframes == 0:
+		logging.info('--nthshow is 0.  No display.')
+		grid = [0,0]
+	elif numframes == 1:
+		logging.debug('--nthshow is 1.  Working frames go horizontal.')
+		grid = [numworkframes, numframes]
+	elif numframes > 1 and numworkframes > 1:
+		logging.debug('--nthshow > 1.  Working frames go vertical.')
+		grid = [numframes, numworkframes]
+	elif numframes > 1 and numworkframes == 1:
+		logging.debug('--nthshow > 1.  One working frame.  1x1 grid recalculated.')
+		wd,ht = screendim
+		arscreen = wd/ht  # aspect ratio of the screen
+
+		# find number of columns that best maintains the screen aspect ratio
+		lowdiff = numframes
+		lowcols = 0
+		lowrows = 0
+		for nrows in range(1, numframes+1):
+			ncols = int(numframes / nrows)
+			rem = numframes % nrows
+			if rem > 0:
+				ncols += 1
+			argrid = ncols / nrows
+			ardiff = abs(arscreen - argrid)
+			diff = rem + ardiff
+			if ardiff < lowdiff:
+				lowdiff = ardiff
+				lowcols = ncols
+				lowrows = nrows
+			logging.debug(f'{ncols},{nrows},{arscreen}, {argrid}, {ardiff},{rem}, {diff}')	
+		#cols = lowcols
+		#rows = lowrows  # rows = int(numframes / cols)
+		grid = [lowcols,lowrows]
+	return grid
 
 def setupLogging(debug,quiet):
 	logging.basicConfig(format='%(message)s')
@@ -607,9 +616,13 @@ def setupLogging(debug,quiet):
 		logging.getLogger('').setLevel(logging.CRITICAL)
 	logging.debug(gargs)
 
+def warn(msg):
+	logging.warning(msg)
+	gwarnings.append(msg)
+
 # setup, then launch looper()
 def main():
-	global gargs,gmodel
+	global gargs,gmodel,gclsids
 	gargs = getOptions()
 
 	setupLogging(gargs.verbose, gargs.quiet)
@@ -619,70 +632,13 @@ def main():
 		return
 
 	gmodel = mod.read(frm.fqjoin(gargs.idir, gargs.imodel, 'json'))
+	gclsids = makeClsidTable()
+
 	looper()
 
+	for msg in gwarnings:
+		logging.warning(msg)
 
-
-
-'''
-
-new shit
-
-debugging cover:
-	qualified wheels: rect
-	disqualified wheels: rect
-	wheel center: circle
-	wheel contour: polygon
-	crop box: square
-	led: circle
-	rect+arrow
-
-prod cover:
-	sk8 center
-	sk8 arrow
-
-truth labels: remove all cls's except cone and sk8
-
-
-
-argparse nargs='*'
-output=frame,mask,cover,aframe,amask,cmask
-nthshow=6
-grid=3x6
-
-cols = number of output arguments
-rows = nthshow
-
-output defaults to aframe, count 1
-
-if num output is 1,2,3
-it is possible to have 2 or 3 rows
-
-ie, specify grid as --grid=10x2 --output=frame,mask,cover --shownth=10
-
-nthshow is number of frames
-num(output) is number of images to show for each frame, always columnar vstack
-grid is (cols,rows)
-therefore
-nthshow*noutputs = cols*rows 
-default
-cols = nthshow
-rows = noutputs
-
-example: --nthshow=1 --noutput=3 => --grid=1,3
-example: --nthshow=6 --noutput=3 => --grid=6,3
-example: --nthshow=6 --noutput=3 --grid=6,6 => grid has been overridden, 2 rows of frames
-
-ocrop' in the output name means it has to be resized
-'over' in the output name means it has transparent alpha channel
-aframe has already been overlaid
-map has already been overlaid on white background
-
-output
-production options: frame, map, aframe
-debugging options: cmask, smask, dmask, cover,...
-
-'''
 def qualifyLabelsBySize(labels, sizerange):
 	wdn,wdx,htn,htx = sizerange
 	lower = np.array((wdn,htn))
@@ -699,18 +655,34 @@ def detectWheels(modcls, frame, previousframe, ilabels):
 	# inputs
 	cls = modcls['cls']
 	values = modcls['values']
-	wdn,wdx,htn,htx, distance,nwn,nwx = values
+	weight, bias, wdn,wdx,htn,htx, distance,nwn,nwx = values
 	sizerange = np.array([wdn,wdx, htn, htx])
 	numwheelsrange = np.array([nwn,nwx])
 
+
 	# work with grayscale
 	gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+	if (cls == gargs.clsshow):
+		frm.cache('gray', gray)
 
 	# make mask via gray range
 	lower = 0
-	gavg = np.mean(gray)
-	upper = (.191 * gavg + 11.2) # see google sheets "Wheels Regression Line" for this equation
+	#upper = (.191 * gavg + 11.2) # see google sheets "Wheels Regression Line" for this equation
+
+	# detect black wheels based on lower values of gray
+	gavg = np.mean(gray)  # average gray is between 62 and 126, depending on the light
+
+	# upper needs to be lower for low light conditions, higher for high light conditions
+	# we are using a linear equation to accomplish that
+	# x = meangray gray
+	# y = upper threshold
+
+	print(gavg)
+	weight /= 1000 # weight = .191,  trackbar 1:200, equation 0:0.200
+	bias /= 10     # bias = 11.2,    trackbar 1:200, equation 0:20.0
+	upper = (weight * gavg + bias) # see google sheets "Wheels Regression Line" for this equation
 	mask = cv2.inRange(gray, lower, upper)
+
 	if (cls == gargs.clsshow):
 		frm.cache('mask', mask)
 
@@ -733,6 +705,44 @@ def detectWheels(modcls, frame, previousframe, ilabels):
 	# 	find the led, adjust the heading of the sk8
 
 	return labelsclustered
+
+def clusterLabelsFixed(labels, dist, clusters):
+	# input clusters is fixed array of points, one point per cluster 
+
+	def assign(ctr,clusters,distance):
+		lowdistance = 1000
+		lowclusternum = -1
+		for clusternum in range(0, len(clusters)):
+			# check the distance of the input ctr to the centerpoint of each cluster
+			ll = lbl.linelen(clusters[clusternum],ctr)
+			if ll < distance and ll < lowdistance:
+				lowdistance = ll
+				lowclusternum = clusternum
+		return lowclusternum
+
+	# assign each label to a cluster
+	labeldicts = []
+	for label in labels:
+		_,x,y,w,h,_,_ = label
+		ctr = (x,y)
+		clusternum = assign(ctr,clusters,dist)
+		if clusternum >= 0:
+			labeldict = {'ctr:':ctr, 'size':(w,h), 'label':label, 'cluster':clusternum}
+			labeldicts.append(labeldict)
+
+	# count the number of labels assigned to each cluster
+	clustercounts = [0] * 4
+	for labeldict in labeldicts:
+		clustercounts[labeldict['cluster']] += 1
+
+	# find cluster with the highest count of assigned leds
+	hicount = 0
+	hinum = -1
+	for num in range(0, len(clustercounts)):
+		if clustercounts[num] > hicount:
+			hicount = clustercounts[num]
+			hinum = num
+	return hinum	
 
 def clusterLabels(labels, dist, numwheelsrange):
 	nwn, nwx = numwheelsrange
@@ -776,9 +786,9 @@ def clusterLabels(labels, dist, numwheelsrange):
 
 	clusternums = qualify(clusters, nwn, nwx)
 	if len(clusternums) > 1:
-		print(f'further qualification is required {len(clusternums)}')
+		logging.info(f'further qualification is required {len(clusternums)}')
 	if len(clusternums) <= 0:
-		print('no qualified clusters')
+		logging.info('no qualified clusters')
 		clusternum = 0
 	else:
 		clusternum = clusternums[0]
@@ -787,40 +797,103 @@ def clusterLabels(labels, dist, numwheelsrange):
 		if labeldict['cluster'] == clusternum:
 			clusteredlabels.append(labeldict['label'])
 		else:
-			labeldict['label'][lbl.cls] = 12  # highest cls in colorstack
+			# keep the label for debugging, change the clsid
+			labeldict['label'][lbl.cls] = gclsids['dwheel']
 			clusteredlabels.append(labeldict['label'])
-
 	return clusteredlabels
 
+def detectLed(modcls, frame, previousframe, ilabels):
 
-def detectLed(modcls, frame, ilabels):
-	#detectByHsv()
-	#get sk8 label
-	#qualify led, with shortest distance to a side 
-	#which side?  (a,b,c,d)
-	#adjust angle, with this side as the stern 
-	
-	olabels = []#  adjust sk8 label and merge led labels with input labels
-	return olabels
+	# inputs from model and trackbars
+	radius, gv, wdn, wdx, htn, htx, dist = modcls['values']
 
-def detectDeck(modcls, frame, ilabels):
-#	olabels = detectWheels(modcls, frame, ilabels):
-#	combine
-#	rect
-#	center
-#	crop
-#	detectLed(modcls, crop, ilabels) 
-#	
-	return olabels
+	# pull "wheel" labels from the input label list, bail out if none
+	pts = []
+	for label in ilabels:
+		cls, x,y,w,d,hdg,scr = label
+		if cls == gclsids['wheel']:
+			pts.append((x,y))
+	if len(pts) <= 0:
+		warn(f'{gfnum}: no wheels')
+		if (modcls['cls'] == gargs.clsshow):
+			frm.cache('crop', draw.createMask((200,200)))
+			frm.cache('gray', draw.createMask((200,200)))
+			frm.cache('mask', draw.createMask((200,200)))
+		return []
+	if len(pts) < 4:
+		warn(f'{gfnum}: fewer than 4 wheels')
 
-def makeColorTable():
-	colortable = []
-	for ncolor in range(0,30):
-		colortable.append('red')
+	# make the "wheelbase" label from the convex hull of the wheels
+	pts = np.array(pts)
+	hull = cv2.convexHull(pts)	
+	(x,y), (w,h), a = cv2.minAreaRect(hull)
+	wheelbaselabel = [int(item) for item in [gclsids['wheelbase'], x,y,w,h,a,0]]
+
+	# make the "sk8box" label around the center of the wheelbase
+	sizerange = wdn,wdx,htn,htx
+	cls, x,y,w,d,hdg,scr = wheelbaselabel
+	rect = ((x,y), (radius,radius), 0)	
+	sk8boxlabel = lbl.labelFromRect(gclsids['sk8box'], rect, which=False, score=0)
+
+	# crop the frame to the sk8box rectangle
+	l = max(x - radius, 0)
+	t = max(y - radius, 0)
+	r = x + radius
+	b = y + radius
+	crop = frame[t:b,l:r]
+	frm.cache('crop', crop)
+
+	# find "led" labels within the cropped image
+	gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+	gavg = np.mean(gray)
+	#print(f'gavg:{gavg}, gv:{gv}')
+	lower = gv 
+	upper = 255
+	# upper = (.191 * gavg + 11.2) # see google sheets "Wheels Regression Line" for this equation
+	mask = cv2.inRange(gray, lower, upper)
+	if (modcls['cls'] == gargs.clsshow):
+		frm.cache('gray', gray)
+		frm.cache('mask', mask)
+	cnts,_ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+	ledlabels = labelsFromContours(cnts, modcls['cls'])
+	ledlabels = qualifyLabelsBySize(ledlabels, sizerange)
+	for label in ledlabels:
+		label[lbl.cx] += l
+		label[lbl.cy] += t
+
+	# find the stern of the wheelbase rectangle as the side closest to the leds
+	cls,x,y,w,h,hdg,scr = wheelbaselabel
+	rect = ((x,y), (w,h), hdg)
+	box = cv2.boxPoints(rect)
+	box = np.intp(box)
+	sidecenters = []
+	for side in range(0,len(box)):
+		sideb = side+1 if side+1 < len(box) else 0
+		sidecenters.append( lineCenter(box[side], box[sideb]))
+	sidestern = clusterLabelsFixed(ledlabels, dist, sidecenters) 
+
+	# alter the hdg of the wheelbase label, now that we know the position of the stern
+	if sidestern < 0:
+		warn(f'{gfnum}: no qualified leds to identify stern')
+		newhdg = -1
+	else:
+		newhdg = hdg + ((sidestern+1) * 90)
+		if newhdg > 359: newhdg -= 360
+	wheelbaselabel[lbl.hdg] = newhdg
+
+	return [wheelbaselabel, sk8boxlabel] + ledlabels
+
+def lineCenter(ptA, ptB):
+	ptA = np.array(ptA)
+	ptB = np.array(ptB)
+	ctr = ptA + ((ptB - ptA) / 2)	
+	return ctr
+
+def makeClsidTable():
+	clsidtable = {}
 	for modcls in gmodel:
-		colortable[modcls['cls']] = modcls['acolor']
-	return colortable
-
+		clsidtable[modcls['name']] = modcls['cls']
+	return clsidtable
 
 if __name__ == "__main__":
 	main()

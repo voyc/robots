@@ -9,11 +9,13 @@ import argparse
 import label as lbl
 import draw
 import frame as frm
+import model as mdl
 
 gargs = None
 gframendx = - 1
 gframelist = []
 gwritecount = 0
+gmodel = []      # read from disk
 
 pgup = 85
 pgdn = 86
@@ -58,7 +60,7 @@ def process(img, labels, fnum):
 		if ndx > maxndx:
 			ndx = maxndx
 
-		imgMap = draw.drawImage(img,labels,selected=ndx)
+		imgMap = draw.annotateImage(img,labels,gmodel,selected=ndx)
 
 		cv2.imshow(fnum, imgMap)
 		key = cv2.waitKey(0)
@@ -175,13 +177,14 @@ def looper():
 	print(f'label updates: {gwritecount}')
 
 def main():
-	global gargs, gwritecount
+	global gargs, gwritecount, gmodel
 
 	idir = 'photos/20231216-092941'
 	odir = 'photos/20231216-092941'
 	iext = 'jpg'
 	ilabelsufx = 'truth.csv'
 	olabelsufx = 'truth.csv'
+	imodel = '0_model'
 
 	# get command-line parameters 
 	parser = argparse.ArgumentParser()
@@ -190,11 +193,14 @@ def main():
 	parser.add_argument('-ie' ,'--iext'        ,default=iext       ,help='input image file extension'),
 	parser.add_argument('-is' ,'--ilabelsufx'  ,default=ilabelsufx ,help='input label filename suffix')
 	parser.add_argument('-os' ,'--olabelsufx'  ,default=''         ,help='output label filename suffix')
+	parser.add_argument('-m'  ,'--imodel'      ,default=imodel     ,help='input model file'),
 	gargs = parser.parse_args()	# returns Namespace object, use dot-notation
 	if gargs.odir == '':
 		gargs.odir = gargs.idir
 	if gargs.olabelsufx == '':
 		gargs.olabelsufx = gargs.ilabelsufx
+
+	gmodel = mdl.read(frm.fqjoin(gargs.idir, gargs.imodel, 'json'))
 
 	print(helptext)
 	looper()

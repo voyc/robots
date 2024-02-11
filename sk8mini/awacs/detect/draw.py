@@ -9,6 +9,8 @@ import math
 import colorsys
 import os
 
+import model as mod
+
 def createImage(shape=(600,600,3), color=(255,255,255)):
 	image = np.zeros(shape, np.uint8)
 	image[:,:] = color
@@ -17,14 +19,6 @@ def createImage(shape=(600,600,3), color=(255,255,255)):
 def createMask(shape=(600,600), color=(0,0,0)):
 	image = np.zeros(shape, np.uint8)
 	return image
-
-default_options = {
-	"format": "overlay",   # overlay, map, sbs
-	"thickness_normal": 2,
-	"thickness_selected": 4,
-	"title": '',
-	"color":"red"
-}
 
 bgr_color_stack = {
 	'white':    (255,255,255),
@@ -44,70 +38,46 @@ bgr_color_stack = {
 	'brown':    (  0,128,128) 
 }
 
-color_stack = [
-	(  0,  0,255), # red
-	(255,  0,  0), # blue
-	(  0,255,  0), # green
-	(  0,255,255), # yellow
-	(255,  0,255), # magenta
-	(255,255,  0), # cyan
-	(128,128,255), # pink
-	(255,128,128), # ltblue
-	(128,255,128), # ltgreen
-	(128,255,255), # ltyellow
-	(255,255,128), # ltcyan
-	(255,128,255)  # ltmagenta
-]
+default_options = {
+	"background": "image",   # image, black, white
+	"format": "annotation",   # annotation, map
+	"thickness_normal": 2,
+	"thickness_selected": 4,
+	"title": '',
+}
 
-radius_stack = [ 11, 12, 12, 12, 3, 35, 8, 35 ]
-
-def drawImage(image, labels, options={}, selected=-1):
+def annotateImage(image, labels, model, options={}, selected=-1):
 	options = default_options | options
-	imgformat = options['format']
 
-	if imgformat in ['overlay', 'sbs']:
-		imgOut = imgLay = drawOverlay(image, labels, options, selected)
-	if imgformat in ['map' , 'sbs']:
-		imgOut = imgMap = drawMap(image, labels, options, selected)
+	if options['background'] == 'image':
+		imgOut = copy.deepcopy(image)
+	elif options['background'] == 'white':
+		imgOut = np.full(image.shape, 255, dtype = np.uint8)  # black background
+	elif options['background'] == 'black':
+		imgOut = np.full(image.shape, 0, dtype = np.uint8)  # black background
 
-	if imgformat == 'sbs':
-		imgOut = np.hstack((image, imgLay, imgMap))
-
-	if options['title']:
-		imgOut = titleImage(imgOut, options['title'])
-	return imgOut
-
-def drawOverlay(image, labels, options, selected):
-	imgOut = copy.deepcopy(image)
 	ndx = 0
 	for label in labels:
 		cls, x, y, w, h, hdg, scr = label
-		color = color_stack[cls-1]
-		color = bgr_color_stack[options['colors'][cls]]
-		thickness = options['thickness_normal']
-		if ndx == selected:
-			thickness = options['thickness_selected']
+		modcls = mod.getModcls(model,cls)
+
 		rect = ((x,y), (w,h), hdg)
-		box = cv2.boxPoints(rect)
-		box = np.intp(box)
-		imgOut = cv2.drawContours(imgOut, [box], 0, color, thickness)
+		box = np.intp(cv2.boxPoints(rect))
+		color = bgr_color_stack[modcls['acolor']]
+		radius = modcls['radius']
+		thickness = options['thickness_selected'] if ndx == selected else options['thickness_normal']
 
-		if cls == 2:
-			drawLine(imgOut, (x,y), hdg, w)
-			#cv2.putText(imgOut, f'{hdg}', box[1], cv2.FONT_HERSHEY_PLAIN, 2, color)
+		if options['format'] == 'annotation':
+			imgOut = cv2.drawContours(imgOut, [box], 0, color, thickness)
+		elif options['format'] == 'map':
+			imgOut = cv2.circle(imgOut, (x,y), radius, color, -1)
+
+		if modcls['arrow'] == 1 and hdg >= 0:
+			drawArrow(imgOut, (x,y), hdg, w+h, color)
+
+		if options['title']:
+			imgOut = titleImage(imgOut, options['title'])
 		ndx += 1
-	return imgOut
-
-def drawMap(image, labels, options, selected):
-	imgOut = np.full(image.shape, 255, dtype = np.uint8) 
-	for label in labels:
-		cls, x, y, w, h, hdg, scr = label
-		color = color_stack[cls-1]
-		radius = radius_stack[cls-1]
-		cv2.circle(imgOut, (x,y), radius, color, -1)
-
-		if cls == 3:
-			drawLine(imgOut, (x,y), hdg, h)
 	return imgOut
 
 def titleImage(img, title):
@@ -126,7 +96,7 @@ def showImage(*args, windowname='show', fps=0, grid=[1,1], screen=(1910,900)):
 	#cv2.destroyAllWindows()
 	return key
 
-def drawLine(img, ctr, angle, length=100):
+def drawArrow(img, ctr, angle, length, color):
 	x = ctr[0]
 	y = ctr[1]
 	θ = (angle-90) * 3.14 / 180.0   # angle in degrees to radians
@@ -134,17 +104,10 @@ def drawLine(img, ctr, angle, length=100):
 	y2 = int(y + (length/2) * math.sin(θ))
 	x3 = int(x - (length/2) * math.cos(θ))
 	y3 = int(y - (length/2) * math.sin(θ))
-	cv2.arrowedLine(img, (x3,y3), (x2,y2), (0,255,0), 2, 0, 0, 0.2)
+	img = cv2.arrowedLine(img, (x3,y3), (x2,y2), color, 2, 0, 0, 0.2)
 
-def drawVehicle(img, vehicle):
-	box = vehicle[0]	
-	ctr = vehicle[1]	
-	angle = vehicle[2]	
-	cv2.drawContours(img, [box], 0, (0,0,255),1)
-	drawLine(img, ctr, angle, 50)
-
-def stack(*args, screen=(1910,900), cols=1, rows=1):
-	#  input can be list or separate args
+def stack(*args, screen=(1910,900), grid=[1,1]):
+	#  input images can be list or separate args, make it a list
 	imglist = []
 	if type(args[0]) is list:
 		imglist = args[0]
@@ -163,64 +126,50 @@ def stack(*args, screen=(1910,900), cols=1, rows=1):
 			aray.append(img)
 		ndx += 1
 
-	# check width
-	screenwd = screen[0]
-	screenht = screen[1]
-	wd = aray[0].shape[0]	
-	ht = aray[0].shape[1]	
-	num = len(aray)
-	numrows = 1
-	numcols = num
+	# input dimensions
+	cols, rows = grid 
+	screenwd, screenht = screen
+	wd, ht = aray[0].shape[0:2]	
 
-	if cols > 0:
-		numcols = cols
-		numrows = math.ceil(num/numcols)
-	else:
-		# go to two rows if necessary
-		if screenwd < (num * wd):
-			numrows = 2
-			numcols = math.ceil(num / 2)
+	# adjust dimensions
+	adjwd, adjht = wd, ht
+	if screenwd < (cols * wd):
+		adjwd = int(screenwd / cols)
+		adjht = int((adjwd/wd) * ht)
+	if screenht < (rows * adjht):
+		adjht = int(screenht / rows)
+		adjwd = int((adjht/ht) * wd)
 
-	# next, shrink the images if necessary
-	newwd = newht = 0
-	if screenwd < (numcols * wd):
-		newwd = int(screenwd / numcols)
-		newht = int((newwd/wd) * ht)
-	elif screenht < (numrows * ht):
-		newht = int(screenht / numrows)
-		newwd = int((newht/ht) * wd)
-	
-	if newwd > 0:
+	# shrink the images if necessary
+	if adjwd > 0:
 		bray = []
 		for img in aray:
-			resized = cv2.resize(img, dsize=[newwd,newht])
+			resized = cv2.resize(img, dsize=[adjwd,adjht])
 			bray.append(resized)
 	else:
 		bray = aray	
 
-	# stack cols
-	ar = [ [0]*numcols for i in range(numrows)]
+	# put images in 2D array of rows and cols
+	rcray = [ [0]*cols for i in range(rows)]
 	ndx = 0
 	for img in bray:
-		nrow = math.floor(ndx / numcols)
-		ncol = ndx - (nrow * numcols)
-		ar[nrow][ncol] = img
+		nrow = math.floor(ndx / cols)
+		ncol = ndx - (nrow * cols)
+		rcray[nrow][ncol] = img
 		ndx += 1
 
-	# add extra blank if odd
-	if not hasattr(ar[numrows-1][numcols-1], '__len__'):
-		blank = np.zeros((ar[0][0].shape), np.uint8)
-		ar[numrows-1][numcols-1] = blank
+	# fill out the bottom row with blanks
+	while ndx < cols * rows:
+		ncol = ndx - (nrow * cols)
+		rcray[nrow][ncol] = np.zeros((rcray[0][0].shape), np.uint8)
+		ndx += 1
 
-	# stack rows
-	img = []
-	for row in ar:
+	# stack columns and rows
+	horzimgs = []
+	for row in rcray:
 		rowimg = np.hstack( row)
-		img.append(rowimg)
-	if numrows ==  1:
-		imgOut = img[0]
-	else:
-		imgOut = np.vstack(img)
+		horzimgs.append(rowimg)
+	imgOut = np.vstack(horzimgs)
 
 	return imgOut	
 
