@@ -86,8 +86,7 @@ def titleImage(img, title):
 	return imgOut
 
 def showImage(*args, windowname='show', fps=0, grid=[1,1], screen=(1910,900)):
-	cols,rows = grid
-	img = stack(*args, cols=cols, rows=rows, screen=screen)
+	img = stack(*args, grid=grid, screen=screen)
 	cv2.imshow(windowname, img)
 	delay = 0
 	if fps:
