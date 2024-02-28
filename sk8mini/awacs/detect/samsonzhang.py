@@ -8,6 +8,40 @@ https://youtu.be/w8yWXqWQYmU
 '''
 
 import numpy as np
+import time
+
+def fix_params(W1,b1,W2,b2):
+
+	vmin = -0.5
+	vmax = 0.5
+	step = 0.011
+	way = 1
+	latest = .1
+
+	def getSpray():
+		nonlocal way, latest
+
+		latest = latest + (way * step)
+		
+		if way > 0 and latest + step >= vmax:
+			way = way * -1	
+		elif way < 0 and latest - step <= vmin:
+			way = way * -1	
+		return latest
+
+	for n in range(0,len(b1)): b1[n] = getSpray()
+	for n in range(0,len(b2)): b2[n] = getSpray()
+
+	m,n = W1.shape
+	for i in range(m):
+		for j in range(n):
+			W1[i][j] = getSpray()
+	m,n = W2.shape
+	for i in range(m):
+		for j in range(n):
+			W2[i][j] = getSpray()
+
+	return W1,b1,W2,b2
 
 def init_params():
     W1 = np.random.rand(10, 784) - 0.5
@@ -60,19 +94,21 @@ def get_predictions(A2):
     return np.argmax(A2, 0)
 
 def get_accuracy(predictions, Y):
-    print(predictions, Y)
     return np.sum(predictions == Y) / Y.size
 
 def gradient_descent(X, Y, alpha, iterations, m):
+    global start, end
     W1, b1, W2, b2 = init_params()
+    #W1, b1, W2, b2 = fix_params(W1, b1, W2, b2) # for debugging
     for i in range(iterations):
+        start = time.time()
         Z1, A1, Z2, A2 = forward_prop(W1, b1, W2, b2, X)
         dW1, db1, dW2, db2 = backward_prop(Z1, A1, Z2, A2, W1, W2, X, Y, m)
         W1, b1, W2, b2 = update_params(W1, b1, W2, b2, dW1, db1, dW2, db2, alpha)
+        end = time.time()
         if i % 10 == 0:
-            print("Iteration: ", i)
             predictions = get_predictions(A2)
-            print(get_accuracy(predictions, Y))
+            print("Iteration: ", i, predictions, Y, get_accuracy(predictions, Y), end-start)
     return W1, b1, W2, b2
 
 def make_predictions(X, W1, b1, W2, b2):

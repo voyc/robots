@@ -59,6 +59,8 @@ model = {
 }
 with open('photos/samson/samsonmodel.json', 'w') as f:
 	f.write(json.dumps(model))
+
+quit()
 # end insert code
 
 # predict
