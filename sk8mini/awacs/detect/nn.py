@@ -196,18 +196,12 @@ def backward( Z, A, X, Y, m):
 	one_hot_Y = oneHotEncode(Y)
 	for n in range(numlayers-1, 0, -1):  # 2,1
 		if n == numlayers-1:   # output layer
-			dZ[n] = A[n] - one_hot_Y          # reverse the softmax activation function
-			dW[n] = 1 / m * dZ[n].dot(A[n-1].T)  # reverse the previous layer's dot product
-			db[n] = 1 / m * np.sum(dZ[n])
-
-		if n == 1:  
+			dZ[n] = A[n] - one_hot_Y          # reverse the softmax
+		else:
 			dZ[n] = W[n+1].T.dot(dZ[n+1]) * ReLU_deriv(Z[n])  # reverse the activation
-			dW[n] = 1 / m * dZ[n].dot(X.T)            # using X instead of A[n-1]
-			db[n] = 1 / m * np.sum(dZ[n])
 
-		#dZ = W2.T.dot(dZ2) * ReLU_deriv(Z1)  # reverse the activation
-		#dW = 1 / m * dZ1.dot(X.T)            # using X instead of A[n-1]
-		#db = 1 / m * np.sum(dZ1)
+		dW[n] = 1 / m * dZ[n].dot(A[n-1].T)  # reverse the previous layer's dot product
+		db[n] = 1 / m * np.sum(dZ[n])
 
 	return dW, db
 

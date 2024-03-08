@@ -89,7 +89,7 @@ def sim():   # camera simulation
 		if not fname: break
 		X,y = preprocess(fname)
 		prediction = classify(X,y)
-		score(prediction[0], y)
+		score(prediction, y)
 
 	prob = correct/total if total > 0 else 0
 	logging.info(f'correct:{correct}, total:{total}, prob:{prob}')

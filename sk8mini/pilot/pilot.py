@@ -31,6 +31,13 @@ opthelm = 5
 savhelm = 0
 savthrottle = 0
 
+'''
+1. turn on the awacs first to create the network
+2. turn on the sk8
+3. connect laptop to browser
+4. can test url in browser
+5. samantha chat also uses port 8080, and if it is running, which it should not be, it causes conflict
+'''
 #baseurl = 'http://192.168.1.100:8080'
 baseurl = 'http://192.168.4.3:8080'
 linenum = 27

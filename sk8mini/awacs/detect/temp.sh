@@ -1,60 +1,15 @@
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 0jdig0.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 0jdig1.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 0jdig2.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 0jdig3.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 0jdig4.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 0jdig5.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 1jdig0.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 1jdig1.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 1jdig2.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 1jdig3.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 1jdig4.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 1jdig5.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 2jdig0.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 2jdig1.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 2jdig2.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 2jdig3.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 2jdig4.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 2jdig5.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 3jdig0.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 3jdig1.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 3jdig2.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 3jdig3.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 3jdig4.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 3jdig5.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 4jdig0.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 4jdig1.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 4jdig2.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 4jdig3.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 4jdig4.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 4jdig5.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 5jdig0.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 5jdig1.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 5jdig2.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 5jdig3.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 5jdig4.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 5jdig5.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 6jdig0.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 6jdig1.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 6jdig2.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 6jdig3.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 6jdig4.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 6jdig5.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 7jdig0.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 7jdig1.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 7jdig2.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 7jdig3.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 7jdig4.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 7jdig5.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 8jdig0.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 8jdig1.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 8jdig2.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 8jdig3.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 8jdig4.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 8jdig5.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 9jdig0.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 9jdig1.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 9jdig2.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 9jdig3.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 9jdig4.png --imodel samsonmodel.json
-python3 -Wi::DeprecationWarning testnn.py --task classify --iimage 9jdig5.png --imodel samsonmodel.json
+cp photos/20240302-093730/00028.jpg photos/20240302-093730/keep/
+cp photos/20240302-093730/00032.jpg photos/20240302-093730/keep/
+cp photos/20240302-093730/00037.jpg photos/20240302-093730/keep/
+cp photos/20240302-093730/00042.jpg photos/20240302-093730/keep/
+cp photos/20240302-093730/00048.jpg photos/20240302-093730/keep/
+cp photos/20240302-093730/00054.jpg photos/20240302-093730/keep/
+cp photos/20240302-093730/00060.jpg photos/20240302-093730/keep/
+cp photos/20240302-093730/00064.jpg photos/20240302-093730/keep/
+cp photos/20240302-093730/00069.jpg photos/20240302-093730/keep/
+cp photos/20240302-093730/00075.jpg photos/20240302-093730/keep/
+cp photos/20240302-093730/00080.jpg photos/20240302-093730/keep/
+cp photos/20240302-093730/00083.jpg photos/20240302-093730/keep/
+cp photos/20240302-093730/00089.jpg photos/20240302-093730/keep/
+cp photos/20240302-093730/00093.jpg photos/20240302-093730/keep/
+cp photos/20240302-093730/00111.jpg photos/20240302-093730/keep/

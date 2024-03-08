@@ -12,7 +12,7 @@ dirname = f'{imgdir}/{time.strftime("%Y%m%d-%H%M%S")}'
 ext = 'jpg'
 saving = True
 showing = False  #True
-isverbose = True
+isverbose = False #True
 
 framesize = 12
 quality = 18
@@ -106,4 +106,5 @@ while True:
 	if isverbose: 
 		print(f'goto wait')
 
+	time.sleep(.3)  # let settle
 
