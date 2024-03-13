@@ -7,7 +7,7 @@ import os
 import cv2
 import logger
 
-framepath = '/home/john/media/webapps/sk8mini/awacs/photos/20231216-092941/'
+framepath = ''
 framelist = []
 framendx = 0
 
@@ -25,7 +25,7 @@ def getFrameList(path, nozero=True):
 def getFrame():
 	global framendx
 	if framendx >= len(framelist):
-		return []
+		return [], 0
 	fnum = framelist[framendx]
 	framendx += 1
 	fname = framepath + fnum + '.jpg'

@@ -61,6 +61,9 @@ def annotateImage(image, labels, model, options={}, selected=-1):
 		cls, x, y, w, h, hdg, scr = label
 		modcls = mod.getModcls(model,cls)
 
+		if not modcls:
+			breakpoint()
+
 		rect = ((x,y), (w,h), hdg)
 		box = np.intp(cv2.boxPoints(rect))
 		color = bgr_color_stack[modcls['acolor']]

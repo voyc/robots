@@ -5,7 +5,7 @@ logger.py - logging wrapper
 import logging
 import time
 
-timestart = time.time()
+timestart = 0
 elapsedformat = '%.5f'
 
 def debug(msg):    _log(msg, logging.DEBUG)
@@ -22,11 +22,13 @@ def br():
 	logging.log(logging.INFO, '')
 
 def setup(verbose, quiet):
+	global timestart
 	logging.basicConfig(format='%(message)s')
 	if verbose: level = logging.DEBUG
 	elif quiet: level = logging.CRITICAL
 	else: level = logging.INFO
 	logging.getLogger('').setLevel(level)
+	timestart = time.time()
 
 def main():
 	setup(True,False)

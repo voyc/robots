@@ -98,7 +98,6 @@ def getFrame(increment):
 	fnum = getFnum(increment)
 	if not fnum:
 		return None
-	fnum = gframelist[gframendx]
 	frame = cv2.imread(frm.fqjoin(gargs.idir, fnum, gargs.iext), cv2.IMREAD_UNCHANGED)
 	return frame
 
@@ -311,6 +310,9 @@ def preprocessMask(mask):
 def detectRunningDiff(modcls, frame, previousframe):
 	cls = modcls['cls']
 
+	if previousframe is None:
+		return [lbl.nomovement(cls)]
+
 	# diff current and previous frames
 	diff = diffFrames(frame, previousframe)
 	if (cls == gargs.clsshow):
@@ -329,7 +331,7 @@ def detectRunningDiff(modcls, frame, previousframe):
 		logging.debug(f'low t {t}, no movement')
 		if (cls == gargs.clsshow):
 			frm.cache('cover', draw.createMask(frame.shape))
-		return [lbl.nomovement]
+		return [lbl.nomovement(cls)]
 
 	# find contours in the mask
 	cnts,_ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -359,7 +361,7 @@ def detectRunningDiff(modcls, frame, previousframe):
 	qctrs, dctrs = qualifyByProximity(cntds, proctr, threshold) 
 	hull = []
 	if len(qctrs) <= 0:
-		label = lbl.notfound
+		label = lbl.notfound(cls)
 		logging.info(f'clustered object not found')
 	else:
 		# make convex hull out of qualified points
@@ -385,6 +387,47 @@ def detectColor(modcls, frame):
 	lower = np.array([cn,sn,vn])
 	upper = np.array([cx,sx,vx])
 	hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+	h,s,v = cv2.split(hsv)
+
+	avgh = np.mean(h)
+	avgs = np.mean(s)
+	avgv = np.mean(v)
+	logging.info(f'{gfnum} h:{avgh} s:{avgs} v:{avgv}')
+
+	mask = cv2.inRange(hsv,lower,upper)
+	if (modcls['cls'] == gargs.clsshow):
+		frm.cache('mask', mask)
+
+	mask = preprocessMask(mask)
+	labels = labelsFromMask(mask, modcls['cls'], modcls['dim'], modcls['count'])
+
+	labels = qualifyLabelsBySize(labels, [wn,wx,hn,hx])
+	return labels
+
+def detectCone(modcls, frame):
+	#"values": [0, 69, 108, 156, 77, 148, 14, 40, 15, 40],  #night
+        #"values": [ 27, 76, 119, 255, 101, 196, 11, 27, 11, 27], #day
+
+	[cn,cx,sn,sx,vn,vx,wn,wx,hn,hx] = modcls['values']
+
+	hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+	h,s,v = cv2.split(hsv)
+	avgh = np.mean(h)
+	avgs = np.mean(s)
+	avgv = np.mean(v)
+	logging.info(f'{gfnum} h:{avgh} s:{avgs} v:{avgv}')
+
+	# replace sat-lo with a function of avg sat
+	w1 = -0.947
+	w2 = 0.00982
+	b = 141
+	#sn = (w1 * avgs) + (w2 * (avgs**2)) + b
+	#logging.info(f'sn: {sn} {int(sn)}')
+	#sn = int(sn)
+
+	lower = np.array([cn,sn,vn])
+	upper = np.array([cx,sx,vx])
+
 	mask = cv2.inRange(hsv,lower,upper)
 	if (modcls['cls'] == gargs.clsshow):
 		frm.cache('mask', mask)
@@ -396,19 +439,59 @@ def detectColor(modcls, frame):
 	return labels
 
 def detectGray(modcls, frame):
-	#"values": [0, 69, 108, 156, 77, 148, 14, 40, 15, 40],  #night
-        #"values": [ 27, 76, 119, 255, 101, 196, 11, 27, 11, 27], #day
-
-	[gn,gx,wn,wx,hn,hx] = modcls['values']
-	lower = np.array([cn,sn,vn])
-	upper = np.array([cx,sx,vx])
-	hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-	mask = cv2.inRange(hsv,lower,upper)
+	cls = modcls['cls']
+	[gn,wn,wx,hn,hx] = modcls['values']
+	gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+	_, mask = cv2.threshold(gray, gn, 255, cv2.THRESH_BINARY)
 	if (cls == gargs.clsshow):
+		frm.cache('gray', gray)
 		frm.cache('mask', mask)
 
-	mask = preprocessMask(mask)
-	labels = labelsFromMask(mask, modcls['cls'], modcls['dim'], modcls['count'])
+	cnts,_ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+	labels = []
+	for cnt in cnts:
+		rect = cv2.minAreaRect(cnt) 
+		label = lbl.labelFromRect(cls, rect, which=False, score=0)
+		[c,x,y,w,h,a,p] = label
+		if w>=wn and w<=wx and h>=hn and h<=hx:
+			labels.append(label)
+
+	return labels
+
+#def detectDonut(modcls, frame):
+#	# find range of gn where label count is 1
+#	for gn in range:w
+
+
+
+
+def detectDonut(modcls, frame):
+	dimdonut = [25,25]
+	dimdhole = [12,12]
+	cls = modcls['cls']
+	[gn,gx,wn,wx,hn,hx] = modcls['values']
+	gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+	#_, mask = cv2.threshold(gray, gn, 255, cv2.THRESH_BINARY)
+
+	gx = gn + 12
+	mask = cv2.inRange(gray, gn, gx)
+
+	gavg = np.mean(gray)  # average gray is between 62 and 126, depending on the light
+	logging.info(f'fnum {gfnum} gavg {gavg}')
+
+
+	if (cls == gargs.clsshow):
+		frm.cache('gray', gray)
+		frm.cache('mask', mask)
+
+	cnts,_ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+	labels = []
+	for cnt in cnts:
+		rect = cv2.minAreaRect(cnt) 
+		label = lbl.labelFromRect(cls, rect, which=False, score=0)
+		[c,x,y,w,h,a,p] = label
+		if w>=wn and w<=wx and h>=hn and h<=hx:
+			labels.append(label)
 
 	return labels
 
@@ -441,19 +524,26 @@ def processFrame(model, cls, frame, previousframe, labels):
 	olabels = []
 	if modcls['algo'] == 'color':
 		olabels = detectColor(modcls, frame)
+	elif modcls['algo'] == 'cone':
+		olabels = detectCone(modcls, frame)
+	elif modcls['algo'] == 'donut':
+		olabels = detectDonut(modcls, frame)
+	elif modcls['algo'] == 'gray':
+		olabels = detectGray(modcls, frame)
 	elif modcls['algo'] == 'rdiff':
 		olabels = detectRunningDiff(modcls, frame, previousframe)
 	elif modcls['algo'] == 'wheel':
 		olabels = detectWheels(modcls, frame, previousframe, labels)
 	elif modcls['algo'] == 'led':
 		olabels = detectLed(modcls, frame, previousframe, labels)
-	logging.debug(f'labels: {labels}')
+	logging.debug(f'olabels: {olabels}')
 	return olabels
 
 # main loop thru all frames, cam vs awacs
 def looper():
 	global gguievent
-	previousframe = getFrame(1)   # set previousframe and then in process...() set the first frame to no labels
+	#previousframe = getFrame(1)   # set previousframe and then in process...() set the first frame to no labels
+	previousframe = None
 	framecnt = 0
 	increment = 1
 
@@ -479,7 +569,7 @@ def looper():
 		frm.cache('aframe', aframe)
 
 		if gargs.olabelsufx:
-			lbl.write(labels,frm.fqjoin(gargs.idir, gfnum, gargs.olabelsufx))
+			lbl.write(labels,frm.fqjoin(gargs.olabeldir, gfnum, gargs.olabelsufx))
 
 		# show the output, keyboard navigation, mouse and trackbar events
 		if gargs.nthshow > 0 and (framecnt % gargs.nthshow) == 0:
@@ -519,17 +609,18 @@ def looper():
 	cv2.destroyAllWindows()
 
 def getOptions():
-	defidir = 'photos/20231216-092941/'  # day
+	defidir = 'photos/training/'
+	defolabeldir= 'photos/training/labels/'
 	defiext = 'jpg'
 	defnthshow = 0
 	deffps = 0
 	defscreen = [1910,900]
-	defolabelsufx = ''   # 'label.csv'
+	defolabelsufx = 'gtruth.txt'
 	defimodel = '0_model'
-	defworkframes = 'aframe'
-	defclsrun = [1,2,7]
-	defclsshow = 1
-	defclstweak = 1
+	defworkframes = ['aframe']
+	defclsrun = [1,2,3,7]
+	defclsshow = 3
+	defclstweak = 3
 	defframedebug = ''
 
 	# get command-line parameters 
@@ -540,6 +631,7 @@ def getOptions():
 	parser.add_argument('-m'  ,'--imodel'                         ,default=defimodel,    help='input model file'),
 
 	# file outputs
+	parser.add_argument('-od' ,'--olabeldir'                      ,default=defolabeldir ,help='output folder for labels'   )
 	parser.add_argument('-ol' ,'--olabelsufx'                     ,default=defolabelsufx,help='suffix of output label file'   )
 
 	# onscreen display options
@@ -677,7 +769,6 @@ def detectWheels(modcls, frame, previousframe, ilabels):
 	# x = meangray gray
 	# y = upper threshold
 
-	print(gavg)
 	weight /= 1000 # weight = .191,  trackbar 1:200, equation 0:0.200
 	bias /= 10     # bias = 11.2,    trackbar 1:200, equation 0:20.0
 	upper = (weight * gavg + bias) # see google sheets "Wheels Regression Line" for this equation

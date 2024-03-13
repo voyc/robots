@@ -39,7 +39,7 @@ savthrottle = 0
 5. samantha chat also uses port 8080, and if it is running, which it should not be, it causes conflict
 '''
 #baseurl = 'http://192.168.1.100:8080'
-baseurl = 'http://192.168.4.3:8080'
+baseurl = 'http://192.168.4.2:8080'
 linenum = 27
 minline = 27
 maxline = 37

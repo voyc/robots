@@ -14,9 +14,12 @@ import subprocess
 import logger
 import argparse
 import sys
+import cv2
 
 import vistek
 import hippocam
+
+ifolder = '/home/john/media/webapps/sk8mini/awacs/photos/training/'
 
 mode = sys.argv[1]
 
@@ -34,9 +37,10 @@ sspwsim = '8496HAG#1'
 
 def getArgs():
 	parser = argparse.ArgumentParser()
-	parser.add_argument('mode'                                                     ,help='sim or real'                   ),
-	parser.add_argument('-v'  ,'--verbose'   ,action='store_true' ,default=False   ,help='display additional logging'    ),
-	parser.add_argument('-q'  ,'--quiet'     ,action='store_true' ,default=False   ,help='suppresses all output'                 ),
+	parser.add_argument('mode'                                                     ,help='sim or real'			),
+	parser.add_argument('-v'  ,'--verbose'   ,action='store_true' ,default=False   ,help='display additional logging'	),
+	parser.add_argument('-q'  ,'--quiet'     ,action='store_true' ,default=False   ,help='suppresses all output'		),
+	parser.add_argument('-if' ,'--ifolder'                        ,default=ifolder ,help='input folder'			),
 	args = parser.parse_args()	# returns Namespace object, use dot-notation
 	return args
 
@@ -61,11 +65,23 @@ def netdown(ssid):
 	return bo
 
 def sensoryMotorCircuit():
-	frame = awacs.getFrame()
-	coords = vistek.getCoordinates(frame)
-	course = hippocam.navigate(coords)
-	sk8one.pilot(course)
+	frame,fnum = awacs.getFrame()
+	if len(frame):
+		coords = vistek.getCoordinates(frame)
+		print(coords)
+		course = hippocam.navigate(coords)
+		sk8one.pilot(course)
+		cones, sk8 = coords
+		draw(frame, cones, sk8)
 	return frame
+
+def draw(frame, cones,sk8):
+	for co in cones:
+		cv2.circle(frame, co, 11, (0,0,255), 2)
+	co = sk8[0:2]
+	cv2.circle(frame, co, 13, (200,0,0), 2)
+	cv2.imshow('monitor', frame)
+	cv2.waitKey(0)
 
 def main():
 	global ssid, sspw
@@ -77,9 +93,11 @@ def main():
 	rc = netup(ssid, sspw)
 	if not rc: return 
 
-	rc = awacs.setup()
+	rc = awacs.setup(args.ifolder)
 	if not rc: return
 	logger.info('awacs online')
+
+	rc = vistek.setup()
 
 	rc = sk8one.setup()
 	if not rc: return

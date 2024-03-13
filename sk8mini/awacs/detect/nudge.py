@@ -25,6 +25,7 @@ shftab = 10
 helptext = '''
 q quit
 n/p next/previous frame
+tab/shftab next/prev label
 d delete label
 c duplicate label
 s show label values
@@ -66,6 +67,7 @@ def process(img, labels, fnum):
 		key = cv2.waitKey(0)
 		key &= 0xFF  # I have read that this is redundant.  waitKey already does it.
 
+		breakpoint()
 		# quit 
 		if key == ord('q'):	# quit
 			req = 'quit'
@@ -179,10 +181,10 @@ def looper():
 def main():
 	global gargs, gwritecount, gmodel
 
-	idir = 'photos/20231216-092941'
-	odir = 'photos/20231216-092941'
+	idir = 'photos/training'
+	odir = 'photos/training'
 	iext = 'jpg'
-	ilabelsufx = 'truth.csv'
+	ilabelsufx = 'truth_6.csv'
 	olabelsufx = 'truth.csv'
 	imodel = '0_model'
 
@@ -195,10 +197,10 @@ def main():
 	parser.add_argument('-os' ,'--olabelsufx'  ,default=''         ,help='output label filename suffix')
 	parser.add_argument('-m'  ,'--imodel'      ,default=imodel     ,help='input model file'),
 	gargs = parser.parse_args()	# returns Namespace object, use dot-notation
-	if gargs.odir == '':
-		gargs.odir = gargs.idir
-	if gargs.olabelsufx == '':
-		gargs.olabelsufx = gargs.ilabelsufx
+	#if gargs.odir == '':
+	#	gargs.odir = gargs.idir
+	#if gargs.olabelsufx == '':
+	#	gargs.olabelsufx = gargs.ilabelsufx
 
 	gmodel = mdl.read(frm.fqjoin(gargs.idir, gargs.imodel, 'json'))
 

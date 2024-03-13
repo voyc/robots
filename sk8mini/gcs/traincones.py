@@ -7,7 +7,6 @@ import logger
 import awacsim as awacs
 import vistek
 
-framepath = '/home/john/media/webapps/sk8mini/awacs/photos/20231216-092941/'
 deffolder = '/home/john/media/webapps/sk8mini/awacs/photos/training/'
 
 def training():
@@ -17,10 +16,13 @@ def training():
 	minp = .5
 	model = [dim, weight, bias, minp]
 	labels = forward(model)
+	if not len(labels): return []
+	#print(labels)
 	# read all images
 	# read ground truth
 	# compare labels to truth
 	# adjust model
+	return labels
 
 def forward(model):
 	frame, fnum = awacs.getFrame()
@@ -28,15 +30,16 @@ def forward(model):
 	labels = vistek.getCones(frame, model)
 	logger.info(f'frame {fnum}: {len(labels)} labels') 
 
-	truth = readGroundTruth(fnum)
-	error = coneLossFunction(truth, labels)
+	#truth = readGroundTruth(fnum)
+	#error = coneLossFunction(truth, labels)
 
 
 	#try again
 
-	return frame
+	return labels
 
 def lossf(predicted, actual):
+	pass
 
 def getArgs():
 	parser = argparse.ArgumentParser()

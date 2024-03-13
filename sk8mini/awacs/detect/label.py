@@ -41,8 +41,8 @@ m   = 7   # match, used temporarily during scoring
 # cls,cx,cy,w,h,hdg,scr = label
 # label = [cls,cx,cy,w,h,hdg,scr]
 
-nomovement = [cls,-1,-1,-1,-1,-1,1]  # no object, full confidence, no movement
-notfound   = [cls,-1,-1,-1,-1,-1,0]  # no object, no confidence, lost
+def nomovement(cls): return [cls,-1,-1,-1,-1,-1,1]  # no object, full confidence, no movement
+def notfound(cls):   return [cls,-1,-1,-1,-1,-1,0]  # no object, no confidence, lost
 
 def read(fname):
 	label = []
@@ -200,3 +200,18 @@ def headingFromAngle(angle, which='east'):
 		return hdg,rhdg
 	return hdg
 
+def normalize(label, size):
+	[c, x, y, w, h, a, p] = label
+	(wd, ht) = size
+	x = x/wd
+	y = y/ht
+	w = w/wd
+	h = h/ht
+	a = a/360
+	p = p + 0.0
+	return [c, x, y, w, h, a, p]
+
+def toString(label):
+	[c, x, y, w, h, a, p] = label
+	s = f'{c} {x} {y} {w} {h} {a} {p}\n'
+	return s
