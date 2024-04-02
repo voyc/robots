@@ -3,6 +3,9 @@ testhistoqual.py - test histogram equalization
 and adaptive histogram equalization
 
 https://pyimagesearch.com/2021/02/01/opencv-histogram-equalization-and-adaptive-histogram-equalization-clahe/
+
+normalization - bring the peak to a desired normal value
+equalization - limit peaks and valleys
 '''
 
 import numpy as np

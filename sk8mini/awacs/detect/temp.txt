@@ -1,0 +1,73 @@
+what is                                what we want
+00269  265261 26.033709 0 18 50 61 1    265261 26.033709 0 18 50 61 1  C00
+00270  265260 26.307035 0 18 50 60 1    265260 26.307035 0 18 50 60 1  C00
+00273  265259 25.786814 0 18 50 59 1    265259 25.786814 0 18 50 59 1  C00
+00275  265257 23.979277 0 18 50 57 1    265257 23.979277 0 18 50 57 1  C00  ? to L40
+00277  366650 23.048542 0 25 55 50 1    265259 22.243645 0 18 50 59 1       ?  missing from crop
+00279  381290 23.042526 0 26 57 50 1    783889 22.00153  1 18 52 49 1  L40
+00281  381290 22.709177 0 26 57 50 1    784008 21.35958  1 18 53 48 1  L40
+00284  381410 22.399591 0 26 58 50 1    265260 21.171232 0 18 50 60 1  L40
+00288  395930 21.701511 0 27 59 50 1   1303126 20.886913 2 18 59 46 1  L80
+00308  265139 24.432268 0 18 49 59 1    265139 24.432268 0 18 49 59 1  C00
+00309  265139 24.503988 0 18 49 59 1    265139 24.503988 0 18 49 59 1  C00
+00311  250862 25.045763 0 17 50 62 1    265262 24.995102 0 18 50 62 1  C00
+00313  151029 24.78598  0 10 58 69 1   1820708 24.20575  3 18 52 68 1  C00  ? to R40
+00316  151029 25.14743  0 10 58 69 1   1820709 25.0911   3 18 52 69 1  R40
+00318  151029 25.55695  0 10 58 69 1   1820830 25.257462 3 18 53 70 1  R40
+00319  151029 25.614738 0 10 58 69 1   1820830 24.629967 3 18 53 70 1  R40
+00321  151149 25.59098  0 10 59 69 1   2339953 24.935396 4 18 59 73 1  R40
+00323  151149 25.337772 0 10 59 69 1   2339953 25.064976 4 18 59 73 1  R80
+00326  051543 25.503521 0  3 69 63 1   2340073 24.98919  4 18 60 73 1  R80
+
+
+size 79x79
+center 39x39
+
+donut centers:
+C00 39x29
+L40 28x31
+L80 24x38
+R40 49x31
+R80 53x38
+
+
+
+gray out the donut
+white is leds only
+black is wheels and front panel and motor
+
+rotate around donut center
+
+rotate around arm angle
+
+heading vs angle
+
+
+-90 -80 -70 -60 -50 -40 -30 -20 -10 0 10 20 30 40 50 60 70 80 90 
+
+
+use led only when arm angle is 90 or -90
+
+when arm angle is 90 or -90, we need to figure forward or backward
+	- use led, though it requres second kernel
+	- use front center blue panel and motor
+
+1. find donut center
+
+2. dual rotary convolution, rotating window
+	arm angle * headings, precision vs performance
+		19 * 36 = 684
+		 9 * 18 = 162
+		11 * 18 = 198
+	use black kernel only, no inversion, go for low score
+	use front center blue panel and motor to distinguish between +90 and -90
+	what size canvas?
+
+3. refine heading
+	choose two wheels
+	hone in on centers via threshold-contours
+	calc heading between the two wheels and the upright
+
+4. refine center
+	given two outer wheels and donut center
+
