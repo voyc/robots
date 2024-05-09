@@ -6,6 +6,7 @@ html/robots.txt
 autonomy/xtemp/*
 autonomy/videos/*
 autonomy/games/*
+*/*.mp4
 __pycache__
 *.stl
 photos
