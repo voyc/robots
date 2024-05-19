@@ -79,6 +79,10 @@ send("helm?starboard=n")
 #include <ESP32Servo.h>
 #include "sk8mini.h"
 
+// explicit function prototype to specify the default value
+void setHelm(int angle, boolean isadjust=false);
+void setThrottle(int angle, boolean isadjust=false);
+
 /*---- AHRS globals ----*/
 
 #define BNO055_SAMPLERATE_DELAY_MS 10  // 10
@@ -253,6 +257,9 @@ void loop() {
 }
 
 void execute() {
+	setHelm(pilot.helm);
+	setThrottle(pilot.throttle);
+	// int calcThrottleAdjustment(int throttle, int helm) {
 }
 
 /*---- servos ----*/
@@ -281,8 +288,8 @@ const int helmSweepInc = 2;
 const int helmStepInc = 5;
 const int helmPause = 10;
 
-/* set the value of helm and write it to the servo */
-void setHelm(int angle, boolean isadjust=true) {
+// set the value of helm and write it to the servo
+void setHelm(int angle, boolean isadjust) {
 	helm = angle;
 	servoHelm.write(rotate(reverse(angle)));
 	if (isadjust)
@@ -358,7 +365,7 @@ const int aheadFull = 43;   // 43 - 23 = 20
 const int throttleInc =  2;     // reasonable increment throttle steps
 
 /* set the value of throttle and write it to the servo */
-void setThrottle(int angle, boolean isadjust=true) {
+void setThrottle(int angle, boolean isadjust) {
 	if (abs(angle) < aheadSlow)
 		angle = 0;
 	throttle = angle;

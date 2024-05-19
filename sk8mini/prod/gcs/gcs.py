@@ -14,6 +14,9 @@ functions:
 	pilot
 	send pilot commands to sk8 through the serial port dongle
 
+----------------
+sources
+
 object detection:
 	folder:  ~/webapps/robots/robots/sk8mini/awacs/detect/
 		testconvolve.py  - find donut
@@ -32,6 +35,10 @@ pilot:
 		pilot.ino - helm and throttle implemented via espwebserver
 		pilot.py - manual piloting via keyboard as webserver client, using curses
 
+camera:
+	~/webapps/robots/robots/sk8mini/awacs/cam.py
+	
+-------------------------
 ui:
 	print ?
 	matplotlib ?
@@ -157,25 +164,26 @@ def getAhrs():
 #	2. mag calculation, hard, move in a figure eight pattern repeatedly
 #	3. accel calculation, harder, we dont evey try
 
-FIGURE_8_HALF_TIME = 3000
+FIGURE_8_HALF_TIME = 5
 calibration_started = 0
 maneuver_started = 0
 
 def calibrateMag():
+	global calibration_started, maneuver_started
 	if ahrs.mag >= 3:
 		sendPilot( 0, 0)
 		setState(STATE_MAG_CALIBRATED)
-
-	return
+		return
 
 	if calibration_started <= 0:
 		calibration_started = time.time()
 		maneuver_started = calibration_started
-		sendPilot( 90, 45)
+		sendPilot( 90, 23)
 	else:
 		if time.time() - maneuver_started > FIGURE_8_HALF_TIME:
-			newhelm = helm + (0 - 180)  # reverse
-			sendPilot( newhelm, 45)
+			newhelm = (0 - pilot.helm)  # reverse
+			sendPilot( newhelm, 23)
+			maneuver_started = time.time()
 
 def calibrateGyro():
 	if ahrs.gyro < 3 and state < STATE_GYRO_CALIBRATED:
@@ -199,17 +207,27 @@ def setup():
 def shutdown():
 	pass
 
+def cam.isPhotoAvailable():
+	return cam.available
+
+def cam.getPhoto():
+	return photo
+
 def loop():
 	ahrs_updated = getAhrs()
 	if not ahrs_updated:
 		return;
 
-	#photo = getAerialPhoto()
-	#objects = detectObjects(photo) # sk8 and cones
+	if cam.photoavailable():
+		photo = cam.getAerialPhoto()
+		objects = detectObjects(photo) # sk8 and cones
+
 	#plan = calcPlan(cones, order, sides)
 	#route = plotRoute(plan)
 	#drawArena(plan)
 	#drawRoute(route)
+
+	sendPilot(90,23)
 
 def main():
 	try:
@@ -217,7 +235,7 @@ def main():
 		setState( STATE_CALIBRATING)
 
 		while state < STATE_CALIBRATED:
-			setup()
+	#		setup()
 	
 		while state < STATE_KILLED:
 			loop()
