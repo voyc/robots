@@ -207,20 +207,20 @@ def setup():
 def shutdown():
 	pass
 
-def cam.isPhotoAvailable():
-	return cam.available
-
-def cam.getPhoto():
-	return photo
+#def cam.isPhotoAvailable():
+#	return cam.available
+#
+#def cam.getPhoto():
+#	return photo
 
 def loop():
 	ahrs_updated = getAhrs()
 	if not ahrs_updated:
 		return;
 
-	if cam.photoavailable():
-		photo = cam.getAerialPhoto()
-		objects = detectObjects(photo) # sk8 and cones
+#	if cam.photoavailable():
+#		photo = cam.getAerialPhoto()
+#		objects = detectObjects(photo) # sk8 and cones
 
 	#plan = calcPlan(cones, order, sides)
 	#route = plotRoute(plan)
@@ -235,7 +235,7 @@ def main():
 		setState( STATE_CALIBRATING)
 
 		while state < STATE_CALIBRATED:
-	#		setup()
+			setup()
 	
 		while state < STATE_KILLED:
 			loop()

@@ -1,12 +1,13 @@
 /*
 awacs.ino - airborne warning and control system
 
-resides on a ESP32-CAM on the awacs drone
+resides on an ESP32-CAM on the awacs drone
 
-Arduino IDE Tools settings
+Arduino IDE Tools settings:
 	Board: ESP32 Dev Module
 	PSRAM: Enabled
 	Programmer: Esptool
+	Port: dev/ttyUSB0
 
 function:
 	take overhead photos and send to gcs
