@@ -14,6 +14,34 @@ functions:
 	pilot
 	send pilot commands to sk8 through the serial port dongle
 
+	gcs
+		kill - Ctrl-C
+		visualize log - logger to laptop display
+		download photos and labels from awacs and save to disk for ai training
+		(opt) visualize arena - matplotlib
+		(opt) manual piloting - matplotlib incl keyboard and mouse
+	
+	awacs
+		take photos
+		georeference to cover arena
+		object detection
+	
+	sk8
+		setup - calibration
+		get arena map from awacs
+		get position from awacs
+		dead reckon position
+		command - choose patterns, plan route
+		navigate - plot route
+		pilot
+
+throttle adjustment is relative to roll, not helm
+	therefore, perhaps we should go back to separate commands
+	if doing async, we need events
+		onRoll - adjust throttle depending on roll
+		onHeading - adjust helm to keep course bearing and/or turn radius
+		onPosition - override dead-reckoning position
+
 ----------------
 sources
 
@@ -37,34 +65,61 @@ pilot:
 
 camera:
 	~/webapps/robots/robots/sk8mini/awacs/cam.py
-	
--------------------------
-ui:
-	print ?
-	matplotlib ?
-	curses ?
-	kill switch
-	manual remote controls ?
-	map
-	attitude (roll)
 
-starting
-calibrating mag
-calibrating gyro
-starting servos
-ready
+---------------------
+todo:
 
-starting
-connecting to webserver
-getting first photo
-finding center
-ready
+x rename cam.py to awacs.py
 
+x rename test.py to testAwacs.py
+
+x pull testAwacs.py code into gcs.py
+
+x combine awacs + cam2.py + testthreading.py
+
+x pull testAwacs.py code into main() of awacs.py library
+
+x delete cam2.py, testthreading.py, testAwacs.py
+
+- implement sk8mini_specs, sk8math, or sk8.py library
+
+change class PILOT to class CMD
+
+add navigation and piloting to gcs.py
+
+feasibiliry of writing images to micro sd card on drone
+	size of photos for 10  minut performenace
+	size of sd card
+	can esp32 connect to a microsd card
+	are there arduino demos of writing to an sd card
+
+pilot: throttle adjust
+	onRoll
+	change command struture: separate helm and throttle commands
+
+event-driven
+	On roll, adjust throttle
+	On heading, dead reckon
+	On time elapsed, 
+	On position, pilot 
+	On cone rounded, navigate
+
+Lambert azimuthal equal-area projection centered on the North Pole. 
+	Map: Caitlin Dempsey.
+	https://www.geographyrealm.com/types-map-projections/
+	https://projectionwizard.org/
+
+minimalist shoe features:
+	wide toe box
+	zero-drop (flat)
+	flexible sole
 
 '''
 
 import serial
 import time
+import logger
+import awacs
 
 # structure types
 
@@ -117,7 +172,7 @@ def setState(newstate):
 	global state
 	if newstate > state:
 		state = newstate
-		print(f'state: {state_texts[state]}')
+		logger.info(f'gcs state: {state_texts[state]}')
 
 # ----- 
 
@@ -127,7 +182,7 @@ def sendPilot(newhelm, newthrottle):
 	pilot.throttle = newthrottle
 	s = f'{newhelm}\t{newthrottle}' 
 	scomm.write(bytes(s, 'utf-8'))
-	print(f'sendPilot sent thru serial: {s}')
+	logger.info(f'gcs sendPilot sent thru serial: {s}')
 
 def getAhrs():
 	global ahrs
@@ -136,7 +191,7 @@ def getAhrs():
 		return False
 
 	b = scomm.readline()	# serial read to \n or timeout, whichever comes first
-	#print(f'len {len(b)}')
+	#logger.info(f'len {len(b)}')
 	if len(b) > 0:
 		s = b.decode("utf-8")	# to tab-separated string
 		lst = s.split()		# parse into global struct
@@ -153,7 +208,7 @@ def getAhrs():
 	if ahrs.heading < 0:
 		ahrs.heading = (360 - ahrs.heading)
 
-	print(f'{time.time()}: heading:{ahrs.heading:.2f}, roll:{ahrs.roll}, gyro:{ahrs.gyro}, mag:{ahrs.mag}')
+	logger.info(f'gcs heading:{ahrs.heading:.2f}, roll:{ahrs.roll}, gyro:{ahrs.gyro}, mag:{ahrs.mag}')
 	return True
 
 
@@ -170,7 +225,7 @@ maneuver_started = 0
 
 def calibrateMag():
 	global calibration_started, maneuver_started
-	if ahrs.mag >= 3:
+	if ahrs.mag >= 3 or ((calibration_started > 0) and (time.time() - calibration_started) > 20):
 		sendPilot( 0, 0)
 		setState(STATE_MAG_CALIBRATED)
 		return
@@ -191,7 +246,7 @@ def calibrateGyro():
 	else:
 		setState(STATE_GYRO_CALIBRATED)
 
-def setup():
+def setupSk8():
 	ahrs_updated = getAhrs()
 
 	if state == STATE_CALIBRATING:
@@ -204,8 +259,19 @@ def setup():
 		setState(STATE_CALIBRATED)
 		setState(STATE_SETUP_COMPLETE)
 
+def setupAwacs():
+	awacs.net = 'awacs'
+	awacs.user = 'john'
+	awacs.pw = 'invincible'
+	awacs.url = 'localhost:py'
+	awacs.folder = 'home/john/media/webapps/sk8mini/awacs/photos/'
+	awacs.start()
+
+def setup():
+	logger.setup(True,False)
+
 def shutdown():
-	pass
+	awacs.stop()
 
 #def cam.isPhotoAvailable():
 #	return cam.available
@@ -221,6 +287,8 @@ def loop():
 #	if cam.photoavailable():
 #		photo = cam.getAerialPhoto()
 #		objects = detectObjects(photo) # sk8 and cones
+	logger.info(f'gcs {awacs.num.value}')
+	time.sleep(.3)
 
 	#plan = calcPlan(cones, order, sides)
 	#route = plotRoute(plan)
@@ -231,17 +299,21 @@ def loop():
 
 def main():
 	try:
+		setup()
+
 		setState( STATE_STARTING)
 		setState( STATE_CALIBRATING)
 
+		setupAwacs()
+
 		while state < STATE_CALIBRATED:
-			setup()
+			setupSk8()
 	
 		while state < STATE_KILLED:
 			loop()
 
 	except KeyboardInterrupt:
-		print()
+		logger.info('')
 		setState( STATE_KILLED)
 		sendPilot( 0, 0)
 
