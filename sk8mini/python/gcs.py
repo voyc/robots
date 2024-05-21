@@ -81,11 +81,22 @@ x pull testAwacs.py code into main() of awacs.py library
 
 x delete cam2.py, testthreading.py, testAwacs.py
 
-- implement sk8mini_specs, sk8math, or sk8.py library
+split gcs.py into gcs.py + skate.py
+
+implement sk8mini_specs, sk8math, or sk8.py library, or fold into skate.py
 
 change class PILOT to class CMD
 
-add navigation and piloting to gcs.py
+add onHelm: adjust right-throttle
+
+finish figure 8 pattern for calibration, with right throttle adjustment
+
+add navigation
+	dead reckoning
+		keep list of recent commands
+		with each new command, calc new position by adding previous command
+
+add piloting to gcs.py
 
 feasibiliry of writing images to micro sd card on drone
 	size of photos for 10  minut performenace
