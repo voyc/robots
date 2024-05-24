@@ -246,8 +246,8 @@ void loop() {
 	bool isNewMag = abs(mag != ahrs.mag);
 	bool isNewGyro = abs(gyro != ahrs.gyro);
 
-	//if (true) {
-	if (isNewHeading || isNewRoll || isNewMag || isNewGyro) {
+	if (true) {
+	//if (isNewHeading || isNewRoll || isNewMag || isNewGyro) {
 		sendAhrs();
 		heading = ahrs.heading;
 		roll = ahrs.roll;

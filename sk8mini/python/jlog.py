@@ -29,6 +29,10 @@ def setup(verbose, quiet):
 	else: level = logging.INFO
 	logging.getLogger('').setLevel(level)
 	timestart = time.time()
+	logging.getLogger("requests").setLevel(logging.WARNING) # quiet
+	logging.getLogger("urllib3").setLevel(logging.WARNING) # quiet
+
+# ---- test ---------------------
 
 def main():
 	setup(True,False)

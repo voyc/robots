@@ -1,4 +1,4 @@
-'''
+''' 
 gcs.py  ground control station
 
 runs on laptop
@@ -16,7 +16,7 @@ functions:
 
 	gcs
 		kill - Ctrl-C
-		visualize log - logger to laptop display
+		visualize log - jlog to laptop display
 		download photos and labels from awacs and save to disk for ai training
 		(opt) visualize arena - matplotlib
 		(opt) manual piloting - matplotlib incl keyboard and mouse
@@ -35,12 +35,42 @@ functions:
 		navigate - plot route
 		pilot
 
+software architecture
+	we decided to use the multiprocessing library to implement 3 processes
+	see https://curriculum.voyc.com/doku.php?id=python#software_architecture_options 
+
 throttle adjustment is relative to roll, not helm
 	therefore, perhaps we should go back to separate commands
 	if doing async, we need events
 		onRoll - adjust throttle depending on roll
 		onHeading - adjust helm to keep course bearing and/or turn radius
 		onPosition - override dead-reckoning position
+
+processes
+	gcs - UI
+	awacs - camera and CV
+	skate - navigation and piloting
+
+shared data
+	donut and cones, set by awacs, read by gcs,skate
+	center, heading, set by skate, ready by gcs	
+
+	Array('d')
+		0 timeDonutUpdated
+		1 timeCenterUpdated
+	Array('i')
+		0 numCones
+		1 xDonut
+		2 yDonut 
+		3 xSkate
+		4 ySkate
+		5 hSkate
+		6 xCone1
+		7 yCone1
+		8 xCone2
+		9 yCone2
+		etc.
+
 
 ----------------
 sources
@@ -69,19 +99,12 @@ camera:
 ---------------------
 todo:
 
-x rename cam.py to awacs.py
+test.py <- gcs.py
 
-x rename test.py to testAwacs.py
+awacs.py <- awacsprev.py
 
-x pull testAwacs.py code into gcs.py
+skate.py <- gcs.py
 
-x combine awacs + cam2.py + testthreading.py
-
-x pull testAwacs.py code into main() of awacs.py library
-
-x delete cam2.py, testthreading.py, testAwacs.py
-
-split gcs.py into gcs.py + skate.py
 
 implement sk8mini_specs, sk8math, or sk8.py library, or fold into skate.py
 
@@ -115,221 +138,178 @@ event-driven
 	On position, pilot 
 	On cone rounded, navigate
 
-Lambert azimuthal equal-area projection centered on the North Pole. 
-	Map: Caitlin Dempsey.
-	https://www.geographyrealm.com/types-map-projections/
-	https://projectionwizard.org/
-
-minimalist shoe features:
-	wide toe box
-	zero-drop (flat)
-	flexible sole
-
+debugging multiprocessing
+	import pdb; pdb.set_trace()  # not work in child process
 '''
 
-import serial
+import multiprocessing
 import time
-import logger
+import argparse
+
+import jlog
+from smem import *
 import awacs
+import skate
 
-# structure types
-
-class AHRS:
-	heading	= 9999.0
-	roll	= 0.0
-	pitch	= 0.0
-	sys	= 0
-	gyro	= 0
-	accel	= 0
-	mag	= 0
-
-class PILOT:
-	helm 	= 0	# -90 to +90, negative:port, positive:starboard, zero:amidships
-	throttle= 0	# -90 to +90, negative:astern, positive:ahead, zero:stop
+# global constants set by cli arguments
+verbose	= True
+quiet	= False
+process	= 'both'
 
 # global variables
+args	= False
+awacs_process = False
+skate_process = False
 
-scomm = serial.Serial(port='/dev/ttyUSB0',   baudrate=115200, timeout=.3)
-pilot = PILOT()
-ahrs = AHRS()
-ahrs_buffer_minimum = 10
-magnetic_declination = -1.11 # from magnetic-declination.com depending on lat-lon
-
-# state management
-
-STATE_NONE		= 0
-STATE_STARTING		= 1
-STATE_CALIBRATING	= 2
-STATE_GYRO_CALIBRATED	= 3
-STATE_MAG_CALIBRATED	= 4
-STATE_CALIBRATED	= 5
-STATE_SETUP_COMPLETE	= 6
-STATE_KILLED		= 7
-
-state_texts = [
-	"none",
-	"starting",
-	"calibrating",
-	"gyro calibrated",
-	"mag calibrated",
-	"calibrated",
-	"setup complete",
-	"killed"
-]
-
-state = STATE_NONE
-
-def setState(newstate):
-	global state
-	if newstate > state:
-		state = newstate
-		logger.info(f'gcs state: {state_texts[state]}')
-
-# ----- 
-
-def sendPilot(newhelm, newthrottle):
-	global pilot
-	pilot.helm = newhelm
-	pilot.throttle = newthrottle
-	s = f'{newhelm}\t{newthrottle}' 
-	scomm.write(bytes(s, 'utf-8'))
-	logger.info(f'gcs sendPilot sent thru serial: {s}')
-
-def getAhrs():
-	global ahrs
-	if scomm.in_waiting < ahrs_buffer_minimum:   # number of bytes in the receive buffer
-		# sk8.ino sends data only when it changes
-		return False
-
-	b = scomm.readline()	# serial read to \n or timeout, whichever comes first
-	#logger.info(f'len {len(b)}')
-	if len(b) > 0:
-		s = b.decode("utf-8")	# to tab-separated string
-		lst = s.split()		# parse into global struct
-		ahrs.heading	= float( lst[0])
-		ahrs.roll	= float( lst[1])
-		ahrs.pitch	= float( lst[2])
-		ahrs.sys	= int( lst[3])
-		ahrs.gyro	= int( lst[4])
-		ahrs.accel	= int( lst[5])
-		ahrs.mag	= int( lst[6])
-
-	# the BRO055 does NOT adjust for magnetic declination, so we do that here
-	ahrs.heading += magnetic_declination
-	if ahrs.heading < 0:
-		ahrs.heading = (360 - ahrs.heading)
-
-	logger.info(f'gcs heading:{ahrs.heading:.2f}, roll:{ahrs.roll}, gyro:{ahrs.gyro}, mag:{ahrs.mag}')
-	return True
+# shared memory
+smem_timestamp = multiprocessing.Array('d', TIME_ARRAY_SIZE) # initialized with zeros
+smem_positions = multiprocessing.Array('i', POS_ARRAY_SIZE)  # initialized with zeros
 
 
-# ---- calibration
+def startAwacs():
+	global awacs_process
+	awacs_process = multiprocessing.Process(target=awacs.awacs_main, args=(smem_timestamp, smem_positions))
+	awacs_process.start()
 
-# the BRO055 does three calculations at random times in the background: 
-#	1. gyro calculation, easy, just let it sit still for a few seconds
-#	2. mag calculation, hard, move in a figure eight pattern repeatedly
-#	3. accel calculation, harder, we dont evey try
+def startSkate():
+	global skate_process
+	skate_process = multiprocessing.Process(target=skate.skate_main, args=(smem_timestamp, smem_positions))
+	skate_process.start()
 
-FIGURE_8_HALF_TIME = 5
-calibration_started = 0
-maneuver_started = 0
-
-def calibrateMag():
-	global calibration_started, maneuver_started
-	if ahrs.mag >= 3 or ((calibration_started > 0) and (time.time() - calibration_started) > 20):
-		sendPilot( 0, 0)
-		setState(STATE_MAG_CALIBRATED)
-		return
-
-	if calibration_started <= 0:
-		calibration_started = time.time()
-		maneuver_started = calibration_started
-		sendPilot( 90, 23)
-	else:
-		if time.time() - maneuver_started > FIGURE_8_HALF_TIME:
-			newhelm = (0 - pilot.helm)  # reverse
-			sendPilot( newhelm, 23)
-			maneuver_started = time.time()
-
-def calibrateGyro():
-	if ahrs.gyro < 3 and state < STATE_GYRO_CALIBRATED:
-		return
-	else:
-		setState(STATE_GYRO_CALIBRATED)
-
-def setupSk8():
-	ahrs_updated = getAhrs()
-
-	if state == STATE_CALIBRATING:
-		calibrateGyro()
-
-	elif state == STATE_GYRO_CALIBRATED:
-		calibrateMag()
-
-	else:
-		setState(STATE_CALIBRATED)
-		setState(STATE_SETUP_COMPLETE)
-
-def setupAwacs():
-	awacs.net = 'awacs'
-	awacs.user = 'john'
-	awacs.pw = 'invincible'
-	awacs.url = 'localhost:py'
-	awacs.folder = 'home/john/media/webapps/sk8mini/awacs/photos/'
-	awacs.start()
-
-def setup():
-	logger.setup(True,False)
+def startup():
+	if process == 'awacs' or process == 'both':
+		startAwacs()
+	if process == 'skate' or process == 'both':
+		startSkate()
 
 def shutdown():
-	awacs.stop()
-
-#def cam.isPhotoAvailable():
-#	return cam.available
-#
-#def cam.getPhoto():
-#	return photo
-
-def loop():
-	ahrs_updated = getAhrs()
-	if not ahrs_updated:
-		return;
-
-#	if cam.photoavailable():
-#		photo = cam.getAerialPhoto()
-#		objects = detectObjects(photo) # sk8 and cones
-	logger.info(f'gcs {awacs.num.value}')
-	time.sleep(.3)
-
-	#plan = calcPlan(cones, order, sides)
-	#route = plotRoute(plan)
-	#drawArena(plan)
-	#drawRoute(route)
-
-	sendPilot(90,23)
+	global smem_timestamp  # is this necessary
+	smem_timestamp[TIME_KILLED] = time.time()
+	if awacs_process:
+		awacs_process.join()
+	if skate_process:
+		skate_process.join()
 
 def main():
+	global gargs
 	try:
-		setup()
+		gargs = getCLIargs()
+		jlog.setup(verbose, quiet)
+		jlog.info('gcs: starting')
+		startup()
 
-		setState( STATE_STARTING)
-		setState( STATE_CALIBRATING)
-
-		setupAwacs()
-
-		while state < STATE_CALIBRATED:
-			setupSk8()
-	
-		while state < STATE_KILLED:
-			loop()
+		# loop
+		for i in range(60):
+			if smem_timestamp[TIME_KILLED]:
+				jlog.info('gcs: stopping due to kill')
+				break;
+			#drawArena(plan)
+			#drawRoute(route)
+			time.sleep(1) # nothing else to do until we add visualization
+		jlog.debug('gcs: fall out of main loop')
 
 	except KeyboardInterrupt:
-		logger.info('')
-		setState( STATE_KILLED)
-		sendPilot( 0, 0)
-
-	finally:
+		jlog.info('gcs: keyboard interrupt')
 		shutdown()
+
+	except Exception as ex:
+		jlog.info(f'gcs: main exception: {ex}')
+		raise
+
+	try:
+		shutdown()
+	except Exception as ex:
+		jlog.info(f'gcs: shutdown exception: {ex}')
+
+	jlog.info(f'gcs: main exit')
+	
+
+class RUNTIME_DEFAULTS:
+	# global
+	verbose	= True
+	quiet	= False
+
+	# gcs
+	process = 'both'
+
+	# skate
+	port	= '/dev/ttyUSB0'  # serial port for dongle
+	baud	= 115200
+	serialtimeout = 3
+	serialminbytes = 10
+	declination = -1.11 # from magnetic-declination.com depending on lat-lon
+
+	# awacs
+	sim	= False
+	crop	= True
+	save	= True
+	show	= False
+	ssid	= 'AWACS'
+	sspw	= 'indecent'
+	camurl	= 'http://192.168.4.1'   # when connected to access point AWACS
+	framesize= 12	# sxga, 1280 x1024, 5:4, best quality=18
+	quality	= 18
+	imgdir	= '/home/john/media/webapps/sk8mini/awacs/photos'
+	numcones= 9
+
+
+def getCLIargs(): # get command-line arguments 
+	global args, process
+	rdef = RUNTIME_DEFAULTS()
+	parser = argparse.ArgumentParser()
+	parser.add_argument('-v'  ,'--verbose'   ,action='store_true' ,default=rdef.verbose       ,help='verbose comments'                 ) 
+	parser.add_argument('-q'  ,'--quiet'     ,action='store_true' ,default=rdef.quiet         ,help='suppress all output'              )
+	parser.add_argument('-ps' ,'--process'                        ,default=rdef.process       ,help='process: both,skate,awacs,none'   )
+	parser.add_argument('-p'  ,'--port'                           ,default=rdef.port          ,help='serial port'                      )
+	parser.add_argument('-b'  ,'--baud'           ,type=int       ,default=rdef.baud          ,help='serial baud rate'                 )
+	parser.add_argument('-st' ,'--serialtimeout'  ,type=int       ,default=rdef.serialtimeout ,help='serial timeout'                   )
+	parser.add_argument('-mb' ,'--serialminbytes' ,type=int       ,default=rdef.serialminbytes,help='serial minimum bytes before read' )
+	parser.add_argument('-md' ,'--declination'    ,type=float     ,default=rdef.declination   ,help='magnetic declination of compass'  )
+	parser.add_argument('-sm' ,'--sim'       ,action='store_true' ,default=rdef.sim           ,help='simulation mode'                  )
+	parser.add_argument('-cr' ,'--crop'      ,action='store_true' ,default=rdef.crop          ,help='crop image before processing'     )
+	parser.add_argument('-sa' ,'--save'      ,action='store_true' ,default=rdef.save          ,help='save image to disk'               )
+	parser.add_argument('-sh' ,'--show'      ,action='store_true' ,default=rdef.show          ,help='show visualization'               )
+	parser.add_argument('-id' ,'--ssid'                           ,default=rdef.ssid          ,help='network ssid'                     )
+	parser.add_argument('-pw' ,'--sspw'                           ,default=rdef.sspw          ,help='network password'                 )
+	parser.add_argument('-cu' ,'--camurl'                         ,default=rdef.camurl        ,help='URL of camera webserver'          )
+	parser.add_argument('-if' ,'--imgdir'                         ,default=rdef.imgdir        ,help='folder for saveing images'        )
+	parser.add_argument('-fs' ,'--framesize'      ,type=int       ,default=rdef.framesize     ,help='camera framesize'                 )
+	parser.add_argument('-qu' ,'--quality'        ,type=int       ,default=rdef.quality       ,help='camera quality'                   )
+	parser.add_argument('-mc' ,'--numcones'       ,type=int       ,default=rdef.numcones      ,help='number of cones in the arena'     )
+	args = parser.parse_args()	# returns Namespace object, use dot-notation
+
+	# global
+	verbose	= args.verbose
+	quiet	= args.quiet
+
+	# gcs
+	process	= args.process
+
+	# skate
+	awacs.verbose	= args.verbose
+	awacs.quiet	= args.quiet
+	skate.port	= args.port
+	skate.baud	= args.baud
+	skate.serialtimeout = args.serialtimeout
+	skate.serialminbytes = args.serialminbytes
+	skate.declination = args.declination
+
+	# awacs
+	awacs.sim	= args.sim
+	awacs.crop	= args.crop
+	awacs.save	= args.save
+	awacs.show	= args.show
+	awacs.verbose	= args.verbose
+	awacs.quiet	= args.quiet
+	awacs.show	= args.show
+	awacs.ssid	= args.ssid
+	awacs.sspw	= args.sspw 
+	awacs.camurl	= args.camurl
+	awacs.framesize	= args.framesize
+	awacs.quality	= args.quality
+	awacs.imgdir	= args.imgdir
+	awacs.numcones	= args.numcones
+	return args
 
 if __name__ == '__main__':
 	main()
