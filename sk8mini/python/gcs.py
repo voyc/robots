@@ -99,27 +99,46 @@ camera:
 ---------------------
 todo:
 
-test.py <- gcs.py
+roles:
+	captain - design route from choice of patterns 
+	navigator - dead reckon position, adjust course
+	pilot - keep the vehicle on course
+brain parts:
+	
 
-awacs.py <- awacsprev.py
 
-skate.py <- gcs.py
+add piloting to gcs.py
+	for dev and test
+		use constants for cones and route
+		see hippoc for how this variables are designed
 
+	pull in specs and math
+		sk8minimath.py is mostly from arduino/sk8.ino, and currently contains specs, not math 
+		see: ~/webapps/robots/robots/autonomy/nav.py - library of trigonometry used in navigation
+		write math to adjust throttle depending on roll
 
-implement sk8mini_specs, sk8math, or sk8.py library, or fold into skate.py
+	separate throttle and helm commands
+		change class PILOT to class CMD
+		change PILOT structure in sk8mini.h and skate.py
+	
+	add onRoll: adjust right-throttle
+	
+	event-driven
+		On roll, adjust throttle
+		On heading, dead reckon
+		On time elapsed, 
+		On position, pilot 
+		On cone rounded, navigate
+	
+	finish figure 8 pattern for calibration, with right throttle adjustment
 
-change class PILOT to class CMD
-
-add onHelm: adjust right-throttle
-
-finish figure 8 pattern for calibration, with right throttle adjustment
 
 add navigation
+	pull in stuff from hippoc.py
+
 	dead reckoning
 		keep list of recent commands
 		with each new command, calc new position by adding previous command
-
-add piloting to gcs.py
 
 feasibiliry of writing images to micro sd card on drone
 	size of photos for 10  minut performenace
@@ -127,24 +146,14 @@ feasibiliry of writing images to micro sd card on drone
 	can esp32 connect to a microsd card
 	are there arduino demos of writing to an sd card
 
-pilot: throttle adjust
-	onRoll
-	change command struture: separate helm and throttle commands
-
-event-driven
-	On roll, adjust throttle
-	On heading, dead reckon
-	On time elapsed, 
-	On position, pilot 
-	On cone rounded, navigate
-
-debugging multiprocessing
+how to debug multiprocessing
 	import pdb; pdb.set_trace()  # not work in child process
 '''
 
 import multiprocessing
 import time
 import argparse
+import matplotlib.pyplot as plt
 
 import jlog
 from smem import *
@@ -190,13 +199,30 @@ def shutdown():
 	if skate_process:
 		skate_process.join()
 
+def on_press(event):
+	if event.key == 'left':
+		jlog.info('UI: turn left')
+	if event.key == 'right':
+		jlog.info('UI: turn right')
+	if event.key == 'up':
+		jlog.info('UI: go straight')
+	if event.key == 'q':
+		jlog.info('UI: kill')
+	
+def startUI():
+	fig, ax = plt.subplots()
+	fig.canvas.mpl_connect('key_press_event', on_press)
+	ax.set_title('Press a key')
+	plt.show()
+
 def main():
-	global gargs
 	try:
-		gargs = getCLIargs()
+		getCLIargs()
 		jlog.setup(verbose, quiet)
 		jlog.info('gcs: starting')
 		startup()
+
+		startUI()
 
 		# loop
 		for i in range(60):
@@ -225,10 +251,6 @@ def main():
 	
 
 class RUNTIME_DEFAULTS:
-	# global
-	verbose	= True
-	quiet	= False
-
 	# gcs
 	process = 'both'
 
@@ -238,12 +260,12 @@ class RUNTIME_DEFAULTS:
 	serialtimeout = 3
 	serialminbytes = 10
 	declination = -1.11 # from magnetic-declination.com depending on lat-lon
+	nocal	= False
 
 	# awacs
 	sim	= False
-	crop	= True
-	save	= True
-	show	= False
+	nosave	= False
+	noshow	= False
 	ssid	= 'AWACS'
 	sspw	= 'indecent'
 	camurl	= 'http://192.168.4.1'   # when connected to access point AWACS
@@ -254,28 +276,28 @@ class RUNTIME_DEFAULTS:
 
 
 def getCLIargs(): # get command-line arguments 
-	global args, process
+	global verbose, quiet, process
 	rdef = RUNTIME_DEFAULTS()
 	parser = argparse.ArgumentParser()
-	parser.add_argument('-v'  ,'--verbose'   ,action='store_true' ,default=rdef.verbose       ,help='verbose comments'                 ) 
-	parser.add_argument('-q'  ,'--quiet'     ,action='store_true' ,default=rdef.quiet         ,help='suppress all output'              )
-	parser.add_argument('-ps' ,'--process'                        ,default=rdef.process       ,help='process: both,skate,awacs,none'   )
-	parser.add_argument('-p'  ,'--port'                           ,default=rdef.port          ,help='serial port'                      )
-	parser.add_argument('-b'  ,'--baud'           ,type=int       ,default=rdef.baud          ,help='serial baud rate'                 )
-	parser.add_argument('-st' ,'--serialtimeout'  ,type=int       ,default=rdef.serialtimeout ,help='serial timeout'                   )
-	parser.add_argument('-mb' ,'--serialminbytes' ,type=int       ,default=rdef.serialminbytes,help='serial minimum bytes before read' )
-	parser.add_argument('-md' ,'--declination'    ,type=float     ,default=rdef.declination   ,help='magnetic declination of compass'  )
-	parser.add_argument('-sm' ,'--sim'       ,action='store_true' ,default=rdef.sim           ,help='simulation mode'                  )
-	parser.add_argument('-cr' ,'--crop'      ,action='store_true' ,default=rdef.crop          ,help='crop image before processing'     )
-	parser.add_argument('-sa' ,'--save'      ,action='store_true' ,default=rdef.save          ,help='save image to disk'               )
-	parser.add_argument('-sh' ,'--show'      ,action='store_true' ,default=rdef.show          ,help='show visualization'               )
-	parser.add_argument('-id' ,'--ssid'                           ,default=rdef.ssid          ,help='network ssid'                     )
-	parser.add_argument('-pw' ,'--sspw'                           ,default=rdef.sspw          ,help='network password'                 )
-	parser.add_argument('-cu' ,'--camurl'                         ,default=rdef.camurl        ,help='URL of camera webserver'          )
-	parser.add_argument('-if' ,'--imgdir'                         ,default=rdef.imgdir        ,help='folder for saveing images'        )
-	parser.add_argument('-fs' ,'--framesize'      ,type=int       ,default=rdef.framesize     ,help='camera framesize'                 )
-	parser.add_argument('-qu' ,'--quality'        ,type=int       ,default=rdef.quality       ,help='camera quality'                   )
-	parser.add_argument('-mc' ,'--numcones'       ,type=int       ,default=rdef.numcones      ,help='number of cones in the arena'     )
+	parser.add_argument('-v'  ,'--verbose'                    ,action='store_true'        ,help='verbose comments'                 ) 
+	parser.add_argument('-q'  ,'--quiet'                      ,action='store_true'        ,help='suppress all output'              )
+	parser.add_argument('-ps' ,'--process'                    ,default=rdef.process       ,help='process: both,skate,awacs,none'   )
+	parser.add_argument('-p'  ,'--port'                       ,default=rdef.port          ,help='serial port'                      )
+	parser.add_argument('-b'  ,'--baud'           ,type=int   ,default=rdef.baud          ,help='serial baud rate'                 )
+	parser.add_argument('-st' ,'--serialtimeout'  ,type=int   ,default=rdef.serialtimeout ,help='serial timeout'                   )
+	parser.add_argument('-mb' ,'--serialminbytes' ,type=int   ,default=rdef.serialminbytes,help='serial minimum bytes before read' )
+	parser.add_argument('-md' ,'--declination'    ,type=float ,default=rdef.declination   ,help='magnetic declination of compass'  )
+	parser.add_argument('-nc' ,'--nocal'                      ,action='store_true'        ,help='suppress calibration'             )
+	parser.add_argument('-sm' ,'--sim'                        ,action='store_true'        ,help='simulation mode'                  )
+	parser.add_argument('-ns' ,'--nosave'                     ,action='store_true'        ,help='suppress save image to disk'      )
+	parser.add_argument('-no' ,'--noshow'                     ,action='store_true'        ,help='suppress visualization'           )
+	parser.add_argument('-id' ,'--ssid'                       ,default=rdef.ssid          ,help='network ssid'                     )
+	parser.add_argument('-pw' ,'--sspw'                       ,default=rdef.sspw          ,help='network password'                 )
+	parser.add_argument('-cu' ,'--camurl'                     ,default=rdef.camurl        ,help='URL of camera webserver'          )
+	parser.add_argument('-if' ,'--imgdir'                     ,default=rdef.imgdir        ,help='folder for saveing images'        )
+	parser.add_argument('-fs' ,'--framesize'      ,type=int   ,default=rdef.framesize     ,help='camera framesize'                 )
+	parser.add_argument('-qu' ,'--quality'        ,type=int   ,default=rdef.quality       ,help='camera quality'                   )
+	parser.add_argument('-mc' ,'--numcones'       ,type=int   ,default=rdef.numcones      ,help='number of cones in the arena'     )
 	args = parser.parse_args()	# returns Namespace object, use dot-notation
 
 	# global
@@ -286,22 +308,21 @@ def getCLIargs(): # get command-line arguments
 	process	= args.process
 
 	# skate
-	awacs.verbose	= args.verbose
-	awacs.quiet	= args.quiet
+	skate.verbose	= args.verbose
+	skate.quiet	= args.quiet
 	skate.port	= args.port
 	skate.baud	= args.baud
 	skate.serialtimeout = args.serialtimeout
 	skate.serialminbytes = args.serialminbytes
 	skate.declination = args.declination
+	skate.nocal	= args.nocal
 
 	# awacs
-	awacs.sim	= args.sim
-	awacs.crop	= args.crop
-	awacs.save	= args.save
-	awacs.show	= args.show
 	awacs.verbose	= args.verbose
 	awacs.quiet	= args.quiet
-	awacs.show	= args.show
+	awacs.sim	= args.sim
+	awacs.nosave	= args.nosave
+	awacs.noshow	= args.noshow
 	awacs.ssid	= args.ssid
 	awacs.sspw	= args.sspw 
 	awacs.camurl	= args.camurl
@@ -309,7 +330,6 @@ def getCLIargs(): # get command-line arguments
 	awacs.quality	= args.quality
 	awacs.imgdir	= args.imgdir
 	awacs.numcones	= args.numcones
-	return args
 
 if __name__ == '__main__':
 	main()

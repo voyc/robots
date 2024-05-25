@@ -1,4 +1,12 @@
+'''
+testanimkeypress.py
 
+animation
+https://gist.github.com/parulnith/2a29f424126e1b313259310d8927bccb
+
+keypress
+https://matplotlib.org/stable/gallery/event_handling/keypress_demo.html
+'''
 
 import matplotlib.animation as animation 
 import matplotlib.pyplot as plt 
@@ -24,8 +32,6 @@ def init():
 # for x and y co-ordinates 
 xdata, ydata = [], [] 
  
-print(f'parent {os.getpid()}')
-
 # animation function 
 def animate(i): 
     # t is a parameter which varies 
