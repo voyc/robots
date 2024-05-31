@@ -24,22 +24,25 @@ awacs_process = multiprocessing.Process(target=awacs_main, args=(smem_timestamp,
 MAX_CONES	= 10
 MAX_LEGS	= 10
 
-# map smem_timestamp
-TIME_KILLED		= 0
-TIME_DONUT_CHANGED	= 1
-TIME_CONES_CHANGED	= 2
-TIME_HEADING_CHANGED	= 3
-TIME_ROUTE_CHANGED	= 4
-TIME_ARRAY_SIZE		= 5
+# map smem_timestamp, all double floats
+TIME_KILLED	= 0
+TIME_AWACS_READY= 1
+TIME_SKATE_READY= 2
+TIME_READY	= 3
+TIME_PHOTO	= 4
+TIME_HEADING	= 5
+TIME_ROLL	= 6
+TIME_ROUTE	= 7
+TIME_ARRAY_SIZE	= 8
 
-# map smem_positions
+# map smem_positions, all integers
 NUM_CONES	= 0
 NUM_LEGS	= 1
 DONUT_X		= 2
 DONUT_Y		= 3
 SKATE_X		= 4
 SKATE_Y		= 5
-SKATE_HDG	= 6
+SKATE_HEADING	= 6
 SKATE_ROLL	= 7
 CONE1_X		= 8
 CONE1_Y		= 9

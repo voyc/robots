@@ -40,7 +40,7 @@ pilot commands:
 /*---- globals ----*/
 
 AHRS ahrs;
-PILOT pilot;
+COMMAND command;
  
 /*---- state UI ----*/
 
@@ -51,8 +51,8 @@ int statecode = 0;
 #define STATE_SETUP_COMPLETE		5
 #define ERROR_SERIAL_FAILED		-1
 #define ERROR_INITIALIZING_ESPNOW	-2
-#define ERROR_PILOT_SEND_FAILED		-4
-#define ERROR_PILOT_DELIVERY_FAILED	-5
+#define ERROR_COMMAND_SEND_FAILED		-4
+#define ERROR_COMMAND_DELIVERY_FAILED	-5
 #define ERROR_ADDING_PEER		-6
 
 void state(int code) {
@@ -78,7 +78,7 @@ esp_now_peer_info_t peerInfo;
 
 void onPilotSent(const uint8_t* mac, esp_now_send_status_t sentstatus) {
 	if (sentstatus != ESP_NOW_SEND_SUCCESS) {
-		state(ERROR_PILOT_DELIVERY_FAILED);
+		state(ERROR_COMMAND_DELIVERY_FAILED);
 	}
 }
 
@@ -151,7 +151,7 @@ void getPilot() {  // from laptop and send to sk8
 		return;
 	}
 
-	String s = Serial.readString();
+	String s = Serial.readStringUntil('\n');
 	
 	// parse into struct
 	char sep = '\t';
@@ -159,15 +159,15 @@ void getPilot() {  // from laptop and send to sk8
 	int i = 0;
 	for (int i=0; i<len; i++) {
 		if (s.charAt(i) == sep) {
-			pilot.helm = s.substring(0,i).toInt();
-			pilot.throttle = s.substring(i,len).toInt();
+			command.cmd = s.substring(0,i).toInt();
+			command.val = s.substring(i,len).toInt();
 		}
 	}
 
 	// send struct to sk8 via espnow
- 	esp_err_t result = esp_now_send(sk8MacAddr, (uint8_t *) &pilot, sizeof(pilot));
+ 	esp_err_t result = esp_now_send(sk8MacAddr, (uint8_t *) &command, sizeof(command));
 	if (result != ESP_OK) {
-		state(ERROR_PILOT_SEND_FAILED);
+		state(ERROR_COMMAND_SEND_FAILED);
 	}
 }
 

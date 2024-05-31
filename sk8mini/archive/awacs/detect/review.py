@@ -119,8 +119,9 @@ def main():
 		fname = blist[ndx] + '.jpg'
 		image = cv2.imread(os.path.join(gargs.ifolder,fname), cv2.IMREAD_UNCHANGED)
 		
-		fname = blist[ndx] + gargs.ilabelsufx + '.csv' 
-		label = lab.read(os.path.join(gargs.ifolder, fname))
+		#fname = blist[ndx] + gargs.ilabelsufx + '.csv' 
+		fname = blist[ndx] + gargs.ilabelsufx 
+		label = labl.read(os.path.join(gargs.ifolder, fname))
 
 		cnts = countCls(label,duplist)
 		print(f'{blist[ndx]}: {cnts}')
@@ -144,7 +145,7 @@ def main():
 			ndx -= 1
 		elif key & 0xFF == ord('w'):	# write
 			fname = blist[ndx] + gargs.olabelsufx + '.csv' 
-			lab.write(label, os.path.join(gargs.ofolder,fname))
+			labl.write(label, os.path.join(gargs.ofolder,fname))
 
 	cv2.destroyAllWindows()
 	print(duplist)

@@ -26,11 +26,18 @@ args = parser.parse_args()	# returns Namespace object, use dot-notation
 
 print(f'crop {args.crop}')
 print(f'nocal {args.nocal}')
-
 hoo()
-
 print(hoo)
 
+parser2 = argparse.ArgumentParser()
+parser2.add_argument('-pr' ,'--process'  ,default='awacs'      ,help='process'              ) 
+parser2.add_argument('-ca' ,'--nocal'	,action='store_false' ,help='suppress calibrate'              )
+parser2.add_argument('--shortcut'	,default='noshorty'   ,help='no shorty'         )
+args2 = parser2.parse_args()	# returns Namespace object, use dot-notation
+
+print(f'process {args2.process}')
+print(f'nocal {args2.nocal}')
+print(f'nocal {args2.shortcut}')
 '''
 
 	parser.add_argument('-v'  ,'--verbose'  default false                      ,action='store_true'        ,help='verbose comments'                 ) 

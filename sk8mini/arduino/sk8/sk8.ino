@@ -91,8 +91,8 @@ sensors_event_t ahrs_event;
 
 #define heading_threshold  0 //1
 #define roll_threshold 0.0   //0.1
-PILOT pilot;
-boolean pilot_available = false;
+COMMAND command;
+boolean command_available = false;
 
 AHRS ahrs;
 float heading = 9999;
@@ -154,8 +154,8 @@ void sendAhrs() { // to gcs
 esp_now_peer_info_t peerInfo;
 
 void onEspnowRcvd(const uint8_t* mac, const uint8_t *incomingData, int len) {
-	memcpy(&pilot, incomingData, sizeof(pilot));
-	pilot_available = true;  // loop will execute
+	memcpy(&command, incomingData, sizeof(command));
+	command_available = true;  // loop will execute
 }
  
 void onEspnowSent(const uint8_t* mac, esp_now_send_status_t sentstatus) {
@@ -222,10 +222,10 @@ void loop() {
 		return;
 	}
 
-	// handle incoming pilot commnd
-	if (pilot_available) {  // set by espnow callback
+	// handle incoming commnd
+	if (command_available) {  // set by espnow callback
 		execute();
-		pilot_available = false;
+		command_available = false;
 	}
 
 	// handle incoming sensor data 
@@ -257,8 +257,12 @@ void loop() {
 }
 
 void execute() {
-	setHelm(pilot.helm);
-	setThrottle(pilot.throttle);
+	if (command.cmd == HELM) {
+		setHelm(command.val);
+	}
+	if (command.cmd == THROTTLE) {
+		setThrottle(command.val);
+	}
 	// int calcThrottleAdjustment(int throttle, int helm) {
 }
 
