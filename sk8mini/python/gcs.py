@@ -71,13 +71,21 @@ from smem import *
 import awacs
 import skate
 
-# global constants set by cli arguments
-verbose	= True
-quiet	= False
-process	= 'both'
+def getArgs(): # get command-line arguments 
+	global args
+	parser = argparse.ArgumentParser()
+	parser.add_argument('--verbose'  ,action='store_true'  ,help='verbose comments'                 ) 
+	parser.add_argument('--quiet'    ,action='store_true'  ,help='suppress all output'              )
+	parser.add_argument('--process'  ,default='both'       ,help='process: both,skate,awacs,none'   )
+
+	awacs.setupArgParser(parser)
+	skate.setupArgParser(parser)
+	args = parser.parse_args()	# returns Namespace object, use dot-notation
+	awacs.args = args
+	skate.args = args
 
 # global variables
-args	= False
+args	= None
 awacs_process = False
 skate_process = False
 
@@ -97,9 +105,9 @@ def startSkate():
 	skate_process.start()
 
 def startup():
-	if process == 'awacs' or process == 'both':
+	if args.process == 'awacs' or args.process == 'both':
 		startAwacs()
-	if process == 'skate' or process == 'both':
+	if args.process == 'skate' or args.process == 'both':
 		startSkate()
 
 def shutdown():
@@ -131,13 +139,14 @@ def startUI():
 
 def main():
 	try:
-		getCLIargs()
-		jlog.setup(verbose, quiet)
+		getArgs()
+		jlog.setup(args.verbose, args.quiet)
 		jlog.info('gcs: starting')
 
+		# fake timestamps for testing one process at a time
 		#if args.process == 'awacs':
 		#	smem_timestamp[TIME_PHOTO] = time.time()
-		if process == 'skate':
+		if args.process == 'skate':
 			smem_timestamp[TIME_AWACS_READY] = time.time()
 			smem_timestamp[TIME_PHOTO] = time.time()
 
@@ -176,90 +185,6 @@ def main():
 		jlog.info(f'gcs: shutdown exception: {ex}')
 
 	jlog.info(f'gcs: main exit')
-	
-
-class RUNTIME_DEFAULTS:
-	# gcs
-	process = 'both'
-
-	# skate
-	port	= '/dev/ttyUSB0'  # serial port for dongle
-	baud	= 115200
-	serialtimeout = 3
-	serialminbytes = 10
-	declination = -1.11 # from magnetic-declination.com depending on lat-lon
-	nocal	= False
-
-	# awacs
-	sim	= False
-	nosave	= False
-	ssid	= 'AWACS'
-	sspw	= 'indecent'
-	camurl	= 'http://192.168.4.1'   # when connected to access point AWACS
-	framesize= 12	# sxga, 1280 x1024, 5:4, best quality=18
-	quality	= 18
-	imgdir	= '/home/john/media/webapps/sk8mini/awacs/photos'
-	numcones= 9
-
-
-def getCLIargs(): # get command-line arguments 
-	global verbose, quiet, process
-	rdef = RUNTIME_DEFAULTS()
-	parser = argparse.ArgumentParser()
-	parser.add_argument('-v'  ,'--verbose'                    ,action='store_true'        ,help='verbose comments'                 ) 
-	parser.add_argument('-q'  ,'--quiet'                      ,action='store_true'        ,help='suppress all output'              )
-	parser.add_argument('-ps' ,'--process'                    ,default=rdef.process       ,help='process: both,skate,awacs,none'   )
-	parser.add_argument('-p'  ,'--port'                       ,default=rdef.port          ,help='serial port'                      )
-	parser.add_argument('-b'  ,'--baud'           ,type=int   ,default=rdef.baud          ,help='serial baud rate'                 )
-	parser.add_argument('-st' ,'--serialtimeout'  ,type=int   ,default=rdef.serialtimeout ,help='serial timeout'                   )
-	parser.add_argument('-mb' ,'--serialminbytes' ,type=int   ,default=rdef.serialminbytes,help='serial minimum bytes before read' )
-	parser.add_argument('-md' ,'--declination'    ,type=float ,default=rdef.declination   ,help='magnetic declination of compass'  )
-	parser.add_argument('-nc' ,'--nocal'                      ,action='store_true'        ,help='suppress calibration'             )
-	parser.add_argument('-sm' ,'--sim'                        ,action='store_true'        ,help='simulation mode'                  )
-	#parser.add_argument('-ns' ,'--nosave'                     ,action='store_true'        ,help='suppress save image to disk'      )
-	#parser.add_argument('-id' ,'--ssid'                       ,default=rdef.ssid          ,help='network ssid'                     )
-	#parser.add_argument('-pw' ,'--sspw'                       ,default=rdef.sspw          ,help='network password'                 )
-	#parser.add_argument('-cu' ,'--camurl'                     ,default=rdef.camurl        ,help='URL of camera webserver'          )
-	#parser.add_argument('-if' ,'--imgdir'                     ,default=rdef.imgdir        ,help='folder for saveing images'        )
-	#parser.add_argument('-fs' ,'--framesize'      ,type=int   ,default=rdef.framesize     ,help='camera framesize'                 )
-	#parser.add_argument('-qu' ,'--quality'        ,type=int   ,default=rdef.quality       ,help='camera quality'                   )
-	#parser.add_argument('-mc' ,'--numcones'       ,type=int   ,default=rdef.numcones      ,help='number of cones in the arena'     )
-
-	awacs.setupArgParser(parser)
-
-	args = parser.parse_args()	# returns Namespace object, use dot-notation
-	
-	awacs.args = args
-
-	# global
-	verbose	= args.verbose
-	quiet	= args.quiet
-
-	# gcs
-	process	= args.process
-
-	# skate
-	skate.verbose	= args.verbose
-	skate.quiet	= args.quiet
-	skate.port	= args.port
-	skate.baud	= args.baud
-	skate.serialtimeout = args.serialtimeout
-	skate.serialminbytes = args.serialminbytes
-	skate.declination = args.declination
-	skate.nocal	= args.nocal
-
-	# awacs
-	awacs.verbose	= args.verbose
-	awacs.quiet	= args.quiet
-	awacs.sim	= args.sim
-	awacs.nosave	= args.nosave
-	awacs.ssid	= args.ssid
-	awacs.sspw	= args.sspw 
-	awacs.camurl	= args.camurl
-	awacs.framesize	= args.framesize
-	awacs.quality	= args.quality
-	awacs.imgdir	= args.imgdir
-	awacs.numcones	= args.numcones
 
 if __name__ == '__main__':
 	main()

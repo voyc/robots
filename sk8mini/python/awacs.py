@@ -1,15 +1,16 @@
 '''
 awacs.py - awacs library imported by gcs.py
 
-maintain two processes: main and awacs
-in the main process:
-	start
-	stop
-in the awacs process loop:
-	make a non-blocking http get to awacs/capture and receive an image in the response
-	get the image and save it to disk at 2 fps
-	process the image
----------------------
+runs in the awacs_process, launched by gcs.py 
+communicates with awacs.ino via webserver
+
+functions:
+	switch laptop to awacs wifi network
+	make an http request to get a photo
+	detect objects in the photo
+	share object positions with other processes
+
+---------------
 sources:
 
 camera:  original blocking stand-alone http cam program:
@@ -67,52 +68,34 @@ import argparse
 import jlog
 from smem import *
 
-# ---- awacs_process ----
-
 def setupArgParser(parser):
-	parser.add_argument('--nosave'    ,action='store_true'           ,help='suppress save image to disk'      )
-	parser.add_argument('--ssid'      ,default='AWACS'               ,help='network ssid'                     )
-	parser.add_argument('--sspw'      ,default='indecent'            ,help='network password'                 )
-	parser.add_argument('--camurl'    ,default='http://192.168.4.1'  ,help='URL of camera webserver'          )
-	parser.add_argument('--imgdir'    ,default='/home/john/media/webapps/sk8mini/awacs/photos'  ,help='folder for saveing images'        )
-	parser.add_argument('--framesize' ,default=12   ,type=int        ,help='camera framesize'                 )
-	parser.add_argument('--quality'   ,default=18   ,type=int        ,help='camera quality'                   )
-	parser.add_argument('--numcones'  ,default=9    ,type=int        ,help='number of cones in the arena'     )
+	# runtime directives
+	parser.add_argument('--nosave'  ,action='store_true'           ,help='suppress save image to disk')
 
-### global constants, set by gcs.py main process before awacs_process begins
-args = None
+	# webserver settings
+	parser.add_argument('--ssid'    ,default='AWACS'               ,help='network ssid, alternate JASMINE_2')
+	parser.add_argument('--sspw'    ,default='indecent'            ,help='network password, alternate 8496HAG#1')
+	parser.add_argument('--camurl'  ,default='http://192.168.4.1'  ,help='URL of camera webserver, alt http://192.168.1.102')
 
-# webserver settings
-ssid = 'AWACS'
-sspw = 'indecent'
-camurl = 'http://192.168.4.1'   # when connected to access point AWACS
+	# disk filenames
+	parser.add_argument('--imgdir'  ,default='/home/john/media/webapps/sk8mini/awacs/photos' ,help='folder for saving images')
+	parser.add_argument('--kernel'  ,default='/home/john/media/webapps/sk8mini/awacs/photos/crop/donutfilter.jpg' ,help='fname of donutkernel')
 
-ssidsim = 'JASMINE_2G'
-sspwsim = '8496HAG#1'
-camurlsim = 'http://192.168.1.102'  # when connected as station to JASMINE_2G, cam don't work
+	# camera settings
+	parser.add_argument('--framesize' ,default=12   ,type=int        ,help='camera framesize')
+	parser.add_argument('--quality'   ,default=18   ,type=int        ,help='camera quality')
 
-# disk filenames
-imgdir = '/home/john/media/webapps/sk8mini/awacs/photos'
-dirname = f'{imgdir}/{time.strftime("%Y%m%d-%H%M%S")}'
-ext = 'jpg'
-idonutkernel = '/home/john/media/webapps/sk8mini/awacs/photos/crop/donutfilter.jpg'
+	# object detection
+	parser.add_argument('--numcones'  ,default=9    ,type=int        ,help='number of cones in the arena')
 
-# runtime options
-sim = True
-nosave = True
-noshow = False
-verbose = True
-quiet = False
+# the following globals are set during startup BEFORE the process starts
+args = None   # command-line arguments
 
 # camera settings
-framesize = 12	# sxga, 1280 x1024, 5:4, best quality=18
-quality = 18
 cameraSettleTime = .3
 
-# object detection
-numcones = 9
-
-### global semi-constants, set one-time within the awacs_process
+# disk filenames
+imgext = 'jpg'
 
 # image dimensions
 width = 1280 # determined by camera framesize setting
@@ -120,7 +103,7 @@ height = 1024
 w = 600   # arbitrary arena size
 h = 600
 
-# cropping boundaries, calculated one time after first photo
+# cropping boundaries
 ctrx = 660  # 640
 ctry = 466  # 512
 x = int(ctrx - (w/2))
@@ -128,10 +111,11 @@ y = int(ctry - (h/2))
 r = x+w
 b = y+h
 
-### global variables, used only within the awacs_process process
-firsttime = True   # used only in showPhoto
-fps = 2  # not used
+# the following globals are used only within awacs_process
 photo_timestamp = 0.0
+donutkernel = None
+dirname = ''
+
 
 def setCenter(x,y):
 	global ctrx, ctry
@@ -139,12 +123,12 @@ def setCenter(x,y):
 	ctry = y
 
 def getText(qstring):
-	url = f'{camurl}/{qstring}'
+	url = f'{args.camurl}/{qstring}'
 	response = requests.get(url, timeout=10)	# blocking
 	return response
 
 def getImage(qstring):
-	url = f'{camurl}/{qstring}'
+	url = f'{args.camurl}/{qstring}'
 	timestampReq = time.time()
 	resp = requests.get(url, stream=True, timeout=10).raw	# blocking
 	timestampResp = time.time()
@@ -171,14 +155,9 @@ def cropPhoto(image):
 def geoReference(photo):
 	return cv2.rotate(photo, cv2.ROTATE_180)
 
-def showPhoto():
-	if showing and firsttime:
-		cv2.imshow("windowname", image)
-		firsttime = False
-
 def savePhoto(image, timestamp):
-	if not nosave:
-		fname = f'{dirname}/{timestamp}.{ext}'
+	if not args.nosave:
+		fname = f'{dirname}/{timestamp}.{imgext}'
 		cv2.imwrite(fname, image)
 		jlog.debug(f'awacs: saved {fname}')
 
@@ -210,15 +189,16 @@ def netdown(ssid):
 def setupCamera():
 	try:
 		jlog.debug('getText framesize')
-		response = getText(f'control?var=framesize&val={framesize}')
-		jlog.debug('got framesize')
+		response = getText(f'control?var=framesize&val={args.framesize}')
 		if response.status_code != 200:
 			raise Exception(f'awacs: camera framesize response {response.status_code}')
+		jlog.debug('got framesize')
+
 		jlog.debug('getText quality')
-		jlog.debug('got quality')
-		response = getText(f'control?var=quality&val={quality}')
+		response = getText(f'control?var=quality&val={args.quality}')
 		if response.status_code != 200:
 			raise Exception(f'awacs: camera quality response {response.status_code}')
+		jlog.debug('got quality')
 
 		time.sleep(.5)
 		response = getText('status')
@@ -228,8 +208,8 @@ def setupCamera():
 		raise Exception(f'awacs: setupCamera exception: {ex}')
 	jlog.info(f'awacs: camera setup comlete')
 	
-def prepDonutKernel(ikernel):
-	kernel = cv2.imread(ikernel)
+def prepDonutKernel(fname):
+	kernel = cv2.imread(fname)
 	kernel = cv2.cvtColor(kernel, cv2.COLOR_BGR2GRAY)
 	kernel = ((kernel / 255) - 0.5) * 2 # normalize to -1:+1
 	return kernel
@@ -268,8 +248,8 @@ def processAerialPhoto():
 	photo = geoReference(photo)
 
 	# object recognition
-	x,y = findDonut(photo, idonutkernel)
-	acones = findCones(photo, numcones)
+	x,y = findDonut(photo, donutkernel)
+	acones = findCones(photo, args.numcones)
 	jlog.debug(f'awacs: got objects, donut at {x},{y}')
 
 	# move object positions to shared memory
@@ -286,7 +266,7 @@ def processAerialPhoto():
 	savePhoto(photo, photo_timestamp)
 
 def awacs_main(timestamp, positions):
-	global args, gmem_timestamp, gmem_positions, idonutkernel
+	global args, gmem_timestamp, gmem_positions, donutkernel, dirname
 	gmem_timestamp = timestamp
 	gmem_positions = positions	
 
@@ -298,10 +278,11 @@ def awacs_main(timestamp, positions):
 
 		# setup
 		jlog.debug(f'awacs: starting process id: {os.getpid()}')
-		netup(ssid, sspw)
+		netup(args.ssid, args.sspw)
 		setupCamera()
-		idonutkernel = prepDonutKernel(idonutkernel)
-		if not nosave:
+		donutkernel = prepDonutKernel(args.kernel)
+		if not args.nosave:
+			dirname = f'{args.imgdir}/{time.strftime("%Y%m%d-%H%M%S")}'
 			os.mkdir(dirname)
 
 		# get first framed

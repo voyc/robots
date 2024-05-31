@@ -1,5 +1,5 @@
 '''
-skate.py
+skate.py - skate library imported by gcs.py
 
 runs in the skate_process, launched by gcs.py 
 communicates with sk8.ino
@@ -178,10 +178,22 @@ import signal
 import os
 import serial
 import time
+import argparse
 
 import jlog
 from smem import *
 import sk8mini_specs
+
+def setupArgParser(parser):
+	parser.add_argument('--port'           ,default='/dev/ttyUSB0'        ,help='serial port'                      )
+	parser.add_argument('--baud'           ,default=115200    ,type=int   ,help='serial baud rate'                 )
+	parser.add_argument('--serialtimeout'  ,default=3         ,type=int   ,help='serial timeout'                   )
+	parser.add_argument('--serialminbytes' ,default=10        ,type=int   ,help='serial minimum bytes before read' )
+	parser.add_argument('--declination'    ,default=-1.11     ,type=float ,help='# from magnetic-declination.com'  )
+	parser.add_argument('--nocal'          ,action='store_true'           ,help='suppress calibration'             )
+
+# the following globals are set during startup BEFORE the process starts
+args = None   # command-line arguments
 
 # types
 class AHRS:
@@ -198,16 +210,6 @@ class AHRS:
 # cmd:
 HELM	= 1 # val = -90 to +90, negative:port, positive:starboard, zero:amidships
 THROTTLE= 2 # val = -90 to +90, negative:astern, positive:ahead, zero:stop
-
-# global constants, set by gcs.py argparse before skate_process is started
-verbose	= True
-quiet	= False
-nocal	= False
-port	= '/dev/ttyUSB0'  # serial port for dongle
-baud	= 115200
-serialtimeout = 3
-serialminbytes = 10
-declination = -1.11 # from magnetic-declination.com depending on lat-lon
 
 minimum_skate_time = .1
 serialOpenSettleTime = .5  # why?
@@ -263,7 +265,7 @@ def sendCommandToSk8(cmd, val):
 
 def getAhrsFromSk8():
 	global gmem_timestamp, gmem_positions
-	if scomm.in_waiting < serialminbytes:   # number of bytes in the receive buffer
+	if scomm.in_waiting < args.serialminbytes:   # number of bytes in the receive buffer
 		# sk8.ino sends data only when it changes - NOT
 		return False
 
@@ -284,7 +286,7 @@ def getAhrsFromSk8():
 	roll	= float( lst[1])
 
 	# the BRO055 does NOT adjust for magnetic declination, so we do that here
-	heading += declination
+	heading += args.declination
 	if heading < 0:
 		heading = (360 - ahrs.heading)
 
@@ -311,12 +313,11 @@ def getAhrsFromSk8():
 
 def connectSerial():
 	global scomm
-	scomm = serial.Serial(port=port, baudrate=baud, timeout=serialtimeout)
-	# scomm returns a port object with api: write, readline, in_waiting, etc
+	scomm = serial.Serial(port=args.port, baudrate=args.baud, timeout=args.serialtimeout)
+	# scomm is a port object with api: write, readline, in_waiting, etc
 
-	jlog.debug(f'serial port is open? {scomm.isOpen()}')
 	time.sleep(serialOpenSettleTime)  # why?
-	jlog.debug(f'serial port is open? {scomm.isOpen()}')
+	jlog.debug(f'skate: serial port is {"open" if scomm.isOpen() else "NOT open"}')
 	return scomm
 
 def testSerial():
@@ -368,7 +369,7 @@ def calibrateGyro():
 def skate_main(timestamp, positions):
 	global scomm, gmem_timestamp, gmem_positions
 	try:
-		jlog.setup(verbose, quiet)
+		jlog.setup(args.verbose, args.quiet)
 		jlog.debug(f'skate: starting process id: {os.getpid()}')
 		gmem_timestamp = timestamp
 		gmem_positions = positions
@@ -377,8 +378,8 @@ def skate_main(timestamp, positions):
 		if not scomm:
 			raise Exception('serial port connection failed')
 		jlog.debug(f'skate: serial port connected')
-			
-		while not nocal:
+
+		while not args.nocal:
 			if timestamp[TIME_KILLED]:
 				jlog.info(f'skate: stopping due to kill')
 				break
@@ -408,6 +409,7 @@ def skate_main(timestamp, positions):
 			navigate()
 
 		jlog.debug("skate: drop out of main loop")
+		timestamp[TIME_KILLED] = time.time()
 
 	except KeyboardInterrupt:
 		jlog.error('never happen')
