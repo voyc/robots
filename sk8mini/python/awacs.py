@@ -25,7 +25,15 @@ detect donut
 	~/webapps/robots/robots/sk8mini/detect/scanorm.py
 
 detect cones
-	still need the latest find cone algorithm...
+	~/webapps/robots/robots/sk8mini/archive/awacs/detect/sim.py
+		def detectCone() - for lo sat, use function of average
+	~/media/webapps/sk8mini/awacs/photos/training/0_model.json
+			     hue     sat       val
+		"values": [27, 76, 119*, 255,  62, 196
+
+nice summary of computer vision
+	~/webapps/robots/robots/sk8mini/archive/awacs/detect/testimage.py
+
 
 ---------------------
 issues:
@@ -64,6 +72,8 @@ import os
 import sys
 import nmcli
 import argparse
+import math
+import traceback
 
 import jlog
 from smem import *
@@ -116,6 +126,9 @@ photo_timestamp = 0.0
 donutkernel = None
 dirname = ''
 
+def kill(msg):
+	jlog.info(f'kill: {msg}')
+	gmem_timestamp[TIME_KILLED] = time.time()
 
 def setCenter(x,y):
 	global ctrx, ctry
@@ -145,7 +158,7 @@ def capturePhoto():
 		jlog.error(f'capture photo {start} error {ex}')
 		raise
 
-	jlog.debug(f'awacs: photo captured {start}')
+	jlog.debug(f'photo captured {start}')
 	return image, start, stop  # do we shut down on one excepton or keep going to retry?
 
 def cropPhoto(image):
@@ -157,19 +170,21 @@ def geoReference(photo):
 
 def savePhoto(image, timestamp):
 	if not args.nosave:
-		fname = f'{dirname}/{timestamp}.{imgext}'
+		stime = f'{timestamp:.2f}'.replace('.','_')
+		fname = f'{dirname}/{stime}.{imgext}'
 		cv2.imwrite(fname, image)
-		jlog.debug(f'awacs: saved {fname}')
+		jlog.debug(f'saved {fname}')
 
 def netup(ssid, pw):
 	try:
+		jlog.info('connect wifi')
 		nmcli.disable_use_sudo()
+		nmcli.device.wifi_connect(ssid, pw)
 		nmcli.device.wifi_rescan()
 		nmcli.device.wifi_connect(ssid, pw)
+		jlog.info('wifi connected')
 	except Exception as ex:
-		jlog.error(f'awacs: connect to {ssid} failed: {ex}')
-		raise Exception('connection failed')
-	jlog.info(f'awacs: connected to {ssid}')
+		raise Exception(f'nmcli connection to {ssid} failed: {ex}')
 
 def isNetUp( ssid):
 	a = nmcli.device.wifi()
@@ -183,21 +198,21 @@ def netdown(ssid):
 		if isNetUp(ssid):
 			nmcli.connection.down(ssid)
 	except Exception as ex:
-		jlog.error(f'awacs: {ssid} disconnect failed: {ex}')
-		raise Exception('disconnect failed')
+		jlog.error(f'{ssid} disconnect failed: {ex}')
+		raise Exception('nmcli disconnect failed')
 
 def setupCamera():
 	try:
 		jlog.debug('getText framesize')
 		response = getText(f'control?var=framesize&val={args.framesize}')
 		if response.status_code != 200:
-			raise Exception(f'awacs: camera framesize response {response.status_code}')
+			raise Exception(f'camera framesize response {response.status_code}')
 		jlog.debug('got framesize')
 
 		jlog.debug('getText quality')
 		response = getText(f'control?var=quality&val={args.quality}')
 		if response.status_code != 200:
-			raise Exception(f'awacs: camera quality response {response.status_code}')
+			raise Exception(f'camera quality response {response.status_code}')
 		jlog.debug('got quality')
 
 		time.sleep(.5)
@@ -205,8 +220,8 @@ def setupCamera():
 		jlog.debug(response.status_code)
 		jlog.debug(response.text)
 	except Exception as ex:
-		raise Exception(f'awacs: setupCamera exception: {ex}')
-	jlog.info(f'awacs: camera setup comlete')
+		raise Exception(f'setupCamera exception: {ex}')
+	jlog.info(f'camera setup complete')
 	
 def prepDonutKernel(fname):
 	kernel = cv2.imread(fname)
@@ -223,11 +238,50 @@ def findDonut(frame, kernel):
 	cy = int(cidx / 600)
 	return cx, cy
 
+def calcRMSE(predicted, actual): # root mean squared error
+	actual = np.array(actual) 
+	predicted = np.array(predicted) 
+	differences = np.subtract(actual, predicted)
+	squared_differences = np.square(differences)
+	mean = squared_differences.mean()
+	rmse = math.sqrt(mean)
+	return rmse
+
+coneLowerHSV = np.array([ 27,  -1,  62])  # night:  0, 108,  77  day: 27, 119, 101
+coneUpperHSV = np.array([ 76, 255, 196])  # night: 69, 156, 148  day: 76, 255, 196 
+coneDim = [22, 22]
+
 def findCones(photo, numCones):
-	cones = [[0,0]] * numCones # an array of x,y points
-	for i in range(0,numCones):
-		cones[i][0] = random.randint(0,600)
-		cones[i][1] = random.randint(0,600)
+	global coneLowerHSV
+	hsv = cv2.cvtColor(photo, cv2.COLOR_BGR2HSV)
+	h,s,v = cv2.split(hsv)
+	avgs = np.mean(s)
+
+	# replace sat-lo with a function of avg sat
+	w1 = -0.947
+	w2 = 0.00982
+	b = 141
+	sn = int((w1 * avgs) + (w2 * (avgs**2)) + b)
+	coneLowerHSV[1] = sn
+
+	# make a mask based on hsv ranges
+	mask = cv2.inRange(hsv,coneLowerHSV,coneUpperHSV)
+
+	# find polygons in the mask
+	contours,_ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+	# qualify contours by size
+	scores = {}
+	cones = []
+	for cnt in contours:
+		center,size,_ = cv2.minAreaRect(cnt) 
+		rmse = calcRMSE(coneDim, size)
+		scores[rmse] = center
+	for key in sorted(scores):
+		cones.append(scores[key])
+		if len(cones) >= numCones:
+			break
+	cones = list(list(map(int, tup)) for tup in cones)
 	return cones
 
 def processAerialPhoto():
@@ -241,7 +295,7 @@ def processAerialPhoto():
 	# get photo from camera
 	photo, start, stop = capturePhoto()
 	photo_timestamp = start # closest time as possible to actual camera capture
-	jlog.debug(f'awacs: got photo, elapsed {stop - start}')
+	jlog.debug(f'got photo, elapsed {stop - start}')
 
 	# prep photo
 	photo = cropPhoto(photo)
@@ -250,7 +304,7 @@ def processAerialPhoto():
 	# object recognition
 	x,y = findDonut(photo, donutkernel)
 	acones = findCones(photo, args.numcones)
-	jlog.debug(f'awacs: got objects, donut at {x},{y}')
+	jlog.debug(f'got objects, donut at {x},{y}')
 
 	# move object positions to shared memory
 	gmem_positions[NUM_CONES] = len(acones)
@@ -271,48 +325,58 @@ def awacs_main(timestamp, positions):
 	gmem_positions = positions	
 
 	try: 
-		jlog.setup(args.verbose, args.quiet)
+		jlog.setup('awacs', args.verbose, args.quiet)
 
 		# ignore the KeyboardInterrupt in this subprocess
 		signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 		# setup
-		jlog.debug(f'awacs: starting process id: {os.getpid()}')
+		jlog.info(f'starting process id: {os.getpid()}, cameraSettleTime:{cameraSettleTime}')
+
 		netup(args.ssid, args.sspw)
 		setupCamera()
 		donutkernel = prepDonutKernel(args.kernel)
 		if not args.nosave:
-			dirname = f'{args.imgdir}/{time.strftime("%Y%m%d-%H%M%S")}'
+			imgext = imgext.lstrip('.')  # no leading dot
+			dirname = args.imgdir.rstrip('/')  # no trailing slash
+			dirname = f'{dirname}/{time.strftime("%Y%m%d-%H%M%S")}'
 			os.mkdir(dirname)
 
-		# get first framed
+		# get first frame
 		processAerialPhoto()
 
 		# wait here until everybody ready
-		jlog.info('awacs: ready')
-		timestamp[TIME_AWACS_READY] = time.time()
-		while not timestamp[TIME_READY] and not timestamp[TIME_KILLED]:
+		jlog.info('ready')
+		gmem_timestamp[TIME_AWACS_READY] = time.time()
+		while not gmem_timestamp[TIME_READY]:
+			if gmem_timestamp[TIME_KILLED]:
+				raise Exception('killed before ready')
 			time.sleep(.1)
 
 		# main loop
 		while True:
-			if timestamp[TIME_KILLED]:
-				jlog.info(f'awacs: stopping due to kill')
+			if gmem_timestamp[TIME_KILLED]:
+				jlog.info(f'stopping main loop due to kill')
 				break
 			processAerialPhoto()
+			jlog.info(f'loop, donut:[{gmem_positions[DONUT_X]},{gmem_positions[DONUT_Y]}')
 
-		jlog.debug('awacs: fall out of main loop')
+		jlog.debug('fall out of main loop')
 
 	except KeyboardInterrupt:
 		jlog.error('never happen')
 		
 	except Exception as ex:
-		jlog.error(f'awacs: exception: {ex}')
-		timestamp[TIME_KILLED] = time.time()
+		exc_type, exc_obj, exc_tb = sys.exc_info()
+		fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+		jlog.error(f'exception: {ex}, {exc_type}, {fname}, {exc_tb.tb_lineno}')
+		if args.verbose:
+			jlog.error(traceback.format_exc())
+		kill('exception')
 
 	try:
 		netdown(ssid)
 	except:
 		pass
-	jlog.info(f'awacs: main exit')
+	jlog.info(f'main exit')
 

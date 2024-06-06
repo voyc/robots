@@ -541,6 +541,8 @@ def main():
 
 	plan = calcPlan(cones, order, sides)
 	route = plotRoute(plan)
+	print(plan)
+	print(route)
 	drawArena(plan)
 	drawRoute(route)
 

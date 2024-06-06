@@ -19,8 +19,21 @@ calibration:
 		2. mag calibration, hard, move in a figure eight pattern repeatedly
 		3. accel calibration, harder, we dont evey try
 
+organization:  by roles, or brain parts:
+	roles:
+		captain - design route from choice of patterns 
+		navigator - dead reckon position, adjust course
+		pilot - keep the vehicle on course
+	brain parts:
+		hippocampus - 
+		frontal cortex - 
 
-
+	event-driven:
+		On roll, adjust throttle
+		On heading, dead reckon
+		On time elapsed, 
+		On position, pilot 
+		On cone rounded, navigate
 ---------------
 sources
 
@@ -35,154 +48,42 @@ pilot:
 		pilot.py - manual piloting via keyboard as webserver client, using curses
 
 ---------------
-roles:
-	captain - design route from choice of patterns 
-	navigator - dead reckon position, adjust course
-	pilot - keep the vehicle on course
-brain parts:
-	
 
-
-add piloting to skate.py
-	for dev and test
-		use constants for cones and route
-		see hippoc for how this variables are designed
-
-	pull in specs and math
-		sk8minimath.py is mostly from arduino/sk8.ino, and currently contains specs, not math 
-		see: ~/webapps/robots/robots/autonomy/nav.py - library of trigonometry used in navigation
-		write math to adjust throttle depending on roll
-
-	separate throttle and helm commands
-		change class PILOT to class CMD
-		change PILOT structure in sk8mini.h and skate.py
-	
-	add onRoll: adjust right-throttle
-	
-	event-driven
-		On roll, adjust throttle
-		On heading, dead reckon
-		On time elapsed, 
-		On position, pilot 
-		On cone rounded, navigate
-	
-	finish figure 8 pattern for calibration, with right throttle adjustment
-
-
-add navigation
-	pull in stuff from hippoc.py
-
-	dead reckoning
-		keep list of recent commands
-		with each new command, calc new position by adding previous command
-
-cones[] - 2D array of x,y points
-plan - cones, order, sides
-route 
-
-placeCones() -> cones[] a 2D array of x,y points within the arena
-planRoute(cones) -> order, sides
-	input - cones array
-	output - order: array of cone numbers, sides: array of strings, 'ccw' or 'cw'
-
-
-plan = calcPlan(cones, order, sides)
-	output plan is list of dicts, sorted by order
-		each dict 
-			order
-			center
-			rdir
-			entry
-			exit
-
-route = plotRoute(plan)
-		each dict
-			shape line
-			from point
-			to point
-			bearing
-		or
-			shape arc
-			from point
-			to point
-			center point
-			rdir rotation direction cw or ccw
-
-
-list of [conenum, side] in order
-for execution, add entry and exit points
-
-
-save center from donut
-	special op
-	save to disk, then shutdown
-	mode, like sim
-
-throttle adjustment is relative to roll, not helm
-	therefore, perhaps we should go back to separate commands
-	if doing async, we need events
-		onRoll - adjust throttle depending on roll
-		onHeading - adjust helm to keep course bearing and/or turn radius
-		onPosition - override dead-reckoning position
-----------------------
-
-Pilot
-        Run through a stack of legs
-        If heading not = bearing, helm
-        Else helm 0
-        If dest = position, next leg
-        If time we'll past eta, kill
-        When starting leg, calc eta
-        Add start, stop to leg
-        Stop is eta until completed
-        If next dest reached
-                Bump to next leg
-
-Navigate
-        Stack of legs
-        Stack of ahrs
-        When stack full, save and clear
-
-        On donut
-                Set center
-                        Three offsets: 0, 90, -90
-
--------------
-
-Take photos
-        calc pixel to cm, conversion
-
-Do all positions in cm, With 0,0 at the arena center
-
-Go to point (two legs: 1 arc, 1 line)
-        Calc two angles
-        Choose the smaller
-        Full arc
-        Line to dest
-
-On roll
-        Dead reckon
-
----------------
-
-run exercises
+to do:
         1. Count rpm at each speed setting
         2. Measure actual distance and time 
-                Get photo save working
-                Get pilot commands working
+                x Get photo save working
+                x Get pilot commands working
         3.  Math circum of turning radius,
                 throttle, throttle left, throttle right
+
+add onRoll: adjust right-throttle
+	write math to adjust throttle depending on roll
+
+finish figure 8 pattern for calibration, with right throttle adjustment
+
+dead reckoning
+	keep list of recent commands
+	with each new command, calc new position by adding previous command
+
+who sets up the arena, pilot?  navigator?, captain?
+
 '''
 
 import signal
 import os
+import sys
 import serial
 import time
 import argparse
+import traceback
+import random
+import numpy as np
 
 import jlog
 from smem import *
-import sk8mini_specs
+import specs
+import nav
 
 def setupArgParser(parser):
 	parser.add_argument('--port'           ,default='/dev/ttyUSB0'        ,help='serial port'                      )
@@ -222,11 +123,29 @@ scomm = False	# instantiation of Serial object
 # global variables
 helm = 0
 throttle = 0
+heading = 0
+roll = 0
+
+# buffer to receive data from sensor
 ahrs = AHRS()
+
+# used internally for execution control
 donut_time = 0.0
-pilot_firstime = True
+heading_time = 0.0
 eta = 0.0
-bearing = 0
+pilot_firstime = True
+
+# x,y positions, in cm
+donut = [0,0]
+cbase = [0,0]  # center of wheelbase
+gate = [0,0]   # start and end position
+
+# navigation data
+plan = []
+route = []
+routendx = -1
+leg = {}
+captains_log = []  # used for dead reckoning
 
 # calibration constants and variables
 FIGURE_8_HALF_TIME = 5
@@ -242,74 +161,100 @@ maneuver_started = 0
 gmem_timestamp = None
 gmem_positions = None
 
+time_photo = 0.0
+time_helm = 0.0
+
+def kill(msg):
+	jlog.info(f'kill: {msg}')
+	gmem_timestamp[TIME_KILLED] = time.time()
+
 # ---- comm -----
 
 def sendCommandToSk8(cmd, val):
 	global helm, throttle, prevSerialSend
+	value = val
 	settleTime = serialSendSettleTime - (time.time() - prevSerialSend)
 	if settleTime > 0:
 		time.sleep(settleTime)
 
 	if cmd == HELM:
-		helm = val
+		helm = value
+		if abs(helm) > 90:
+			kill(f'bad helm request {helm}')
+		value = specs.applyHelmBias(helm)
 	if cmd == THROTTLE:
-		throttle = val
+		throttle = value
+		if abs(throttle) > 90:
+			kill(f'bad throttle request {throttle}')
 
-	s = f'{cmd}\t{val}\n' 
+	s = f'{cmd}\t{value}\n' 
 	if not scomm:
-		jlog.info(f'skate: command not sent, no serial')
+		jlog.info(f'command not sent, no serial')
 	else:
 		scomm.write(bytes(s, 'utf-8'))
-		jlog.debug(f'skate: command sent to sk8: {s.strip()}')
+		jlog.debug(f'command sent to sk8: {s.strip()}')
 	prevSerialSend = time.time()
 
+def testSerialAhrs():
+	jlog.debug(f'begin testSerialAhrs')
+	serialreadsettletime = 0
+	num = 0  # we typically receive 42 messages per second
+	for i in range(50):
+		jlog.debug(f'in_waiting: {scomm.in_waiting}')
+		scomm.reset_input_buffer()
+
+		b = scomm.readline()	# serial read to \n or timeout, whichever comes first
+		jlog.debug(f'num:{num} len:{len(b)}')
+
+		s = b.decode("utf-8")	# to tab-separated string
+		jlog.debug(f's: {s}')
+
+		lst = s.split()		# parse into global struct
+		jlog.debug(f'count: {len(lst)}')
+
+		time.sleep(serialreadsettletime)
+		num += 1
+	
+	jlog.debug(f'end testSerialAhrs')
+
 def getAhrsFromSk8():
-	global gmem_timestamp, gmem_positions
-	if scomm.in_waiting < args.serialminbytes:   # number of bytes in the receive buffer
-		# sk8.ino sends data only when it changes - NOT
-		return False
+	global heading, roll
 
-	b = scomm.readline()	# serial read to \n or timeout, whichever comes first
-	if len(b) <= 0:
-		jlog.debug(f'skate: serial read returned len 0')
-		return False
+	lst = [1,2]
+	if len(lst) != 7:
+		scomm.reset_input_buffer() # make sure we get the latest message
+		b = scomm.readline()	# serial read to \n or timeout, whichever comes first
+		s = b.decode("utf-8")	# to tab-separated string
+		lst = s.split()		# parse into global struct
+		if len(lst) != 7:
+			jlog.info(f'incomplete serial ahrs message ignored {len(lst)}')
+		return
 
-	s = b.decode("utf-8")	# to tab-separated string
-	lst = s.split()		# parse into global struct
-
-	if len(lst) < 7:
-		jlog.error(f'skate: serial read incomplete, {len(lst)}, {len(b)}, {b}')
-		return False
-
-	# temp variables
-	heading	= float( lst[0])
-	roll	= float( lst[1])
-
-	# the BRO055 does NOT adjust for magnetic declination, so we do that here
-	heading += args.declination
-	if heading < 0:
-		heading = (360 - ahrs.heading)
-
-	if not int(ahrs.heading) == int(heading):
-		ahrs.heading = heading
-		gmem_positions[SKATE_HEADING] = int(ahrs.heading)
-		gmem_timestamp[TIME_HEADING] = time.time()
-
-	if not int(ahrs.roll) == int(float( lst[1])):
-		ahrs.roll = roll
-		gmem_positions[SKATE_ROLL] = int(ahrs.roll)
-		gmem_timestamp[TIME_ROLL] = time.time()
-
-	#ahrs.heading	= float( lst[0])
-	#ahrs.roll	= float( lst[1])
+	ahrs.heading	= float( lst[0])
+	ahrs.roll	= float( lst[1])
 	ahrs.pitch	= float( lst[2])
 	ahrs.sys	= int( lst[3])
 	ahrs.gyro	= int( lst[4])
 	ahrs.accel	= int( lst[5])
 	ahrs.mag	= int( lst[6])
+	jlog.debug(f'lenstr:{len(b)}, lenlst:{len(lst)}, heading:{ahrs.heading:.2f}, roll:{ahrs.roll}, gyro:{ahrs.gyro}, mag:{ahrs.mag}')
 
-	jlog.debug(f'skate: heading:{ahrs.heading:.2f}, roll:{ahrs.roll}, gyro:{ahrs.gyro}, mag:{ahrs.mag}')
-	return True
+	# the BRO055 does NOT adjust for magnetic declination, so we do that here
+	adjheading = ahrs.heading + args.declination
+	if adjheading < 0:
+		adjheading = (360 - adjheading)
+
+	# on new heading
+	if not int(heading) == int(adjheading):
+		heading = int(adjheading)
+		gmem_positions[SKATE_HEADING] = heading
+		gmem_timestamp[TIME_HEADING] = time.time()
+
+	# on new roll
+	if not int(roll) == int(ahrs.roll):
+		roll = int(ahrs.roll)
+		gmem_positions[SKATE_ROLL] = roll
+		gmem_timestamp[TIME_ROLL] = time.time()
 
 def connectSerial():
 	global scomm
@@ -317,21 +262,14 @@ def connectSerial():
 	# scomm is a port object with api: write, readline, in_waiting, etc
 
 	time.sleep(serialOpenSettleTime)  # why?
-	jlog.debug(f'skate: serial port is {"open" if scomm.isOpen() else "NOT open"}')
-	return scomm
-
-def testSerial():
-	# test the connection through dongle to the sk8
-	ahrs_updated = getAhrsFromSk8()
-	if not ahrs_updated:
-		return False		
+	jlog.debug(f'serial port is {"open" if scomm.isOpen() else "NOT open"}')
 	return scomm
 
 # ---- calibration -----
 
 def calibrate():
 	global gyro_calibrated, mag_calibrated
-	ahrs_updated = getAhrsFromSk8()
+	getAhrsFromSk8()
 	gyro_calibrated = calibrateGyro()
 	mag_calibrated = calibrateMag()
 
@@ -369,165 +307,176 @@ def calibrateGyro():
 def skate_main(timestamp, positions):
 	global scomm, gmem_timestamp, gmem_positions
 	try:
-		jlog.setup(args.verbose, args.quiet)
-		jlog.debug(f'skate: starting process id: {os.getpid()}')
+		jlog.setup('skate', args.verbose, args.quiet)
+		jlog.info(f'starting process id: {os.getpid()}, serialSendSettleTime:{serialSendSettleTime}')
 		gmem_timestamp = timestamp
 		gmem_positions = positions
 		signal.signal(signal.SIGINT, signal.SIG_IGN) # ignore KeyboardInterrupt
 		scomm = connectSerial()
 		if not scomm:
 			raise Exception('serial port connection failed')
-		jlog.debug(f'skate: serial port connected')
+		jlog.info(f'serial port connected')
 
-		while not args.nocal:
-			if timestamp[TIME_KILLED]:
-				jlog.info(f'skate: stopping due to kill')
-				break
-			if gyro_calibrated and mag_calibrated:
-				break
-			calibrate()
+		#testSerialAhrs()
+		#kill('serial test ended')
+		#raise Exception('normal end of test')
+		getAhrsFromSk8()
+
+		# calibration
+		if not args.nocal:
+			while True:
+				if (ahrs.gyro and ahrs.mag):
+					jlog.info(f'calibrated \a')
+					break
+				if gmem_timestamp[TIME_KILLED]:
+					jlog.info(f'calibration killed')
+					break
+				jlog.info(f'calibrating gyro:{ahrs.gyro}, mag:{ahrs.mag}')
+				time.sleep(.5)
+				getAhrsFromSk8()
 
 		# wait for first photo, then setup arena
-		while not timestamp[TIME_PHOTO] and not timestamp[TIME_KILLED]:
+		while not gmem_timestamp[TIME_PHOTO] and not gmem_timestamp[TIME_KILLED]:
 			time.sleep(.1)
-			placeCones()
+
+		configArena()
 
 		# wait here until everybody ready
-		jlog.info('skate: ready')
-		timestamp[TIME_SKATE_READY] = time.time()
-		while not timestamp[TIME_READY] and not timestamp[TIME_KILLED]:
+		jlog.info('ready')
+		gmem_timestamp[TIME_SKATE_READY] = time.time()
+		while not gmem_timestamp[TIME_READY] and not gmem_timestamp[TIME_KILLED]:
 			time.sleep(.1)
 
 		# main loop
 		while True:
-			if timestamp[TIME_KILLED]:
-				jlog.info(f'skate: stopping due to kill')
+			if gmem_timestamp[TIME_KILLED]:
+				jlog.info(f'stopping main loop to kill')
 				break
+
+			getAhrsFromSk8()
+
 			rc = pilot()
 			if not rc:
+				jlog.info(f'pilot returned False')
 				break
-			navigate()
+			jlog.info(f'loop cbase:{cbase}, routendx:{routendx}, heading:{heading}')
 
-		jlog.debug("skate: drop out of main loop")
-		timestamp[TIME_KILLED] = time.time()
+		kill("drop out of main loop")
 
 	except KeyboardInterrupt:
 		jlog.error('never happen')
 
 	except Exception as ex:
-		jlog.error(f'skate: exception: {ex}')
-		timestamp[TIME_KILLED] = time.time()
-	try:
-		sendCommandToSk8( THROTTLE, 0)
-		sendCommandToSk8( HELM, 0)
-		scomm.close()
-	except Exception as ex:
-		jlog.error(f'skate: shutdown exception: {ex}')
+		exc_type, exc_obj, exc_tb = sys.exc_info()
+		fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+		jlog.error(f'exception: {ex}, {exc_type}, {fname}, {exc_tb.tb_lineno}')
+		if args.verbose:
+			jlog.error(traceback.format_exc())
+		kill('exception')
+	finally:
+		try:
+			sendCommandToSk8( THROTTLE, 0)
+			sendCommandToSk8( HELM, 0)
+			if scomm and scomm.isOpen():
+				scomm.close()
+		except Exception as ex:
+			jlog.error(f'shutdown exception: {ex}')
+		jlog.info(f'main exit')
 
-	jlog.info(f'skate: main exit')
+# ----------------------------------------
+#    pilot and navigator
+# ----------------------------------------
 
-# ---- arena config -----
+def onRoll():
+	global helm
+	error = heel - roll
+	helm_adj = pid( error)
+	helm += helm_adj
 
-wArena = 600
-hArena = 600
-orientationArena = 0  # heading of up
-centerArena = [0,0]
-xArenaMin = centerArena[0] - int(wArena/2)
-xArenaMax = centerArena[0] + int(wArena/2)
-yArenaMin = centerArena[1] - int(hArena/2)
-yArenaMax = centerArena[1] + int(hArena/2)
+def calcCenterWheelbase(donut):
+	theta = nav.thetaFromHeading( heading + helm)
+	cbase = nav.pointFromTheta( donut, theta, specs.helm_length)
+	# we should also apply the helm_offset and roll_y_offset
+	return cbase
 
-vcones = {
-	'square': [
-		[ -200, +200],	# NW 
-		[ +200, +200],	# NE
-		[ +200, -200],	# SE
-		[ -200, -200]	# SW
-	],
-	'ironcross': [
-		[    0, +200],	# N
-		[ +200, +200],	# E
-		[    0, -200],	# S
-		[ -200, -200] 	# W
-	]
-}
+#def px2cm(pt):
+#	return [(pt[0] - 300) * cmPerPx, (pt[1] - 300) * cmPerPx]
+
+#def cm2px(pt):
+#	return [int((pt[0] * pxPerCm + 300)), int((pt[1] * pxPerCm + 300))]
 
 def configArena():
-	#gate = starting donut
-	#start position, start heading
+	global cones, donut, cbase, gate, plan, route, routendx
+	# unwind shared memory into cones
+	cones = []
+	numcones = gmem_positions[NUM_CONES]
+	pos = CONE1_X
+	for i in range(numcones):
+		pt = [gmem_positions[pos], gmem_positions[pos+1]]
+		cone = specs.awacs2skate(pt)
+		cones.append(cone)
+		pos += 2
+	#cones = list(reversed(cones))
+
+	donut = specs.awacs2skate([gmem_positions[DONUT_X], gmem_positions[DONUT_Y]])
+	cbase = calcCenterWheelbase(donut)
+	gate = cbase
+
+	jlog.debug(f'cones: {cones}')
+	jlog.debug(f'donut: {donut}')
+	jlog.debug(f'cbase: {cbase}')
+	jlog.debug(f'gate: {gate}')
+
+	order, sides = planRoute(cones)
+	order = [0,1]
+	sides = ['cw', 'cw']
+	jlog.debug(f'order: {order}, sides: {sides}')
+
+	plan = calcPlan(cones, order, sides)
+	jlog.debug(f'plan: {plan}')
+
+	route = plotRoute(plan)
+	routendx = -1
+	jlog.debug(f'route: {route}')
+
+	# first log entry
+	log( cbase, time.time(), 0, 0)
+
+def planRoute(cones):
+	order = []
+	for i in range(len(cones)):
+		order.append(i)
+	random.shuffle(order)
 	
-	if args.vcones:
-		placeVirtualCones(args.vcones)
-
-def placeVirtualCones(vconename):
-	vcenter = False # has + appended to vconename 
-	cones = vcones[vconename]	
-	if vcenter:
-		cones.append(centerArena)
-	numcones = len(cones)
-
-def placeCones():
-	pass
+	sides = []
+	for cone in cones:
+		rdir = np.random.choice(['ccw','cw'])
+		sides.append(rdir)
+	return order, sides
 	
+def calcPlan(cones, order, sides):
+	# combine cones, order, sides into a list of dicts, sorted by order
+	plan = []
+	for i in range(len(cones)):
+		plan.append({
+			'order':order[i], 
+			'center':cones[i], 
+			'rdir':sides[i], 
+		})
+	plan = sorted(plan, key=lambda cone: cone['order'])
 
-def isArenaReady():
-	#has cones?
-	#has gate?
-	pass
-
-
-
-# ----  gallery of patterns ----------
-
-CW	= 1 # enter on the left
-CCW	= 2 # enter on the right
-
-patterns = {
-	'straightLine': [
-		[0, CW],
-		[1, CW],
-	]
-}
-
-plan = [ 
-  	{ 'legnum': 1, 'conenum':1, 'rdir': CW},
-  	{ 'legnum': 2, 'conenum':3, 'rdir':CCW},
-  	{ 'legnum': 3, 'conenum':1, 'rdir': CW},
-  	{ 'legnum': 4, 'conenum':3, 'rdir':CCW},
-  	{ 'legnum': 5, 'conenum':1, 'rdir': CW},
-  	{ 'legnum': 6, 'conenum':3, 'rdir':CCW},
-  	{ 'legnum': 6, 'conenum':1, 'rdir': CW},
-  	{ 'legnum': 8, 'conenum':3, 'rdir':CCW},
-  	{ 'legnum': 9, 'conenum':1, 'rdir': CW},
-  	{ 'legnum':10, 'conenum':3, 'rdir':CCW} 
-]
-
-# ---- captain -----
-
-def choosePattern():
-	return 'straightLine'
-
-# ---- navigator -----
-
-def calcPlan(plan):
-	# calc entry and exit points for each cone
-	r = spec.turningradius
-	gate = { 'center': (spec.gatex,spec.gatey) }
-
+	# add entry and exit points to each cone
+	r = specs.turning_radius
+	localgate = { 'center': gate }
 	for i in range(len(plan)):
 		cone = plan[i]
-		prevcone = gate if i <= 0 else plan[i-1]
-		nextcone = gate if i+1 >= len(plan) else plan[i+1] 
+		prevcone = localgate if i <= 0 else plan[i-1]
+		nextcone = localgate if i+1 >= len(plan) else plan[i+1] 
 
 		# entry point
-		# draw line AB from the previous cone to the current cone
 		A = prevcone['center']
 		B = cone['center']
-
-		# draw line LR perpendicular to AB, intersecting the cone center and the turning circle 
 		L, R = nav.linePerpendicular(A, B, r)
-
-		# this gives us two choices for entry point: Left and Right
 		entry = {
 			'L': L,
 			'R': R,
@@ -550,161 +499,157 @@ def calcPlan(plan):
 			cone['exit']  = exit['L']
 	return plan
 	
+def plotRoute(plan):
+	route = []
+	prevexit = gate
+	for i in range(0,len(plan)):
+		cone = plan[i]
 
-#route = [ 
-#  	[1, CW],
-#  	[3, CCW],
-#  	[1, CW],
-#  	[3, CCW],
-#  	[1, CW],
-#  	[3, CCW],
-#  	[1, CW],
-#  	[3, CCW],
-#  	[1, CW],
-#	[3, CCW]
-#]
-#numlegs = len(route)
-#
-#def choosePattern():
-#	nextPattern = 'barrelrace'
-#
-#	legs = False
-#	if nextPattern == 'barrelrace':
-#		# choose 3 cones at random
-#		patternSize = 3
-#		coneorder = random.sample(range(0, numcones), patternSize)
-#		legs = [None] * patternSize
-#		for i in range(len(legs)):
-#			legs[i].conenum = coneorder[i]
-#			legs[i].rdir = random.randint(0,1)
-#
-#		plan.append({
-#			'order':order[i], 
-#			'center':cones[i], 
-#			'rdir':sides[i], 
-#	return legs
-
-# ---- pilot -----
-
-CW	= 1
-CCW	= 2
-
-class Leg:
-	order	= 0,
-	center	= [0,0]
-	rdir	= CW
-	entry	= [0,0]
-	exit	= [0,0]
-
-max_legs = 100  # we work with a fixed size route
-num_legs = 0
-current_leg = 0
-route = [None] * max_legs
-
-def appendLeg(leg):
-	route[num_legs] = leg
-	num_legs += 1
-
-def cycleRoute():
-	# save used legs to disk
-	# remove used legs from route
-	pass
-
-def pilot():
-	global donut_time, pilot_firstime, eta, gmem_timestamp, bearing
-	#jlog.debug(f'skate: pilot')
-
+		bearing = nav.headingOfLine(prevexit, cone['entry'])
+	
+		route.append({
+			'shape': 'line',
+			'from': prevexit,
+			'to': cone['entry'],
+			'bearing': bearing,
+		})
+	
+		route.append({
+			'shape': 'arc',
+			'from': cone['entry'],
+			'to': cone['exit'],
+			'center': cone['center'],
+			'rdir': cone['rdir'],
+		})
 		
-	#sendCommandToSk8(THROTTLE, 23)
-	#sendCommandToSk8(HELM, -40)
-	#sendCommandToSk8(HELM, 40)
-	#sendCommandToSk8(HELM, 0)
-	#return False # break main loop
+		prevexit = cone['exit']
+	
+	# back to starting gate
+	jlog.debug(f'back to starting gate: {prevexit}, {gate}')
+	bearing = nav.headingOfLine(prevexit, gate)
+	route.append({
+		'shape': 'line',
+		'from': prevexit,
+		'to': gate,
+		'bearing': bearing,
+	})
+	return route
 
+def nextLeg():
+	global routendx, leg
+	routendx += 1
+	leg = route[routendx]
 
-	if pilot_firstime:
+	jlog.info(f'leg {routendx}: {leg}')
+
+	if leg['shape'] == 'arc':
+		if leg['rdir'] == 'cw':
+			sendCommandToSk8(HELM, +90)
+		elif ['rdir'] == 'ccw':
+			sendCommandToSk8(HELM, -90)
+	elif leg['shape'] == 'line':
+		sendCommandToSk8(HELM, 0)
+
+def isOnMark(point1, point2):
+	n = nav.lengthOfLine(point1, point2)
+	return n < 3
+
+def helmpid(err):
+	jlog.debug('helm pid')
+	Kp = .6
+	adj = Kp * err
+	return 0 # adj
+
+def log(pos, timestamp, heading, speed):
+	ndx = len(captains_log)
+	if ndx > 0:
+		ndx = len(captains_log) - 1
+		captains_log[ndx]['heading'] = heading
+		captains_log[ndx]['speed'] = speed
+	captains_log.append({'startpos': pos, 'starttime':timestamp, 'heading':heading, 'speed':speed})
+
+def readLogByDate(ts):
+	ndx = len(captains_log) - 1
+	leasterr = 9999
+	leastndx = ndx
+	while ndx > 0:
+		err = captains_log[ndx]['starttime'] - ts	
+		if err < leasterr:
+			leasterr = err
+			leastndx = ndx
+		else:
+			break
+		ndx -= 1
+	return captains_log[leastndx]
+	
+def pilot():
+	global donut_time, pilot_firstime, helm, time_photo, time_helm, cbase
+	jlog.debug(f'in pilot')
+	position_changed = False
+
+	# first time
+	if routendx == -1:
 		sendCommandToSk8(THROTTLE, 23)
-		sendCommandToSk8(HELM, 90) # -18)
-		eta = time.time() + 7
-		bearing = 0
-		pilot_firstime = False
-	else:
-		if time.time() > eta:
-			return False
-
-	return True
-
-	#if gmem_timestamp[TIME_ROLL]:
-	#	adjustHelm()
-
-	if True: #gmem_timestamp[TIME_DONUT] > donut_time:
-		#donut_time = gmem_timestamp[TIME_DONUT]
-		donut_time = gmem_timestamp[TIME_PHOTO]
-		detectPosition()
-	else:
-		reckonPosition()
-
-	if isLegComplete():
 		nextLeg()
-	else:
-		tweakHelm()
 
-	#if no route:
-	#	return
+	# on heading change
+	if gmem_timestamp[TIME_HEADING] > time_helm:
+		time_helm = time.time()
+
+		# calc current position using previous position and starttime, but current heading
+		crs = captains_log[len(captains_log)-1]
+		elapsed = time_helm - crs['starttime']
+		distance = elapsed * specs.speed 
+		cbase = nav.reckonLine(cbase, heading, distance)
+		position_changed = True
+
+		# log this moment just before helm change
+		log( cbase, time_helm, heading, specs.speed)
+
+	# on photo
+	#if gmem_timestamp[TIME_PHOTO] > time_photo:
+	#	time_photo = gmem_timestamp[TIME_PHOTO]
+	#	donut = specs.awacs2skate([gmem_positions[DONUT_X], gmem_positions[DONUT_Y]])
+	#	donutcbase = calcCenterWheelbase(donut)
+
+	#	orgcbase = cbase
+
+	#	course = readLogByDate(time_photo)
+	#	vector = course['startpos'] - donutcbase
+	#	cbase = cbase + vector
+	#	position_changed = True
+
+	#	jlog.info(f'orgcbase:{orgcbase}, donut:{donut}, donutcbase:{donutcbase}, vector:{vector}, cbase:{cbase}')
+
+	# on rounding mark
+	if isOnMark(cbase, leg['to']):
+		if routendx >= len(route):  # journey's end
+			sendCommandToSk8(THROTTLE, 0)
+			sendCommandToSk8(HELM, 0)
+			return False
+		else:
+			nextLeg()
+
+	# keep skate on course
+	if leg['shape'] == 'line':
+		# recalc bearing based on new position
+		error = leg['bearing'] - heading
+		helm_adj = helmpid( error)
+		jlog.debug(f'adj:{helm_adj}, err:{error}, bearing:{leg["bearing"]}, heading:{heading}')
+		sendCommandToSk8(HELM, helm_adj)
+	elif leg['shape'] == 'arc':
+		# ? what can we do ?
+		pass
+	
+	if position_changed:
+		pt = specs.skate2gcs(cbase)
+		jlog.info(f'cbase:{cbase}, pt:{pt}')
+		gmem_positions[SKATE_X] = pt[0]
+		gmem_positions[SKATE_Y] = pt[1]
+	return True
 
 def nudgeHelm():
 	sendCommandToSk8( HELM, 5)
 	time.sleep(.1)
 	sendCommandToSk8( HELM, 0)
 
-def adjustHelm():
-	global helm
-	err = ahrs.heading - bearing
-	if err < 0:
-		adj = -10
-	if err > 0:
-		adj = +10
-	helm += adj
-	sendCommandToSk8(HELM, adj)
-
-def pause():
-	pass
-
-def figure8():
-	pass
-
-# ---- navigator -----
-def navigate():
-	return
-
-'''	
-iniate
-	choosePattern
-	add to route
-	set legnum to 0
-
-pilot
-	if not moving
-		set throttle
-	compare position
-	if position reached:
-		legnum += 1
-	if line:
-		compare heading to bearing
-		if off:
-			set helm
-	if arc:
-		compare time to eta
-		if past:
-			legnum += 1
-		
-
-
-def navigate():
-	jlog.debug(f'skate: navigate')
-	if route almost finished or no route at all:
-		legs = choosePattern()
-		add legs to route
-		current leg = 
-
-'''

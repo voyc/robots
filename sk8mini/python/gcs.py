@@ -65,11 +65,14 @@ import multiprocessing
 import time
 import argparse
 import matplotlib.pyplot as plt
+import numpy as np
+import os
 
 import jlog
 from smem import *
 import awacs
 import skate
+import specs
 
 def getArgs(): # get command-line arguments 
 	global args
@@ -84,6 +87,10 @@ def getArgs(): # get command-line arguments
 	awacs.args = args
 	skate.args = args
 
+# global constants
+fps = 2
+ui_delay = 1/fps
+
 # global variables
 args	= None
 awacs_process = False
@@ -93,6 +100,9 @@ skate_process = False
 smem_timestamp = multiprocessing.Array('d', TIME_ARRAY_SIZE) # initialized with zeros
 smem_positions = multiprocessing.Array('i', POS_ARRAY_SIZE)  # initialized with zeros
 
+def kill(msg):
+	jlog.info(f'kill: {msg}')
+	smem_timestamp[TIME_KILLED]  = time.time()
 
 def startAwacs():
 	global awacs_process
@@ -104,15 +114,13 @@ def startSkate():
 	skate_process = multiprocessing.Process(target=skate.skate_main, args=(smem_timestamp, smem_positions))
 	skate_process.start()
 
-def startup():
+def startProcesses():
 	if args.process == 'awacs' or args.process == 'both':
 		startAwacs()
 	if args.process == 'skate' or args.process == 'both':
 		startSkate()
 
-def shutdown():
-	smem_timestamp[TIME_KILLED] = time.time()
-	plt.close()
+def stopProcesses():
 	if awacs_process:
 		awacs_process.join()
 	if skate_process:
@@ -127,21 +135,83 @@ def on_press(event):
 		jlog.info('UI: go straight')
 	if event.key == 'q':
 		jlog.info('UI: kill')
+		kill('q keyed on UI')
 	
 def startUI():
-	fig, ax = plt.subplots()
-	fig.canvas.mpl_connect('key_press_event', on_press)
-	ax.set_title('Press a key')
+	global bow, stern, incr, skateline
+
+	#skateline = plt.gca().scatter([0,0,0,0,0],[0,0,0,0,0], c=['r','r','r','r','b'])
+	#bow = np.array([1000,1000])
+	#stern = np.array([1200,1200])
+	#incr = np.array([20,20])
+	
+	color = 'black'
+	plt.xlim(0,600)
+	plt.ylim(0,600)
+	plt.autoscale(False)
+	plt.gca().set_aspect('equal', anchor='C')
+	plt.tick_params(left=False, right=False, labelleft=False, labelbottom= False, bottom=False)
+	plt.gca().spines['bottom'].set_color(color)
+	plt.gca().spines['top'].set_color(color)
+	plt.gca().spines['left'].set_color(color)
+	plt.gca().spines['right'].set_color(color)
+	
 	plt.ion()
 	plt.show()
-	plt.draw()
-	plt.pause(.001)
+	fig = plt.gcf()
 
+	running = True
+
+#	def onpress(event):
+#		nonlocal running
+#		if event.key == 'q': running = False
+	fig.canvas.mpl_connect('key_press_event', on_press)
+
+#	for framenum in range(100):  # max framenums  ??
+#		animate(framenum)
+#		plt.pause(delay)
+#		if not running: break
+
+def refreshUI():
+	# plot cones
+	numcones = smem_positions[NUM_CONES]
+	pos = CONE1_X
+	for i in range(numcones):
+		x,y = specs.awacs2gcs([smem_positions[pos], smem_positions[pos+1]])
+		#circle1 = plt.Circle((x, y), 10, color='y')
+		#plt.gca().add_patch(circle1)
+		plt.text(x, y, str(i+1), fontsize='12', ha='center', va='center', color='black')
+		pos += 2
+
+	# plot donut
+	x,y = specs.awacs2gcs([smem_positions[DONUT_X], smem_positions[DONUT_Y]])
+	circle1 = plt.Circle((x, y), 10, color='r')
+	plt.gca().add_patch(circle1)
+
+	# plot skate
+	circle1 = plt.Circle((x, y), 5, color='b')
+	plt.gca().add_patch(circle1)
+
+
+
+#def animate(framenum):
+#	global bow,stern,incr, skateline
+#	bow += incr
+#	stern += incr
+#	points = drawSkate(bow,stern,5)
+#	skateline.set_offsets(points) # FuncAnimation does the drawing
+#
+#def drawSkate(bow, stern, n):
+#	diff = (bow - stern) / n
+#	points = []
+#	for i in range(n): points.append(stern + (diff * i))
+#	return points
+	
 def main():
 	try:
 		getArgs()
-		jlog.setup(args.verbose, args.quiet)
-		jlog.info('gcs: starting')
+		jlog.setup('gcs  ', args.verbose, args.quiet)
+		jlog.info(f'starting process id: {os.getpid()}, {time.strftime("%Y%m%d-%H%M%S")}, ui_delay:{ui_delay}')
 
 		# fake timestamps for testing one process at a time
 		#if args.process == 'awacs':
@@ -150,41 +220,48 @@ def main():
 			smem_timestamp[TIME_AWACS_READY] = time.time()
 			smem_timestamp[TIME_PHOTO] = time.time()
 
-		startup()
+		startProcesses()
 
 		startUI()
+		refreshUI()
 
-		# main loop - wait here until everybody ready
-		while not smem_timestamp[TIME_SKATE_READY] and not smem_timestamp[TIME_AWACS_READY] and not smem_timestamp[TIME_KILLED]:
+		# wait here until everybody ready
+		while not (smem_timestamp[TIME_SKATE_READY] and smem_timestamp[TIME_AWACS_READY]):
+			if smem_timestamp[TIME_KILLED]:
+				raise Exception('killed before ready')
 			time.sleep(.1)
 		smem_timestamp[TIME_READY] = time.time()
+		jlog.info('all ready')
 
 		# main loop
-		for i in range(60):
-			#jlog.info('gcs: is startUI blocking')
+		for i in range(25):
 			if smem_timestamp[TIME_KILLED]:
-				jlog.info('gcs: stopping due to kill')
+				jlog.info('stopping due to kill')
 				break;
-			#drawArena(plan)
-			#drawRoute(route)
-			time.sleep(1) # nothing else to do until we add visualization
-		jlog.debug('gcs: fall out of main loop')
+			refreshUI()
+			plt.pause(ui_delay)
+			jlog.info(f'loop {i}')
+
+		jlog.debug('fall out of main loop')
 
 	except KeyboardInterrupt:
-		jlog.info('gcs: keyboard interrupt')
-		shutdown()
-
+		kill('keyboard interrupt')
+		return
 	except Exception as ex:
-		jlog.error(f'gcs: main exception: {ex}')
-		#jlog.error(traceback.format_exc())
-		#raise
-
-	try:
-		shutdown()
-	except Exception as ex:
-		jlog.info(f'gcs: shutdown exception: {ex}')
-
-	jlog.info(f'gcs: main exit')
+		kill(f'main exception: {ex}')
+		if (args.verbose):
+			jlog.error(traceback.format_exc())
+	finally:
+		# shutdown
+		try:
+			kill('shutdown finally')
+			stopProcesses()
+			fig = plt.gcf()
+			fig.canvas.print_png('printfile.png')
+			plt.close()
+		except Exception as ex:
+			jlog.info(f'shutdown exception: {ex}')
+		jlog.info(f'main exit')
 
 if __name__ == '__main__':
 	main()
