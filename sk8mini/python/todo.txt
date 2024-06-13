@@ -25,16 +25,24 @@ arc next leg
 	maybe try measuring theta rather than point
 
 
-git commit
-run without nosave
-	capture photos in tight circle around a mark
-	measure turning radius, cone diameter, skate center to donut edge
-replace global heading and roll
-rename AHRS to Sensor (IMU, AHRS, BRO055, etc)
-rename gmem to smem
-remove heading and roll from smem
+x git commit
+x run without nosave
+x 	capture photos in tight circle around a mark
+x	measure turning radius, cone diameter, skate center to donut edge
+		9227_83: 9238_67
+		x: 392-285=107 px
+		y: 234-126=108 px
+		turning radius = 54px * .44 = 23.76cm
+		center wheel base to donut edge: 318-285=33 px * .44 =  14.5cm 
+x replace global heading and roll
+x rename AHRS to Sensor (IMU, AHRS, BRO055, etc)
+x rename gmem to smem
+x remove heading and roll from smem
 integrate jlog and caplog
 measure time diff between onSensor and onPhoto
+
+bug: skate correct, UI skateline wrong
+does not meet onMark() for exit of leg2, the arc
 
 future option: add deadReckoning on change in heading or roll, between onSensor and onPhoto
 no.  skip deadReckoning and instead go to to awacs direct comm of donut to skate
@@ -42,7 +50,7 @@ no.  skip deadReckoning and instead go to to awacs direct comm of donut to skate
 onPhoto()
 	donut x,y, t
 	donutpos
-	cbasepos
+	cbaseposhj
 	timestarthttp
 	timereceivedbyskate
 
@@ -80,7 +88,14 @@ options before go, after go
 -------------------------------
 vote
 
-New questionnew answer Edit questionDelete questionApprove questionFlaggingPeer review of each questionAI to match duplicate questions and answers
+New question
+new answer 
+Edit question
+Delete question
+Approve question
+Flagging
+Peer review of each question
+AI to match duplicate questions and answers
 
 List of props
 new...  (new question)

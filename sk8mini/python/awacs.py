@@ -129,7 +129,7 @@ dirname = ''
 
 def kill(msg):
 	jlog.info(f'kill: {msg}')
-	gmem_timestamp[TIME_KILLED] = time.time()
+	smem_timestamp[TIME_KILLED] = time.time()
 
 def setCenter(x,y):
 	global ctrx, ctry
@@ -302,22 +302,22 @@ def processAerialPhoto():
 	jlog.debug(f'got objects, donut at {x},{y}')
 
 	# move object positions to shared memory
-	gmem_positions[NUM_CONES] = len(acones)
-	gmem_positions[DONUT_X] = x
-	gmem_positions[DONUT_Y] = y
+	smem_positions[NUM_CONES] = len(acones)
+	smem_positions[DONUT_X] = x
+	smem_positions[DONUT_Y] = y
 	pos = CONE1_X
 	for i in range(len(acones)): 
-		gmem_positions[pos + i*2] = acones[i][0]
-		gmem_positions[pos + i*2 + 1] = acones[i][1]
-	gmem_timestamp[TIME_PHOTO] = photo_timestamp
+		smem_positions[pos + i*2] = acones[i][0]
+		smem_positions[pos + i*2 + 1] = acones[i][1]
+	smem_timestamp[TIME_PHOTO] = photo_timestamp
 	
 	# save to disk for ex post facto analysis
 	savePhoto(photo, photo_timestamp)
 
 def awacs_main(timestamp, positions):
-	global args, gmem_timestamp, gmem_positions, donutkernel, dirname, imgext
-	gmem_timestamp = timestamp
-	gmem_positions = positions	
+	global args, smem_timestamp, smem_positions, donutkernel, dirname, imgext
+	smem_timestamp = timestamp
+	smem_positions = positions	
 
 	try: 
 		jlog.setup('awacs', args.verbose, args.quiet)
@@ -344,11 +344,11 @@ def awacs_main(timestamp, positions):
 
 		# main loop
 		while True:
-			if gmem_timestamp[TIME_KILLED]:
+			if smem_timestamp[TIME_KILLED]:
 				jlog.info(f'stopping main loop due to kill')
 				break
 			processAerialPhoto()
-			jlog.info(f'found donut:[{gmem_positions[DONUT_X]},{gmem_positions[DONUT_Y]}], camera:{photo_timestamp}')
+			jlog.info(f'found donut:[{smem_positions[DONUT_X]},{smem_positions[DONUT_Y]}], camera:{photo_timestamp}')
 
 		jlog.debug('fall out of main loop')
 

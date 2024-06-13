@@ -1,5 +1,9 @@
 '''
 specs.py
+
+for turning radius see:o 
+~/media/webapps/sk8mini/awacs/photos/20240613-074007/2024613.xcv
+
 '''
 
 # dimensions and measurements:
@@ -18,11 +22,15 @@ helm_bias	= -19.0 # degrees (value required for straight-line travel)
 # tightest turn, at max_roll: 
 inner_wheelbase	=  8.0	# cm
 outer_wheelbase	= 17.5	# cm
-turning_radius	= 20.0  # 23.0	# cm
+turning_radius	= 23.7	# cm
 turning_circum	=144.5	# cm (radius * 2pi) 
 axle_angle	= 10.0	# degrees 
 deck_angle	= 19.0	# degrees
 ycenter_offset	=  1.5	# cm (deck - wheelbase)
+
+cone_diameter	= 8	# cm or 18px
+cbase_to_donut_edge = 14.5 # cm
+between_donut_and_cone = 5.2	# cm (23.7 - 4 - 14.5)
 
 # arena cm measured in advance, fed to gcs via cli-args
 wArenaCm = 272.7	# cm (600 / pxPerCm) 

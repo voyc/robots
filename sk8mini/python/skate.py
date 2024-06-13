@@ -6,12 +6,16 @@ communicates with sk8.ino
 
 functions:
 	on startup, calibrate the BRO055 sensor
-	receive AHRS data sk8 via serial port dongle running gcs.ino
+	receive AHRS Sensor data sk8 via serial port dongle running gcs.ino
 	receive donut center from awacs
 	calculate wheelbase center by combining donut center, helm angle, roll angle
 	navigate
 	pilot
 	send pilot commands to sk8 through the serial port dongle
+
+Sensor can be called:
+	AHRS - Attitude and Heading Reference System
+	IMU - Inertial Measurement Unit
 
 calibration:
 	the BRO055 does three calibrations at random times in the background: 
@@ -34,20 +38,17 @@ organization:  by roles, or brain parts:
 		On time elapsed, 
 		On position, pilot 
 		On cone rounded, navigate
----------------
-sources
 
-navigate:
+sources
+	navigate:
 	~/webapps/robots/robots/autonomy/
 		hippoc.py - sim skate path around cones, with video out, using matplotlib and FuncAnimation
 		nav.py - library of trigonometry used in navigation
 
-pilot:
+	pilot:
 	~/webapps/robots/robots/sk8mini/pilot
 		pilot.ino - helm and throttle implemented via espwebserver
 		pilot.py - manual piloting via keyboard as webserver client, using curses
-
----------------
 
 to do:
         1. Count rpm at each speed setting
@@ -84,69 +85,18 @@ import matplotlib.pyplot as plt
 import math
 
 import jlog
-from smem import *
+import smem
 import specs
 import nav
-
-
-# buffer to receive data from sensor
-class AHRS:
-	heading	= 9999.0
-	roll	= 0.0
-	pitch	= 0.0
-	sys	= 0
-	gyro	= 0
-	accel	= 0
-	mag	= 0
-ahrs = AHRS()
-
-# global constants
-# a command contains two integers: cmd and val
-# cmd:
-HELM	= 1 # val = -90 to +90, negative:port, positive:starboard, zero:amidships
-THROTTLE= 2 # val = -90 to +90, negative:astern, positive:ahead, zero:stop
-
-minimum_skate_time = .1
-serialOpenSettleTime = .5  # why?
-serialSendSettleTime = .2  # .9 fails  timeout on the read side?
-prevSerialSend = 0.0
-
-# global constants, initialized one-time within skate_process
-scomm = False	# instantiation of Serial object
-
-# global variables
-helm = 0
-throttle = 0
-heading = 0
-roll = 0
-
-# used internally for execution control
-donut_time = 0.0
-heading_time = 0.0
-eta = 0.0
-autopilot = True
-
-# x,y positions, in cm
-donut = [0,0]
-cbase = [0,0]  # center of wheelbase
-gate = [0,0]   # start and end position
-
-# navigation data
-plan = []
-route = []
-routendx = -1
-leg = {}
-captains_log = []  # used for dead reckoning
 
 # global shared inter-process memory
 gmem_timestamp = None
 gmem_positions = None
-
-time_photo = 0.0
-time_helm = 0.0
-
 args = None   # command-line arguments
+captains_log = []
+
 def setupArgParser(parser):
+	# called by gcs.py before starting this process
 	parser.add_argument('--port'           ,default='/dev/ttyUSB0'        ,help='serial port'                      )
 	parser.add_argument('--baud'           ,default=115200    ,type=int   ,help='serial baud rate'                 )
 	parser.add_argument('--serialtimeout'  ,default=3         ,type=int   ,help='serial timeout'                   )
@@ -155,279 +105,199 @@ def setupArgParser(parser):
 	parser.add_argument('--nocal'          ,action='store_true'           ,help='suppress calibration'             )
 	parser.add_argument('--helmbias'       ,default=specs.helm_bias,type=int,help='helm value giving straight line'  )
 
+def setupObjectModel():
+	global  sensor, comm, helm, throttle, photo, arena, ui
+	sensor = Sensor()
+	comm = Comm()
+	helm = Helm()
+	throttle = Throttle()
+	photo = Photo()
+	arena = Arena()
+	ui = UI()
+
+class Sensor:
+	heading	= 9999.0
+	roll	= 0.0
+	pitch	= 0.0
+	sys	= 0
+	gyro	= 0
+	accel	= 0
+	mag	= 0
+	t	= 0
+
+class Helm:
+	helm = 0
+	biased_helm = 0
+	rudder = 0
+	t = 0.0
+	incr = 2
+
+	def set(self, val):
+		self.helm = val
+		self.biased_helm = min(90, max(-90, self.helm + args.helmbias))
+		self.t = time.time()
+		comm.sendCommand(comm.HELM, self.biased_helm)
+
+	def incStarboard(self):
+		self.helm = val + self.incr
+		self.biased_helm = min(90, max(-90, self.helm + args.helmbias))
+		self.t = time.time()
+		comm.sendCommand(comm.HELM(self.biased_helm))
+
+	def incPort(self):
+		self.helm = val - self.incr
+		self.biased_helm = min(90, max(-90, self.helm + args.helmbias))
+		self.t = time.time()
+		comm.sendCommand(comm.HELM(self.biased_helm))
+
+class Throttle:
+	throttle = 0
+	right_throttle = 0 
+	paused = False
+	STOP = 0
+	CRUISE = 23
+	FULL = 43
+	autopilot = True
+	t = 0.0
+	def set(self, val):
+		self.throttle = max(0, min(self.FULL, val))
+		self.right_throttle = self.throttle # * rudder factor
+		self.t = time.time()
+		comm.sendCommand(comm.THROTTLE, self.right_throttle)
+	def isPaused(self): 
+		return self.paused
+	def pause(self): 
+		self.paused = True
+		comm.sendCommand(comm.THROTTLE, self.STOP)
+	def unpause(self): 
+		self.paused = False
+		comm.sendCommand(comm.THROTTLE, self.CRUISE)
+
+class Arena:
+	gate = [0,0]
+	cones = []
+	plan = []
+	route = []
+	routendx = []
+	leg = {}
+
+class Photo:
+	MAXTIME = 3.0 # seconds
+	donut = [0,0]
+	cbase = [0,0]
+	cones = [0,0]
+	t = 0.0
+	def hasNewPhoto(self): return (gmem_timestamp[smem.TIME_PHOTO] > self.t)
+	def isPhotoLate(self): return (gmem_timestamp[smem.TIME_PHOTO] <= self.t) and ((time.time() - self.t) > self.MAXTIME)
+
 # ----------------------------------------
 #    comm
 # ----------------------------------------
 
-def connectSerial():
-	global scomm
-	try:
-		scomm = serial.Serial(port=args.port, baudrate=args.baud, timeout=args.serialtimeout)
-		# scomm is a port object with api: write, readline, in_waiting, etc
-	except:
-		return False
+class Comm:
+	openSettleTime = .5  # why?
+	sendSettleTime = .2  # .9 fails  timeout on the read side?
+	tsend = 0.0
+	serial_port = False	# instantiation of Serial object
+	HELM	= 1 # val = -90 to +90, negative:port, positive:starboard, zero:amidships
+	THROTTLE= 2 # val = -90 to +90, negative:astern, positive:ahead, zero:stop
 
-	time.sleep(serialOpenSettleTime)  # why?
-	jlog.debug(f'serial port is {"open" if scomm.isOpen() else "NOT open"}')
-	return scomm
-
-def applyHelmBias(helm): 
-	return max(-90, helm + args.helmbias)
-
-def sendCommandToSk8(cmd, val):
-	global helm, throttle, prevSerialSend
-	value = val
-	settleTime = serialSendSettleTime - (time.time() - prevSerialSend)
-	if settleTime > 0:
-		time.sleep(settleTime)
-
-	if cmd == HELM:
-		helm = value
-		if abs(helm) > 90:
-			kill(f'bad helm request {helm}')
-		value = applyHelmBias(helm)
-	if cmd == THROTTLE:
-		throttle = value
-		if abs(throttle) > 90:
-			kill(f'bad throttle request {throttle}')
-
-	s = f'{cmd}\t{value}\n' 
-	if not scomm:
-		jlog.info(f'command not sent, no serial')
-	else:
-		scomm.write(bytes(s, 'utf-8'))
-		jlog.debug(f'command sent to sk8: {s.strip()}')
-	prevSerialSend = time.time()
-
-def getAhrsFromSk8():
-	global heading, roll
-
-	lst = [1,2]
-	if len(lst) != 7:
-		scomm.reset_input_buffer() # make sure we get the latest message
-		b = scomm.readline()	# serial read to \n or timeout, whichever comes first
-		s = b.decode("utf-8")	# to tab-separated string
-		lst = s.split()		# parse into global struct
-		if len(lst) != 7:
-			jlog.info(f'incomplete serial ahrs message ignored {len(lst)}')
-			return
-
-	ahrs.heading	= float( lst[0])
-	ahrs.roll	= float( lst[1])
-	ahrs.pitch	= float( lst[2])
-	ahrs.sys	= int( lst[3])
-	ahrs.gyro	= int( lst[4])
-	ahrs.accel	= int( lst[5])
-	ahrs.mag	= int( lst[6])
-	jlog.debug(f'lenstr:{len(b)}, lenlst:{len(lst)}, heading:{ahrs.heading:.2f}, roll:{ahrs.roll}, gyro:{ahrs.gyro}, mag:{ahrs.mag}')
-
-	# the BRO055 does NOT adjust for magnetic declination, so we do that here
-	adjheading = ahrs.heading + args.declination
-	if adjheading < 0:
-		adjheading = (360 - adjheading)
-
-	# note: future use, awacs may use heading and roll to write labels
-	# on new heading
-	if not int(heading) == int(adjheading):
-		heading = int(adjheading)
-		gmem_positions[SKATE_HEADING] = heading
-		gmem_timestamp[TIME_HEADING] = time.time()
-
-	# on new roll
-	if not int(roll) == int(ahrs.roll):
-		roll = int(ahrs.roll)
-		gmem_positions[SKATE_ROLL] = roll
-		gmem_timestamp[TIME_ROLL] = time.time()
-
-# ----------------------------------------
-#    process target
-# ----------------------------------------
-
-time_photo_max_delay = 3.0 # seconds
-skate_paused = False
-
-def kill(msg):
-	gmem_timestamp[TIME_KILLED] = time.time()
-	jlog.info(f'kill: {msg}')
-
-def isKilled():
-	return (gmem_timestamp[TIME_KILLED] > 0)
-	
-def hasPhoto():
-	return (gmem_timestamp[TIME_PHOTO] > time_photo)
-
-def isPhotoLate():
-	return (gmem_timestamp[TIME_PHOTO] <= time_photo) and ((time.time() - time_photo) > time_photo_max_delay)
-
-def isSkatePaused():
-	return skate_paused
-
-def pause():
-	global skate_paused
-	skate_paused = True
-
-def unpause():
-	global skate_paused
-	skate_paused = False 
-
-def skate_main(timestamp, positions):
-	global scomm, gmem_timestamp, gmem_positions
-	try:
-		jlog.setup('skate', args.verbose, args.quiet)
-		jlog.info(f'starting process id: {os.getpid()}, serialSendSettleTime:{serialSendSettleTime}')
-		gmem_timestamp = timestamp
-		gmem_positions = positions
-		signal.signal(signal.SIGINT, signal.SIG_IGN) # ignore KeyboardInterrupt
-
-		# serial port
-		scomm = connectSerial()
-		if not scomm:
-			kill(f'serial port {args.port} connection failed')
-			return
-
-		jlog.info(f'serial port connected')
-		getAhrsFromSk8()
-		jlog.info(f'AHRS connected')
-
-		# setup loop
-		calibrated	= False
-		arena_ready	= False
-		ui_ready	= False
-		user_go	= False
-		while True:
-			if isKilled():
-				jlog.info(f'stopping setup loop due to kill')
-				break
-
-			if not calibrated:
-				jlog.info('calibrating...')
-				getAhrsFromSk8()
-				if ahrs.mag >= 3 and ahrs.gyro >= 3:
-					jlog.info('ahrs calibrated')
-					calibrated = True
-
-			elif not arena_ready:
-				if gmem_timestamp[TIME_PHOTO]:
-					configArena()
-					jlog.info('arena configured')
-					arena_ready = True
-
-			elif not ui_ready:
-					startUI()
-					refreshUI()
-					ui_ready = True
-					jlog.debug('click g to go')
-
-			elif not user_go:
-				getAhrsFromSk8()
-				refreshUI()
-				key = respondToKeyboard()
-				if key == 'g':
-					user_go = True
-
-			else:
-				jlog.info('go')
-				break
-
-		# main loop
-		while True:
-			if isKilled():
-				jlog.info(f'stopping main loop due to kill')
-				break
-
-			if isPhotoLate():
-				pause()
-
-			getAhrsFromSk8()
-			refreshUI()
-			if ui.eventkey:
-				key = respondToKeyboard()
-
-			if hasPhoto():
-				jlog.debug(f'has photo')
-				if isSkatePaused():
-					unpause()
-				pilot()	
-
-			jlog.debug(f'loop cbase:{cbase}, routendx:{routendx}, heading:{heading}')
-
-		kill("drop out of main loop")
-
-	except KeyboardInterrupt:
-		jlog.error('never happen')
-
-#	except Exception as ex:
-#		exc_type, exc_obj, exc_tb = sys.exc_info()
-#		fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
-#		jlog.error(f'exception: {ex}, {exc_type}, {fname}, {exc_tb.tb_lineno}')
-#		if args.verbose:
-#			jlog.error(traceback.format_exc())
-#		kill('exception')
-
-	finally:
+	def connectSerial(self):
 		try:
-			kill('finally')
-			if scomm and scomm.isOpen():
-				sendCommandToSk8( THROTTLE, 0)
-				sendCommandToSk8( HELM, 0)
-				scomm.close()
-		except Exception as ex:
-			jlog.error(f'shutdown exception: {ex}')
-	jlog.info(f'main exit')
+			self.serial_port = serial.Serial(port=args.port, baudrate=args.baud, timeout=args.serialtimeout)
+		except:
+			return False
+		time.sleep(self.openSettleTime)  # why?
+		return True
+
+	def sendCommand(self, cmd, value):
+		if self.serial_port and self.serial_port.isOpen():
+			settleTime = self.sendSettleTime - (time.time() - self.tsend)
+			if settleTime > 0:
+				time.sleep(settleTime)
+			s = f'{cmd}\t{value}\n' 
+			self.serial_port.write(bytes(s, 'utf-8'))
+			self.tsend = time.time()
+			jlog.debug(f'command sent to sk8: {s.strip()}')
+		else:
+			jlog.debug(f'command not sent, no serial port: {s.strip()}')
+
+	def recvSensor(self):
+		lst = [1,2]
+		if len(lst) != 7:
+			comm.serial_port.reset_input_buffer() # make sure we get the latest message
+			b = comm.serial_port.readline()	# serial read to \n or timeout, whichever comes first
+			s = b.decode("utf-8")	# to tab-separated string
+			lst = s.split()		# parse into object
+			if len(lst) != 7:
+				jlog.info(f'incomplete serial sensor message ignored {len(lst)}')
+				return
+	
+		sensor.heading	= float( lst[0])
+		sensor.roll	= float( lst[1])
+		sensor.pitch	= float( lst[2])
+		sensor.sys	= int( lst[3])
+		sensor.gyro	= int( lst[4])
+		sensor.accel	= int( lst[5])
+		sensor.mag	= int( lst[6])
+		sensor.t	= time.time()
+		jlog.debug(f'lenstr:{len(b)}, lenlst:{len(lst)}, heading:{sensor.heading:.2f}, roll:{sensor.roll}, gyro:{sensor.gyro}, mag:{sensor.mag}')
+	
+		# the BRO055 does NOT adjust for magnetic declination, so we do that here
+		adjheading = sensor.heading + args.declination
+		if adjheading < 0:
+			adjheading = (360 - adjheading)
+		sensor.heading = adjheading
 
 # ----------------------------------------
 #    navigator
 # ----------------------------------------
 
 def calcCenterWheelbase(donut):
-	theta = nav.thetaFromHeading( heading + helm)
+	theta = nav.thetaFromHeading( sensor.heading + helm.helm)
 	cbase = nav.pointFromTheta( donut, theta, specs.helm_length)
 	# we should also apply the helm_offset and roll_y_offset
 	return cbase
 
-#def px2cm(pt):
-#	return [(pt[0] - 300) * cmPerPx, (pt[1] - 300) * cmPerPx]
+def getPhoto():  # get positions of donut, cones from shared memory, calc cbase position
+	photo.donut = specs.awacs2skate([gmem_positions[smem.DONUT_X], gmem_positions[smem.DONUT_Y]])
+	photo.cbase = calcCenterWheelbase(photo.donut)
+	photo.cones = getCones()
+	photo.t = gmem_timestamp[smem.TIME_PHOTO]
+	ui.cbaseChanged = True
 
-#def cm2px(pt):
-#	return [int((pt[0] * pxPerCm + 300)), int((pt[1] * pxPerCm + 300))]
-
-def configArena():
-	global cones, donut, cbase, gate, plan, route, routendx
-	# unwind shared memory into cones
+def getCones():
 	cones = []
-	numcones = gmem_positions[NUM_CONES]
-	pos = CONE1_X
+	numcones = gmem_positions[smem.NUM_CONES]
+	pos = smem.CONE1_X
 	for i in range(numcones):
 		pt = [gmem_positions[pos], gmem_positions[pos+1]]
 		cone = specs.awacs2skate(pt)
 		cones.append(cone)
 		pos += 2
-	cones = list(reversed(cones))
+	return list(reversed(cones))
 
-	donut = specs.awacs2skate([gmem_positions[DONUT_X], gmem_positions[DONUT_Y]])
-	cbase = calcCenterWheelbase(donut)
-	ui.cbaseChanged = True
-	gate = cbase
+def configArena():
+	arena.cones = photo.cones
+	arena.gate = photo.cbase
 
-	jlog.debug(f'cones: {cones}')
-	jlog.debug(f'donut: {donut}')
-	jlog.debug(f'cbase: {cbase}')
-	jlog.debug(f'gate: {gate}')
+	jlog.debug(f'cones: {arena.cones}')
+	jlog.debug(f'donut: {photo.donut}')
+	jlog.debug(f'cbase: {photo.cbase}')
+	jlog.debug(f'gate:  {arena.gate}')
 
-	order, sides = planRoute(cones)
+	# route: plan, calc, plot
+	order, sides = planRoute(arena.cones)
 	order = [0,1]
 	sides = ['cw', 'cw']
 	jlog.debug(f'order: {order}, sides: {sides}')
 
-	plan = calcPlan(cones, order, sides)
-	jlog.debug(f'plan: {plan}')
+	arena.plan = calcPlan(arena.cones, order, sides)
+	jlog.debug(f'plan: {arena.plan}')
 
-	route = plotRoute(plan)
-	routendx = -1
-	jlog.debug(f'route: {route}')
-
-	# first log entry
-	log( cbase, time.time(), 0, 0)
+	arena.route = plotRoute(arena.plan)
+	arena.routendx = -1
+	jlog.debug(f'route: {arena.route}')
 
 def planRoute(cones):
 	order = []
@@ -454,7 +324,7 @@ def calcPlan(cones, order, sides):
 
 	# add entry and exit points to each cone
 	r = specs.turning_radius
-	localgate = { 'center': gate }
+	localgate = { 'center': arena.gate }
 	for i in range(len(plan)):
 		cone = plan[i]
 		prevcone = localgate if i <= 0 else plan[i-1]
@@ -488,7 +358,7 @@ def calcPlan(cones, order, sides):
 	
 def plotRoute(plan):
 	route = []
-	prevexit = gate
+	prevexit = arena.gate
 	for i in range(0,len(plan)):
 		cone = plan[i]
 
@@ -509,11 +379,11 @@ def plotRoute(plan):
 		prevexit = cone['exit']
 	
 	# back to starting gate
-	jlog.debug(f'back to starting gate: {prevexit}, {gate}')
+	jlog.debug(f'back to starting gate: {prevexit}, {arena.gate}')
 	route.append({
 		'shape': 'line',
 		'from': prevexit,
-		'to': gate,
+		'to': arena.gate,
 	})
 	return route
 
@@ -521,26 +391,19 @@ def plotRoute(plan):
 #    pilot
 # ----------------------------------------
 
-def onRoll():
-	global helm
-	error = heel - roll
-	helm_adj = pid( error)
-	helm += helm_adj
-
 def nextLeg():
-	global routendx, leg
-	routendx += 1
-	leg = route[routendx]
+	arena.routendx += 1
+	arena.leg = arena.route[arena.routendx]
 
-	jlog.info(f'next leg {routendx}: {leg}')
+	jlog.info(f'next leg {arena.routendx}: {arena.leg}')
 
-	if leg['shape'] == 'arc':
-		if leg['rdir'] == 'cw':
-			sendCommandToSk8(HELM, +90)
+	if arena.leg['shape'] == 'arc':
+		if arena.leg['rdir'] == 'cw':
+			helm.set( +90)
 		elif ['rdir'] == 'ccw':
-			sendCommandToSk8(HELM, -90)
-	elif leg['shape'] == 'line':
-		sendCommandToSk8(HELM, 0)
+			helm.set( -90)
+	elif arena.leg['shape'] == 'line':
+		helm.set( 0)
 
 def isOnMark(point1, point2):
 	n = nav.lengthOfLine(point1, point2)
@@ -555,13 +418,9 @@ def helmpid(err):
 	adj = max(-90,min(90,adj))
 	return adj
 
-def log(pos, timestamp, heading, speed):
-	ndx = len(captains_log)
-	if ndx > 0:
-		ndx = len(captains_log) - 1
-		captains_log[ndx]['heading'] = heading
-		captains_log[ndx]['speed'] = speed
-	captains_log.append({'startpos': pos, 'starttime':timestamp, 'heading':heading, 'speed':speed})
+def caplog():
+	s = f'{photo.cbase}\t{photo.t}\t{helm.helm}\t{throttle.throttle}\t{sensor.heading}\t{sensor.roll}'
+	captains_log.append(s)
 
 def readLogByDate(ts):
 	ndx = len(captains_log) - 1
@@ -576,74 +435,53 @@ def readLogByDate(ts):
 			break
 		ndx -= 1
 	return captains_log[leastndx]
-	
+
 def pilot():
-	global donut_time, helm, time_photo, time_helm, cbase
 	jlog.debug(f'in pilot')
 	position_changed = False
 
-	tm = time.time()
-
 	# first time
-	if routendx == -1:
-		sendCommandToSk8(THROTTLE, 23)
+	if arena.routendx == -1:
+		throttle.set( throttle.CRUISE)
 		nextLeg()
 
 	# get new position
-	if hasPhoto():	
-		time_photo = gmem_timestamp[TIME_PHOTO]
-		donut = specs.awacs2skate([gmem_positions[DONUT_X], gmem_positions[DONUT_Y]])
-		prevcbase = cbase
-		cbase = calcCenterWheelbase(donut)
-		ui.cbaseChanged = True
+	if photo.hasNewPhoto():	
+		getPhoto()
 
-	# log this moment just before helm change
-	log( cbase, time_helm, heading, specs.speed)
-
-	if not autopilot:
+	if not throttle.autopilot:
 		return
 
 	# on rounding mark
-	if isOnMark(cbase, leg['to']):
-		if routendx >= len(route):  # journey's end
-			sendCommandToSk8(THROTTLE, 0)
-			sendCommandToSk8(HELM, 0)
+	if isOnMark(photo.cbase, arena.leg['to']):
+		if arena.routendx >= len(arena.route):  # journey's end
+			throttle.set(throttle.ZERO)
+			helm.set(0)
 			return False
 		else:
 			nextLeg()
 
 	# stay on course
-	if leg['shape'] == 'line':
-		bearing = nav.headingOfLine(cbase, leg['to'])
-		error = bearing - heading
+	if arena.leg['shape'] == 'line':
+		bearing = nav.headingOfLine(photo.cbase, arena.leg['to'])
+		error = bearing - sensor.heading
 		if error > 180:
 			error -= 360
 		if error < -180:
 			error += 360
 		helm_adj = helmpid( error)
-		jlog.info(f'pilot: new_helm:{helm_adj}, err:{error}, bearing:{bearing}, heading:{heading}')
-		sendCommandToSk8(HELM, helm_adj)
+		jlog.info(f'pilot: new_helm:{helm_adj}, err:{error}, bearing:{bearing}, heading:{sensor.heading}')
+		helm.set( helm_adj)
 
-	elif leg['shape'] == 'arc':
-		jlog.info(f'pilot: arc, heading:{heading}, cbase:{cbase}, leg-to:{leg["to"]}')
+	elif arena.leg['shape'] == 'arc':
+		jlog.info(f'pilot: arc, heading:{sensor.heading}, cbase:{photo.cbase}, leg-to:{arena.leg["to"]}')
 
-def nudgeHelm():
-	sendCommandToSk8( HELM, 5)
-	time.sleep(.1)
-	sendCommandToSk8( HELM, 0)
+	caplog()
 
 # ----------------------------------------
 #    UI
 # ----------------------------------------
 
-# global constants
-fps = 20
-ui_delay = 1/fps  # .05
-ui_pause = .001
-
-fname = 'arena_%timestamp%.png'
-
-# artists
 class UI:
 	fig = None
 	ax = None
@@ -654,14 +492,21 @@ class UI:
 	conesChanged = True
 	routeChanged = True
 	cbaseChanged = True
-	refresh_time = 0.0
+	t = 0.0
 	eventkey = False
-ui = UI()
+	fps = 0
+	delay = 0
+	PAUSE = .001
+	fname = 'arena_%timestamp%.png'
+
 
 def onpress(event):
 	ui.eventkey = event.key
 
 def startUI():
+	ui.fps = 20
+	ui.delay = 1/ui.fps  # .05
+
 	# setup artists
 	ui.fig, ui.ax = plt.subplots()
 	plt.xlim(-132,+132)
@@ -672,7 +517,7 @@ def startUI():
 	ui.fig.canvas.mpl_connect('key_press_event', onpress) # keypress event handler
 
 	# cones
-	for pt in cones:
+	for pt in arena.cones:
 		circ = plt.Circle(pt, 10, color='y')
 		ui.ax.add_artist(circ)
 		ui.cones.append(circ)
@@ -680,8 +525,8 @@ def startUI():
 		ui.conetexts.append(t)
 		ui.conesChanged = True
 		
-	# route legs
-	for leg in route:
+	# legs
+	for leg in arena.route:
 		if leg['shape'] == 'line':
 			A = (leg['from'])
 			B = (leg['to'])
@@ -713,26 +558,26 @@ def startUI():
 	ui.cbaseChanged = True
 
 def refreshUI():
-	jlog.debug(f'refresuUI, {time.time()}, {ui.refresh_time}')
-	if time.time() - ui.refresh_time >= ui_delay:
+	jlog.debug(f'refresuUI, {time.time()}, {ui.t}')
+	if time.time() - ui.t >= ui.delay:
 		jlog.debug(f'inside refresuUI, {ui.conesChanged}, {ui.routeChanged}, {ui.cbaseChanged}')
 		if ui.conesChanged:
 			i = 0
 			for i in range(len(ui.cones)):
-				ui.cones[i].center = cones[i]
-				ui.conetexts[i]._x = cones[i][0]
-				ui.conetexts[i]._y = cones[i][1]
+				ui.cones[i].center = arena.cones[i]
+				ui.conetexts[i]._x = arena.cones[i][0]
+				ui.conetexts[i]._y = arena.cones[i][1]
 			ui.conesChanged = False
 	
 		if ui.routeChanged:
-			for i in range(len(route)):
-				leg = route[i]
+			for i in range(len(arena.route)):
+				leg = arena.route[i]
 				if leg['shape'] == 'line':
 					A = (leg['from'])
 					B = (leg['to'])
 					xd,yd = np.transpose([A,B]); 
 					ui.legs[i].set_data(xd,yd)
-			for leg in route:
+			for leg in arena.route:
 				if leg['shape'] == 'arc':
 					A = (leg['from'])
 					B = (leg['to'])
@@ -746,7 +591,7 @@ def refreshUI():
 	
 		if ui.cbaseChanged:
 			#bow,stern = nav.lineFromHeading(cbase, heading, specs.deck_length/2)
-			bow,stern = nav.lineFromHeading(cbase, heading, specs.deck_length)
+			bow,stern = nav.lineFromHeading(photo.cbase, sensor.heading, specs.deck_length)
 			diff = (bow - stern) / 5  # add 4 dots between bow and stern
 			jlog.debug(f'diff: {diff}')
 			diff = (np.array(bow) - np.array(stern)) / 5  # add 4 dots between bow and stern
@@ -758,15 +603,14 @@ def refreshUI():
 			ui.skateline.set_offsets(points)
 			ui.cbaseChanged = False
 
-		ui.refresh_time = time.time()
+		ui.t = time.time()
+
 	jlog.debug(f'plt pause')
-	plt.pause(ui_pause)  # redraw and time.sleep()
+	plt.pause(ui.PAUSE)  # redraw and time.sleep()
 
 def respondToKeyboard():
-	global autopilot
 	key = ui.eventkey
 	ui.eventkey = False
-	helm_incr = 2
 
 	if key == 'q':
 		kill('UI: kill')
@@ -780,29 +624,127 @@ def respondToKeyboard():
 		jlog.info(f'UI: screen capture {ts}')
 
 	elif key == 'a':
-		autopilot = True
+		throttle.autopilot = True
 		jlog.info(f'UI: autopilot on')
 
 	elif key == 'o':
-		autopilot = False
+		throttle.autopilot = False
 		jlog.info(f'UI: autopilot off')
 
 	elif key == 'left':
-		autopilot = False
-		newhelm = max(-90, helm - helm_incr)
-		sendCommandToSk8(HELM, newhelm)
-		jlog.info(f'UI: helm port {helm_incr} degree: {helm} {roll}')
+		throttle.autopilot = False
+		helm.incrPort()
+		jlog.info(f'UI: helm port {helm_incr} degree: {helm.helm} {sensor.roll}')
 
 	elif key == 'right':
-		autopilot = False
-		newhelm = min(90, helm + helm_incr)
-		sendCommandToSk8(HELM, newhelm)
-		jlog.info(f'UI: helm starboard {helm_incr} degree: {helm} {roll}')
+		throttle.autopilot = False
+		helm.incrStarboar()
+		jlog.info(f'UI: helm starboard {helm_incr} degree: {helm.helm} {sensor.roll}')
 
 	elif key == 'up':
 		newhelm = 0
-		sendCommandToSk8(HELM, newhelm)
+		helm.set(0)	
 		jlog.info('UI: helm amidships')
 
 	return key
+
+# ----------------------------------------
+#    process target
+# ----------------------------------------
+
+def kill(msg):
+	gmem_timestamp[smem.TIME_KILLED] = time.time()
+	jlog.info(f'kill: {msg}')
+
+def isKilled():
+	return (gmem_timestamp[smem.TIME_KILLED] > 0)
+	
+def skate_main(timestamp, positions):
+	global gmem_timestamp, gmem_positions
+	try:
+		jlog.setup('skate', args.verbose, args.quiet)
+		jlog.info(f'starting process id: {os.getpid()}')
+		gmem_timestamp = timestamp
+		gmem_positions = positions
+		signal.signal(signal.SIGINT, signal.SIG_IGN) # ignore KeyboardInterrupt
+		setupObjectModel()
+
+		# serial port
+		rc = comm.connectSerial()
+		if not rc:
+			kill(f'serial port {args.port} connection failed')
+			return
+		jlog.info(f'serial port {args.port} connected')
+
+		# setup loop
+		calibrated	= False
+		arena_ready	= False
+		ui_ready	= False
+		user_go	= False
+		while True:
+			if isKilled():
+				jlog.info(f'stopping setup loop due to kill')
+				break
+
+			comm.recvSensor()
+
+			if not calibrated:
+				jlog.info('calibrating...')
+				if sensor.mag >= 3 and sensor.gyro >= 3:
+					jlog.info('sensor calibrated')
+					calibrated = True
+
+			elif not arena_ready:
+				if photo.hasNewPhoto():
+					getPhoto()
+					configArena()
+					jlog.info('arena configured')
+					arena_ready = True
+
+			elif not ui_ready:
+					startUI()
+					refreshUI()
+					ui_ready = True
+					jlog.debug('click g to go')
+
+			elif not user_go:
+				refreshUI()
+				key = respondToKeyboard()
+				if key == 'g':
+					user_go = True
+
+			else:
+				jlog.info('go')
+				break
+
+		# main loop
+		while True:
+			if isKilled():
+				jlog.info(f'stopping main loop due to kill')
+				break
+
+			comm.recvSensor()
+			refreshUI()
+			if ui.eventkey:
+				key = respondToKeyboard()
+
+			if photo.hasNewPhoto():
+				jlog.debug(f'has photo')
+				if throttle.isPaused():
+					throttle.unpause()
+				pilot()	
+
+			elif photo.isPhotoLate():
+				throttle.pause()
+
+	except KeyboardInterrupt:
+		jlog.error('never happen')
+
+	finally:
+		kill('finally')
+		if comm.serial_port and comm.serial_port.isOpen():
+			throttle.set(0)
+			helm.set(0)
+			comm.serial_port.close()
+	jlog.info(f'main exit')
 
