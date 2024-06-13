@@ -13,9 +13,10 @@ def critical(msg): _log(msg, logging.CRITICAL)	# 50
 
 timestart = 0.0
 unit = 'setup'
+logger = None
 
 def _log(msg, level):
-	st = f'{time.time() - timestart:.5f} {unit} {level}: {msg}'
+	st = f'{time.time() - timestart:.5f} {level} {unit}: {msg}'
 	logger.log(level, st)	
 
 def setup(component, verbose, quiet):
@@ -27,9 +28,27 @@ def setup(component, verbose, quiet):
 
 	timestart = time.time()
 	unit = component
-	logging.basicConfig(format='%(message)s') # msg only, on prepends
-	logger = logging.getLogger('gcs')  # using our own logger, so we don't see debug messages from imported libraries
-	logger.setLevel(level)
+
+	#logging.basicConfig(format='%(message)s') # msg only, on prepends
+	#logger = logging.getLogger('gcs')  # using our own logger, so we don't see debug messages from imported libraries
+	#logger.setLevel(level)
+
+	if not logger:
+		logger = logging.getLogger(__name__)
+		logger.setLevel(level)
+		formatter = logging.Formatter('%(message)s') # msg only, no prepends
+	
+		dirname = '.'
+		fname = f'{dirname}/{time.strftime("%Y%m%d-%H%M%S")}.log'
+		fh = logging.FileHandler(fname, mode='w', encoding='utf-8')
+		fh.setLevel(level)
+		fh.setFormatter(formatter)
+		logger.addHandler(fh)
+	
+		ch = logging.StreamHandler()
+		ch.setLevel(level)
+		ch.setFormatter(formatter)
+		logger.addHandler(ch)
 
 # ---- test ---------------------
 

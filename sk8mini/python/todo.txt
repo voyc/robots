@@ -1,0 +1,105 @@
+
+x keep multiple logs, named same as awacs photo dir
+x linesegs use tighter turning radius than arcs
+x starting out with list to port, bias 19 too high -	added bias to args
+x route plan, make sure the northmost cone is slightly to the west
+x skate does not reposition itself after calibration
+x skateline does not redraw
+
+skateline redraw
+	only two red dots
+	starts out ok but then takes off at wrong angle and length stretching
+	length of skate, stretching and shrinking
+
+copy.deepcopy()  heading vs ahrs.heading: is heading a copy?
+ahrs changing rapidly, 
+heading and roll changing more slowly
+UI changing even more slowly
+
+	
+route - two arcs are drawn around each cone
+
+
+arc next leg
+	"to" is too far east, meaning turning radius bigger than actual
+	maybe try measuring theta rather than point
+
+
+git commit
+run without nosave
+	capture photos in tight circle around a mark
+	measure turning radius, cone diameter, skate center to donut edge
+replace global heading and roll
+rename AHRS to Sensor (IMU, AHRS, BRO055, etc)
+rename gmem to smem
+remove heading and roll from smem
+integrate jlog and caplog
+measure time diff between onSensor and onPhoto
+
+future option: add deadReckoning on change in heading or roll, between onSensor and onPhoto
+no.  skip deadReckoning and instead go to to awacs direct comm of donut to skate
+
+onPhoto()
+	donut x,y, t
+	donutpos
+	cbasepos
+	timestarthttp
+	timereceivedbyskate
+
+onSensor()
+	heading, roll, t
+
+caplog
+	source - onPhoto, onAHRS
+	position	
+	heading
+	roll
+	speed - can be calculated from helm and roll, or from newpos vs prevpos line vs arc 
+	timestamp
+	revised_position
+
+Photo
+	donut
+	position - calculated from donut, heading, roll
+	heading - copied from sensor log at matching timestamp
+	roll - copied from log at matching timestamp
+	speed - copied from log at matching timestamp
+	timestamp - photo received from awacs
+	timehttp - time http request sent
+
+Sensor
+	heading - including declination
+	roll
+	timestamp - signal received from BRO055
+
+options before go, after go
+	turn autopilot off
+	use left and right arrows to move helm
+	display helm, roll
+
+-------------------------------
+vote
+
+New questionnew answer Edit questionDelete questionApprove questionFlaggingPeer review of each questionAI to match duplicate questions and answers
+
+List of props
+new...  (new question)
+
+List of Choices
+Other...  (new answer)
+
+operations:
+	Edit question
+	Delete question
+	Approve question
+	Flagging
+	Peer review of each question
+	AI to match duplicate questions and answers
+
+Should the USA provoke Russia into a nuclear war?
+
+How much money should the US government borrow everyday to give to Zelensky for Ukraine military operations?
+ditto Netanyahu for Israeli military operations?
+ditto Sudan, Yemen, Syria, Libya, Jordan, Saudi Arabia
+
+

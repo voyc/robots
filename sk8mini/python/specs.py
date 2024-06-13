@@ -15,18 +15,14 @@ helm_length	=  5.4	# cm (distance between donut center and arm pivot)
 helm_offset	= 11.0	# cm (distance of arm pivot astern of deck center)
 helm_bias	= -19.0 # degrees (value required for straight-line travel)
 
-def applyHelmBias(helm): return max(-90, helm + helm_bias)
-
 # tightest turn, at max_roll: 
 inner_wheelbase	=  8.0	# cm
 outer_wheelbase	= 17.5	# cm
-turning_radius	= 23.0	# cm
+turning_radius	= 20.0  # 23.0	# cm
 turning_circum	=144.5	# cm (radius * 2pi) 
 axle_angle	= 10.0	# degrees 
 deck_angle	= 19.0	# degrees
 ycenter_offset	=  1.5	# cm (deck - wheelbase)
-
-
 
 # arena cm measured in advance, fed to gcs via cli-args
 wArenaCm = 272.7	# cm (600 / pxPerCm) 
@@ -49,15 +45,16 @@ cmPerPx = .44
 
 # shared memory uses awacs coordinate system
 
-def awacs2gcs(pt):
-	return [pt[0], 600-pt[1]]
+#def awacs2gcs(pt):
+#	return [pt[0], 600-pt[1]]
 
 def awacs2skate(pt):
 	#return [(pt[0] - 300) * cmPerPx, (0-pt[1] - 300) * cmPerPx]
 	return [(pt[0] - 300) * cmPerPx, (600-pt[1] - 300) * cmPerPx]
 
-def skate2gcs(pt):
-	return [int(pt[0] * pxPerCm + 300), int(pt[1] * pxPerCm + 300)]
+#def skate2gcs(pt):
+#	return pt  
+#	# [int(pt[0] * pxPerCm + 300), int(pt[1] * pxPerCm + 300)]
 
 # throttle and speed
 
@@ -76,3 +73,22 @@ def speedFromThrottle(throttle):
 	if throttle == 3:
 		speed = 2.25
 	return speed
+
+# sim arena data
+vcones = {
+'iron-cross': [
+	[0,+100], # top
+	[0,-100], # bottom
+	[-100,0], # left
+	[+100,0], # right
+	[0,0]     # center
+],
+'square': [
+	[-100,+100], # NW
+	[+100,+100], # NE
+	[+100,-100], # SE
+	[-100,-100], # SW
+	[0,0]	     # Center
+],
+}
+

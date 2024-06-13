@@ -70,10 +70,9 @@ import requests
 import numpy as np
 import os
 import sys
-import nmcli
 import argparse
 import math
-import traceback
+import nmcli
 
 import jlog
 from smem import *
@@ -100,6 +99,8 @@ def setupArgParser(parser):
 
 # the following globals are set during startup BEFORE the process starts
 args = None   # command-line arguments
+
+netIsUp = False
 
 # camera settings
 cameraSettleTime = .3
@@ -169,22 +170,17 @@ def geoReference(photo):
 	return cv2.rotate(photo, cv2.ROTATE_180)
 
 def savePhoto(image, timestamp):
+	global imgext
 	if not args.nosave:
 		stime = f'{timestamp:.2f}'.replace('.','_')
 		fname = f'{dirname}/{stime}.{imgext}'
 		cv2.imwrite(fname, image)
 		jlog.debug(f'saved {fname}')
 
-def netup(ssid, pw):
-	try:
-		jlog.info('connect wifi')
-		nmcli.disable_use_sudo()
-		nmcli.device.wifi_connect(ssid, pw)
-		nmcli.device.wifi_rescan()
-		nmcli.device.wifi_connect(ssid, pw)
-		jlog.info('wifi connected')
-	except Exception as ex:
-		raise Exception(f'nmcli connection to {ssid} failed: {ex}')
+def netUp(ssid, pw):
+	nmcli.disable_use_sudo()
+	nmcli.device.wifi_connect(ssid, pw)
+	jlog.info('wifi connected')
 
 def isNetUp( ssid):
 	a = nmcli.device.wifi()
@@ -193,13 +189,12 @@ def isNetUp( ssid):
 			return True
 	return False
 
-def netdown(ssid):
+def netDown(ssid):
 	try:
 		if isNetUp(ssid):
 			nmcli.connection.down(ssid)
-	except Exception as ex:
-		jlog.error(f'{ssid} disconnect failed: {ex}')
-		raise Exception('nmcli disconnect failed')
+	except Exception:
+		pass
 
 def setupCamera():
 	try:
@@ -320,7 +315,7 @@ def processAerialPhoto():
 	savePhoto(photo, photo_timestamp)
 
 def awacs_main(timestamp, positions):
-	global args, gmem_timestamp, gmem_positions, donutkernel, dirname
+	global args, gmem_timestamp, gmem_positions, donutkernel, dirname, imgext
 	gmem_timestamp = timestamp
 	gmem_positions = positions	
 
@@ -333,7 +328,12 @@ def awacs_main(timestamp, positions):
 		# setup
 		jlog.info(f'starting process id: {os.getpid()}, cameraSettleTime:{cameraSettleTime}')
 
-		netup(args.ssid, args.sspw)
+		try:
+			netUp(args.ssid, args.sspw)
+		except Exception as ex:
+			jlog.info(f'nmcli connection to {args.ssid} failed: {ex}')
+			return
+
 		setupCamera()
 		donutkernel = prepDonutKernel(args.kernel)
 		if not args.nosave:
@@ -342,41 +342,21 @@ def awacs_main(timestamp, positions):
 			dirname = f'{dirname}/{time.strftime("%Y%m%d-%H%M%S")}'
 			os.mkdir(dirname)
 
-		# get first frame
-		processAerialPhoto()
-
-		# wait here until everybody ready
-		jlog.info('ready')
-		gmem_timestamp[TIME_AWACS_READY] = time.time()
-		while not gmem_timestamp[TIME_READY]:
-			if gmem_timestamp[TIME_KILLED]:
-				raise Exception('killed before ready')
-			time.sleep(.1)
-
 		# main loop
 		while True:
 			if gmem_timestamp[TIME_KILLED]:
 				jlog.info(f'stopping main loop due to kill')
 				break
 			processAerialPhoto()
-			jlog.info(f'loop, donut:[{gmem_positions[DONUT_X]},{gmem_positions[DONUT_Y]}')
+			jlog.info(f'found donut:[{gmem_positions[DONUT_X]},{gmem_positions[DONUT_Y]}], camera:{photo_timestamp}')
 
 		jlog.debug('fall out of main loop')
 
 	except KeyboardInterrupt:
 		jlog.error('never happen')
 		
-	except Exception as ex:
-		exc_type, exc_obj, exc_tb = sys.exc_info()
-		fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
-		jlog.error(f'exception: {ex}, {exc_type}, {fname}, {exc_tb.tb_lineno}')
-		if args.verbose:
-			jlog.error(traceback.format_exc())
-		kill('exception')
-
-	try:
-		netdown(ssid)
-	except:
-		pass
+	finally:
+		kill('finally')
+		netDown(args.ssid)
 	jlog.info(f'main exit')
 
