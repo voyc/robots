@@ -87,7 +87,7 @@ def setupArgParser(parser):
 	parser.add_argument('--camurl'  ,default='http://192.168.4.1'  ,help='URL of camera webserver, alt http://192.168.1.102')
 
 	# disk filenames
-	parser.add_argument('--imgdir'  ,default='/home/john/media/webapps/sk8mini/awacs/photos' ,help='folder for saving images')
+	#parser.add_argument('--imgdir'  ,default='/home/john/media/webapps/sk8mini/awacs/photos' ,help='folder for saving images')
 	parser.add_argument('--kernel'  ,default='/home/john/media/webapps/sk8mini/awacs/photos/crop/donutfilter.jpg' ,help='fname of donutkernel')
 
 	# camera settings
@@ -125,7 +125,6 @@ b = y+h
 # the following globals are used only within awacs_process
 photo_timestamp = 0.0
 donutkernel = None
-dirname = ''
 
 def kill(msg):
 	jlog.info(f'kill: {msg}')
@@ -173,7 +172,7 @@ def savePhoto(image, timestamp):
 	global imgext
 	if not args.nosave:
 		stime = f'{timestamp:.2f}'.replace('.','_')
-		fname = f'{dirname}/{stime}.{imgext}'
+		fname = f'{args.mediaout}/{stime}.{imgext}'
 		cv2.imwrite(fname, image)
 		jlog.debug(f'saved {fname}')
 
@@ -315,12 +314,12 @@ def processAerialPhoto():
 	savePhoto(photo, photo_timestamp)
 
 def awacs_main(timestamp, positions):
-	global args, smem_timestamp, smem_positions, donutkernel, dirname, imgext
+	global args, smem_timestamp, smem_positions, donutkernel, imgext
 	smem_timestamp = timestamp
 	smem_positions = positions	
 
 	try: 
-		jlog.setup('awacs', args.verbose, args.quiet)
+		jlog.setup('awacs', args.verbose, args.quiet, args.mediaout)
 
 		# ignore the KeyboardInterrupt in this subprocess
 		signal.signal(signal.SIGINT, signal.SIG_IGN)
@@ -336,11 +335,6 @@ def awacs_main(timestamp, positions):
 
 		setupCamera()
 		donutkernel = prepDonutKernel(args.kernel)
-		if not args.nosave:
-			imgext = imgext.lstrip('.')  # no leading dot
-			dirname = args.imgdir.rstrip('/')  # no trailing slash
-			dirname = f'{dirname}/{time.strftime("%Y%m%d-%H%M%S")}'
-			os.mkdir(dirname)
 
 		# main loop
 		while True:

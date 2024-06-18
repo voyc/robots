@@ -5,26 +5,6 @@ x starting out with list to port, bias 19 too high -	added bias to args
 x route plan, make sure the northmost cone is slightly to the west
 x skate does not reposition itself after calibration
 x skateline does not redraw
-
-skateline redraw
-	only two red dots
-	starts out ok but then takes off at wrong angle and length stretching
-	length of skate, stretching and shrinking
-
-copy.deepcopy()  heading vs ahrs.heading: is heading a copy?
-ahrs changing rapidly, 
-heading and roll changing more slowly
-UI changing even more slowly
-
-	
-route - two arcs are drawn around each cone
-
-
-arc next leg
-	"to" is too far east, meaning turning radius bigger than actual
-	maybe try measuring theta rather than point
-
-
 x git commit
 x run without nosave
 x 	capture photos in tight circle around a mark
@@ -38,14 +18,58 @@ x replace global heading and roll
 x rename AHRS to Sensor (IMU, AHRS, BRO055, etc)
 x rename gmem to smem
 x remove heading and roll from smem
-integrate jlog and caplog
+x integrate jlog and caplog
+x bug: skate correct, UI skateline wrong
+x normalize anles to 0:360 by taking the input value mod 360.
+
+cannot handle ccw loop
+
+
+streamline info log
+save video
+find latest media output folder
+
+draw proper skate
+wheelbase       = 13.0  # cm
+wheeltrack      = 16.5  # cm
+wheel_width     =  2.6  # cm
+deck_width      = 10.0  # cm
+deck_length     = 28.0  # cm
+
+
+
 measure time diff between onSensor and onPhoto
 
-bug: skate correct, UI skateline wrong
-does not meet onMark() for exit of leg2, the arc
+in UI, when entering arc leg, skateline jumps closer to the cone
 
-future option: add deadReckoning on change in heading or roll, between onSensor and onPhoto
-no.  skip deadReckoning and instead go to to awacs direct comm of donut to skate
+does not meet onMark() for exit of leg2, the arc
+	use theta
+	
+ccw rounding a mark jerks back and forth between -90 and +90
+
+Timing
+	AWACS .3 sec, is limiting factor camera or http?
+	Skate 
+		Get photo, donut and cones. Timing controlled by AWACS loop: .3 secs
+		Get sensor, read settle time? Is it conflicting with send command?
+	Navigation 
+		1st leg
+		Last leg
+		Cones changed plotRoute
+		Navigator
+			Get cones from photo
+			On change, re-plotRoute
+			Keep sides and rdirs, unless route becomes impossible
+	Pilot
+		Stay on course controlled by getPhoto
+	UI
+		Fps 20, wasted because no changes to see except when photo changes
+
+
+
+
+
+future option: add deadReckoning on change in heading or roll, between onSensor and onPhoto.  NO.  skip deadReckoning and instead go to to awacs direct comm of donut to skate
 
 onPhoto()
 	donut x,y, t
@@ -116,5 +140,18 @@ Should the USA provoke Russia into a nuclear war?
 How much money should the US government borrow everyday to give to Zelensky for Ukraine military operations?
 ditto Netanyahu for Israeli military operations?
 ditto Sudan, Yemen, Syria, Libya, Jordan, Saudi Arabia
+
+---------------------------
+
+Same owner
+	Maggie May
+	Camel toe
+	Club fate 
+
+Soi 5 pratumniak
+	Cat flaps
+
+Third Road
+	Kings club
 
 

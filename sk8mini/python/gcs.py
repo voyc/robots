@@ -78,7 +78,7 @@ def getArgs(): # get command-line arguments
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--verbose'  ,action='store_true'  ,help='verbose comments'                 ) 
 	parser.add_argument('--quiet'    ,action='store_true'  ,help='suppress all output'              )
-	parser.add_argument('--process'  ,default='both'       ,help='process: both,skate,awacs,none'   )
+	parser.add_argument('--mediaout' ,default='/home/john/media/webapps/sk8mini/awacs/photos' ,help='folder out for images, log')
 
 	awacs.setupArgParser(parser)
 	skate.setupArgParser(parser)
@@ -86,12 +86,14 @@ def getArgs(): # get command-line arguments
 	awacs.args = args
 	skate.args = args
 
+	args.mediaout = f'{args.mediaout}/{time.strftime("%Y%m%d-%H%M%S")}'
+	os.mkdir(args.mediaout)
 
 def main():
 	global smem_timestamp, smem_positions, awacs_process, skate_process
 	try:
 		getArgs()
-		jlog.setup('gcs  ', args.verbose, args.quiet)
+		jlog.setup('gcs  ', args.verbose, args.quiet, args.mediaout)
 		jlog.info(f'starting process id: {os.getpid()}, {time.strftime("%Y%m%d-%H%M%S")}')
 
 		smem_timestamp = multiprocessing.Array('d', TIME_ARRAY_SIZE) # initialized with zeros

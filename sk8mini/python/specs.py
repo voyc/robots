@@ -9,10 +9,12 @@ for turning radius see:o
 # dimensions and measurements:
 wheel_diameter	=  5.4	# cm
 wheel_circum	= 17.0  # cm (diameter * pi)
+wheel_width	=  2.6  # cm
 wheelbase 	= 13.0	# cm
 wheeltrack	= 16.5	# cm
 max_roll	= 19.0	# degrees (deck angle)
 
+overall_width	= 19.1	# cm (wheeltrack + 1 wheel width)
 deck_width	= 10.0	# cm
 deck_length	= 28.0	# cm
 helm_length	=  5.4	# cm (distance between donut center and arm pivot)
@@ -99,4 +101,59 @@ vcones = {
 	[0,0]	     # Center
 ],
 }
+
+
+skateSpriteData = [
+	[ 0,11],
+	[ 6,11],
+	[ 6,16],
+	[10,16],
+
+	#[10, 0],
+	[10, 5],
+	[15, 0],
+
+	#[33, 0],
+	[28, 0],
+	[33, 5],
+
+	[33,16],
+	[37,16],
+	[37,11],
+	[42,11],
+	[42,23],
+	[37,23],
+	[37,18],
+	[33,18],
+	[33,46],
+	[37,46],
+	[37,41],
+	[42,41],
+	[42,53],
+	[36,53],
+	[36,48],
+	[33,48],
+	[33,63],
+	[10,63],
+	[10,48],
+	[ 6,48],
+	[ 6,53],
+	[ 0,53],
+	[ 0,41],
+	[ 6,41],
+	[ 6,46],
+	[10,46],
+	[10,18],
+	[ 6,18],
+	[ 6,23],
+	[ 0,23],
+	[ 0,11]
+]
+
+skateSpriteDim = [43,64]
+skateSprite = []
+
+for pt in skateSpriteData:
+	skateSprite.append([pt[0]-21, (64-pt[1])-32])
+
 

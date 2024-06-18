@@ -3,8 +3,29 @@
 trigonometry for navigation
 
 for documentation:
-    see https://github.com/voyc/robots/wiki/Navigation-Trigonometry
+    see https://curriculum.voyc.com/doku.php?id=projects:robots:navigation_trigonometry
     run the unit test program: testnav.py
+
+polar coordinates
+unit circle
+rdir = rotational direction, 'cw' or 'ccw'
+theta = angle measured ccw from horizontal line center to the right
+quadrant = I,II,III,IV, theta 0-90, 90-180, etc
+
+normal degrees 0 to 360 ccw
+negative degrees, 0 to -360, can be measured cw
+
+after a calculation, degrees might be <0 or >360
+to normalize, mod 360
+mod is the remainder of a division
+ -43 % 360 = 317
+-436 % 360 = 284
+ -90 % 360 = 270
+  90 % 360 =  90
+ 280 % 360 = 280
+ 370 % 360 =  10
+-370 % 360 = 350
+
 '''
 
 import numpy as np
@@ -59,18 +80,15 @@ def thetaFromAngle(angle, dx, dy):
 	else: raise Exception(f'error, values not possible, in thetaFromAngle, q={q}, dx={dx}, dy={dy}')
 	return theta
 
-def headingFromTheta(theta):
-	degr = math.degrees(theta)
-	degr = 90 - degr
-	if degr < 0:
-		degr = 360 + degr
-	heading = degr
+def headingFromTheta(theta):  
+	# input theta is in radians, with 0 to the right, measured ccw
+	# output heading is in degrees, with 0 straight up, measured cw
+	degr = math.degrees(theta)  # radians to degrees
+	heading = (90 - degr) % 360 # 0-east to 0-north
 	return heading 
 
 def thetaFromHeading(heading):
-	degr = 360 + 90 - heading
-	if degr >= 360:
-		degr -= 360
+	degr = (360 + 90 - heading) % 360
 	theta = math.radians(degr)
 	return theta
 
@@ -139,9 +157,7 @@ def linePerpendicular(A,B,r):
 	# calculate a line segment LR perpendicular to AB
 	# see https://stackoverflow.com/questions/57065080/draw-perpendicular-line-of-fixed-length-at-a-point-of-another-line
 	headAB = headingOfLine(A,B)
-	headLR = headAB - 90
-	if headLR < 0:
-		headLR += 360
+	headLR = (headAB - 90) % 360
 	L,R = lineFromHeading(B, headLR, 2*r)
 	return L,R
 

@@ -275,7 +275,7 @@ def getCones():
 		cone = specs.awacs2skate(pt)
 		cones.append(cone)
 		pos += 2
-	return list(reversed(cones))
+	return list(sorted(cones))
 
 def configArena():
 	arena.cones = photo.cones
@@ -288,8 +288,8 @@ def configArena():
 
 	# route: plan, calc, plot
 	order, sides = planRoute(arena.cones)
-	order = [0,1]
-	sides = ['cw', 'cw']
+	#order = [0,1]
+	#sides = ['cw', 'cw']
 	jlog.debug(f'order: {order}, sides: {sides}')
 
 	arena.plan = calcPlan(arena.cones, order, sides)
@@ -366,6 +366,8 @@ def plotRoute(plan):
 			'shape': 'line',
 			'from': prevexit,
 			'to': cone['entry'],
+			'center': cone['center'],
+			'rdir': cone['rdir'],
 		})
 	
 		route.append({
@@ -400,18 +402,35 @@ def nextLeg():
 	if arena.leg['shape'] == 'arc':
 		if arena.leg['rdir'] == 'cw':
 			helm.set( +90)
-		elif ['rdir'] == 'ccw':
+		elif arena.leg['rdir'] == 'ccw':
 			helm.set( -90)
 	elif arena.leg['shape'] == 'line':
 		helm.set( 0)
 
-def isOnMark(point1, point2):
-	n = nav.lengthOfLine(point1, point2)
-	return n < 3
+def isOnMark(cbase, leg):
+	if leg['shape'] == 'line':
+		if nav.lengthOfLine(cbase, leg['to']) < 3:
+			jlog.info(f'on mark {arena.routendx}, on point')
+			return True 
+	
+	elif leg['shape'] == 'arc':
+		tbase,_ = nav.thetaFromPoint(cbase, leg['center'])
+		tmark,_ = nav.thetaFromPoint(leg['to'], leg['center'])
+		fmark,_ = nav.thetaFromPoint(leg['from'], leg['center'])
+		tot = (tmark - fmark) % 360
 
-# pid control of steering
-# see https://docs.google.com/spreadsheets/d/1oKY4mz-0K-BwVNZ7Tu-k9PsOq_LeORR270-ICXyz-Rw/edit#gid=0
-def helmpid(err):
+		if leg['rdir'] == 'ccw':
+			sofar = (tbase - fmark) % 360
+		elif leg['rdir'] == 'cw':
+			sofar = (tmark - tbase) % 360
+
+		if sofar > tot:
+			jlog.info(f'on mark {arena.routendx}, arc past distance')
+			return True
+	return False
+
+def helmpid(err): # pid control of steering
+	# see https://docs.google.com/spreadsheets/d/1oKY4mz-0K-BwVNZ7Tu-k9PsOq_LeORR270-ICXyz-Rw/edit#gid=0
 	jlog.debug('helm pid')
 	Kp = 2
 	adj = Kp * err
@@ -421,6 +440,7 @@ def helmpid(err):
 def caplog():
 	s = f'{photo.cbase}\t{photo.t}\t{helm.helm}\t{throttle.throttle}\t{sensor.heading}\t{sensor.roll}'
 	captains_log.append(s)
+	jlog.info(s)
 
 def readLogByDate(ts):
 	ndx = len(captains_log) - 1
@@ -453,11 +473,12 @@ def pilot():
 		return
 
 	# on rounding mark
-	if isOnMark(photo.cbase, arena.leg['to']):
-		if arena.routendx >= len(arena.route):  # journey's end
-			throttle.set(throttle.ZERO)
+	if isOnMark(photo.cbase, arena.leg):
+		if arena.routendx >= len(arena.route) - 1:  # journey's end
+			throttle.set(throttle.STOP)
 			helm.set(0)
-			return False
+			kill('route completed')
+			return
 		else:
 			nextLeg()
 
@@ -497,8 +518,7 @@ class UI:
 	fps = 0
 	delay = 0
 	PAUSE = .001
-	fname = 'arena_%timestamp%.png'
-
+	fname = ''
 
 def onpress(event):
 	ui.eventkey = event.key
@@ -506,6 +526,7 @@ def onpress(event):
 def startUI():
 	ui.fps = 20
 	ui.delay = 1/ui.fps  # .05
+	ui.fname = f'{args.mediaout}/arena_%timestamp%.png'
 
 	# setup artists
 	ui.fig, ui.ax = plt.subplots()
@@ -527,40 +548,58 @@ def startUI():
 		
 	# legs
 	for leg in arena.route:
+
 		if leg['shape'] == 'line':
 			A = (leg['from'])
 			B = (leg['to'])
 			xd,yd = np.transpose([A,B]); 
-			linesegs = plt.plot(xd,yd, color='black', lw=1) # returns list of line2D objects
+			linesegs = plt.plot(xd,yd, color='blue', lw=1) # returns list of line2D objects
 			ui.legs.append(linesegs[0])
+
 		elif leg['shape'] == 'arc':
+			# in matplotlib, Arc subclasses Ellipse
+			# define Ellipse as center, width, height, angle:
+			C = (leg['center'])       # center x,y
+			r = specs.turning_radius  # width and height, both r, angle=0
+
+			# add two points to define the Arc along the ellipse
 			A = (leg['from'])
 			B = (leg['to'])
-			C = (leg['center'])
 			tA,_ = nav.thetaFromPoint(A, C)
 			tB,_ = nav.thetaFromPoint(B, C)
 			rdir = leg['rdir']
-			r = 23
+
+			# in matplotlib, the Arc must be drawn ccw
+			# in a skateRouteLeg, the arc can be traversed either cw or ccw
+			# ergo, when drawing, we draw a cw arc backwards
 			t1 = tA
 			t2 = tB
 			if rdir == 'cw': 
-				t1 = tB
+				t1 = tB # reverse
 				t2 = tA
-				if t1 == t2:
+				if t1 == t2: # ? avoid full circle ?
 					t2 -= .001
-			arc = matplotlib.patches.Arc(C, r*2, r*2, 0, math.degrees(t1), math.degrees(t2), color='black')
+
+			arc = matplotlib.patches.Arc(C, r*2, r*2, 0, math.degrees(t1), math.degrees(t2), color='blue')
+
 			ui.ax.add_patch(arc)
 			ui.legs.append(arc)
+
 		ui.routeChanged = True
 
 	# skate
 	ui.skateline = ui.ax.scatter([0,0,0,0,0],[0,0,0,0,0], c=['r','r','r','r','b'])
+	ui.sprite = matplotlib.patches.Polygon(specs.skateSprite, color='black')
+	ui.ax.add_patch(ui.sprite)
 	ui.cbaseChanged = True
 
 def refreshUI():
 	jlog.debug(f'refresuUI, {time.time()}, {ui.t}')
-	if time.time() - ui.t >= ui.delay:
+	if time.time() - ui.t >= ui.delay:  # slow down to desired fps
 		jlog.debug(f'inside refresuUI, {ui.conesChanged}, {ui.routeChanged}, {ui.cbaseChanged}')
+
+		# first, adjust the data that defines the shape
+		# second, call plt.pause() which does the drawing
 		if ui.conesChanged:
 			i = 0
 			for i in range(len(ui.cones)):
@@ -570,6 +609,7 @@ def refreshUI():
 			ui.conesChanged = False
 	
 		if ui.routeChanged:
+			# for a line, change the two end points
 			for i in range(len(arena.route)):
 				leg = arena.route[i]
 				if leg['shape'] == 'line':
@@ -577,30 +617,40 @@ def refreshUI():
 					B = (leg['to'])
 					xd,yd = np.transpose([A,B]); 
 					ui.legs[i].set_data(xd,yd)
+
+			# for an arc, change center and two thetas
 			for leg in arena.route:
 				if leg['shape'] == 'arc':
-					A = (leg['from'])
-					B = (leg['to'])
 					C = (leg['center'])
+
+					if leg['rdir'] == 'ccw':
+						A = (leg['from'])
+						B = (leg['to'])
+					else:
+						B = (leg['from'])
+						A = (leg['to'])
+
 					tA,_ = nav.thetaFromPoint(A, C)
 					tB,_ = nav.thetaFromPoint(B, C)
-					rdir = leg['rdir']
-					r = specs.turning_radius
-					nav.drawArc(tA ,tB, rdir, C, r)
+
+					ui.legs[i].center = C
+					ui.legs[i].theta1 = tA
+					ui.legs[i].theta2 = tB
+
 			ui.routeChanged = False
 	
 		if ui.cbaseChanged:
 			#bow,stern = nav.lineFromHeading(cbase, heading, specs.deck_length/2)
 			bow,stern = nav.lineFromHeading(photo.cbase, sensor.heading, specs.deck_length)
 			diff = (bow - stern) / 5  # add 4 dots between bow and stern
-			jlog.debug(f'diff: {diff}')
-			diff = (np.array(bow) - np.array(stern)) / 5  # add 4 dots between bow and stern
-			jlog.debug(f'diff: {diff}')
-			points = [0,0,0,0,0]
-			for i in range(5): points[i] = stern + (diff * i)
-			jlog.debug(f'set_offsets: {points}')
-			points = np.transpose(points); 
+			points = [[0,0],[0,0],[0,0],[0,0],[0,0]]
+			for i in range(5): points[i] = stern + (np.array(diff) * i)
+			#points = np.transpose(points); 
 			ui.skateline.set_offsets(points)
+			r = matplotlib.transforms.Affine2D().rotate_deg(360-sensor.heading)
+			t = matplotlib.transforms.Affine2D().translate(photo.cbase[0], photo.cbase[1])
+			tra = r + t + ui.ax.transData
+			ui.sprite.set_transform(tra)
 			ui.cbaseChanged = False
 
 		ui.t = time.time()
@@ -620,6 +670,10 @@ def respondToKeyboard():
 
 	elif key == 'c':
 		ts = time.strftime("%Y%m%d-%H%M%S")
+
+		stime = f'{timestamp:.2f}'.replace('.','_')
+		fname = f'{dirname}/{stime}.{imgext}'
+
 		ui.fig.savefig(fname.replace('%timestamp%', ts))
 		jlog.info(f'UI: screen capture {ts}')
 
@@ -662,7 +716,7 @@ def isKilled():
 def skate_main(timestamp, positions):
 	global gmem_timestamp, gmem_positions
 	try:
-		jlog.setup('skate', args.verbose, args.quiet)
+		jlog.setup('skate', args.verbose, args.quiet, args.mediaout)
 		jlog.info(f'starting process id: {os.getpid()}')
 		gmem_timestamp = timestamp
 		gmem_positions = positions
@@ -724,9 +778,6 @@ def skate_main(timestamp, positions):
 				break
 
 			comm.recvSensor()
-			refreshUI()
-			if ui.eventkey:
-				key = respondToKeyboard()
 
 			if photo.hasNewPhoto():
 				jlog.debug(f'has photo')
@@ -736,6 +787,10 @@ def skate_main(timestamp, positions):
 
 			elif photo.isPhotoLate():
 				throttle.pause()
+
+			refreshUI()
+			if ui.eventkey:
+				key = respondToKeyboard()
 
 	except KeyboardInterrupt:
 		jlog.error('never happen')

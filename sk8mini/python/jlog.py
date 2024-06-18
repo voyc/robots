@@ -19,7 +19,7 @@ def _log(msg, level):
 	st = f'{time.time() - timestart:.5f} {level} {unit}: {msg}'
 	logger.log(level, st)	
 
-def setup(component, verbose, quiet):
+def setup(component, verbose, quiet, dirname='.'):
 	global timestart, logger, unit
 
 	if quiet:	level = logging.ERROR #CRITICAL
@@ -38,8 +38,7 @@ def setup(component, verbose, quiet):
 		logger.setLevel(level)
 		formatter = logging.Formatter('%(message)s') # msg only, no prepends
 	
-		dirname = '.'
-		fname = f'{dirname}/{time.strftime("%Y%m%d-%H%M%S")}.log'
+		fname = f'{dirname}/0_{time.strftime("%Y%m%d-%H%M%S")}.log'
 		fh = logging.FileHandler(fname, mode='w', encoding='utf-8')
 		fh.setLevel(level)
 		fh.setFormatter(formatter)
