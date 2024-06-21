@@ -155,7 +155,7 @@ def capturePhoto():
 		if len(image) <= 0:
 			raise Exception('{start} image returned empty')
 	except Exception as ex:
-		jlog.error(f'capture photo {start} error {ex}')
+		jlog.error(f'capture photo error {ex}')
 		raise
 
 	jlog.debug(f'photo captured {start}')
@@ -171,7 +171,7 @@ def geoReference(photo):
 def savePhoto(image, timestamp):
 	global imgext
 	if not args.nosave:
-		stime = f'{timestamp:.2f}'.replace('.','_')
+		stime = f'{jlog.selapsed()}'.replace('.','_')
 		fname = f'{args.mediaout}/{stime}.{imgext}'
 		cv2.imwrite(fname, image)
 		jlog.debug(f'saved {fname}')

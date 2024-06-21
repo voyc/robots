@@ -80,7 +80,7 @@ import argparse
 import traceback
 import random
 import numpy as np
-import matplotlib
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import math
 
@@ -103,7 +103,8 @@ def setupArgParser(parser):
 	parser.add_argument('--serialminbytes' ,default=10        ,type=int   ,help='serial minimum bytes before read' )
 	parser.add_argument('--declination'    ,default=-1.11     ,type=float ,help='# from magnetic-declination.com'  )
 	parser.add_argument('--nocal'          ,action='store_true'           ,help='suppress calibration'             )
-	parser.add_argument('--helmbias'       ,default=specs.helm_bias,type=int,help='helm value giving straight line'  )
+	parser.add_argument('--novideo'        ,action='store_true'           ,help='suppress UI screen save'          )
+	parser.add_argument('--helmbias'       ,default=specs.helm_bias,type=int,help='helm value giving straight line')
 
 def setupObjectModel():
 	global  sensor, comm, helm, throttle, photo, arena, ui
@@ -180,6 +181,7 @@ class Arena:
 	route = []
 	routendx = []
 	leg = {}
+	on_mark_distance = 8
 
 class Photo:
 	MAXTIME = 3.0 # seconds
@@ -241,7 +243,7 @@ class Comm:
 		sensor.accel	= int( lst[5])
 		sensor.mag	= int( lst[6])
 		sensor.t	= time.time()
-		jlog.debug(f'lenstr:{len(b)}, lenlst:{len(lst)}, heading:{sensor.heading:.2f}, roll:{sensor.roll}, gyro:{sensor.gyro}, mag:{sensor.mag}')
+		jlog.debug(f'lenstr:{len(b)}, lenlst:{len(lst)}, heading:{sensor.heading:.2f}, roll:{sensor.roll:.2f}, gyro:{sensor.gyro}, mag:{sensor.mag}')
 	
 		# the BRO055 does NOT adjust for magnetic declination, so we do that here
 		adjheading = sensor.heading + args.declination
@@ -253,9 +255,13 @@ class Comm:
 #    navigator
 # ----------------------------------------
 
+def formatPoint(pt):
+	return f'[{pt[0]:.2f}, {pt[1]:.2f}]'
+
 def calcCenterWheelbase(donut):
-	theta = nav.thetaFromHeading( sensor.heading + helm.helm)
+	theta = nav.thetaFromHeading((sensor.heading + helm.helm + 180) % 360)
 	cbase = nav.pointFromTheta( donut, theta, specs.helm_length)
+	jlog.info(f'calcCenterWheelBase {sensor.heading:.2f} {helm.helm:.2f}; {theta:.2f}, {formatPoint(donut)}, {formatPoint(cbase)}')
 	# we should also apply the helm_offset and roll_y_offset
 	return cbase
 
@@ -407,27 +413,34 @@ def nextLeg():
 	elif arena.leg['shape'] == 'line':
 		helm.set( 0)
 
+def normalizeTheta(tfrom, tto, tat, rdir):
+	tcirc = 2*np.pi
+	if rdir == 'ccw':
+		ntat = (tat - tfrom) % tcirc
+		ntto = (tto - tfrom) % tcirc
+	elif rdir == 'cw':
+		ntat = tcirc - ((tat - tfrom) % tcirc)
+		ntto = tcirc - ((tto - tfrom) % tcirc)
+	if ntat > 5.5:
+		ntat = 0.001
+	return ntat, ntto
+
 def isOnMark(cbase, leg):
+	on_mark = False
 	if leg['shape'] == 'line':
-		if nav.lengthOfLine(cbase, leg['to']) < 3:
-			jlog.info(f'on mark {arena.routendx}, on point')
-			return True 
+		err = nav.lengthOfLine(cbase, leg['to'])
+		on_mark = (err < arena.on_mark_distance)
+		jlog.info(f'on mark line {on_mark} {arena.routendx}, {err} {cbase} {leg["to"]}')
 	
 	elif leg['shape'] == 'arc':
+		# here using theta in radians
 		tbase,_ = nav.thetaFromPoint(cbase, leg['center'])
-		tmark,_ = nav.thetaFromPoint(leg['to'], leg['center'])
-		fmark,_ = nav.thetaFromPoint(leg['from'], leg['center'])
-		tot = (tmark - fmark) % 360
-
-		if leg['rdir'] == 'ccw':
-			sofar = (tbase - fmark) % 360
-		elif leg['rdir'] == 'cw':
-			sofar = (tmark - tbase) % 360
-
-		if sofar > tot:
-			jlog.info(f'on mark {arena.routendx}, arc past distance')
-			return True
-	return False
+		tto,_ = nav.thetaFromPoint(leg['to'], leg['center'])
+		tfrom,_ = nav.thetaFromPoint(leg['from'], leg['center'])
+		ntbase,ntto = normalizeTheta(tfrom, tto, tbase, leg['rdir'])
+		on_mark = (ntbase > ntto)
+		jlog.info(f'on mark arc {on_mark} {arena.routendx}, tbase:{tbase} tfrom:{tfrom} tto:{tto} rdir:{leg["rdir"]}')
+	return on_mark
 
 def helmpid(err): # pid control of steering
 	# see https://docs.google.com/spreadsheets/d/1oKY4mz-0K-BwVNZ7Tu-k9PsOq_LeORR270-ICXyz-Rw/edit#gid=0
@@ -437,8 +450,14 @@ def helmpid(err): # pid control of steering
 	adj = max(-90,min(90,adj))
 	return adj
 
+caplogheader = False
 def caplog():
-	s = f'{photo.cbase}\t{photo.t}\t{helm.helm}\t{throttle.throttle}\t{sensor.heading}\t{sensor.roll}'
+	global caplogheader
+	if not caplogheader:
+		s = f'log\tcbase\tt\thelm\tthrottle\theading\troll'
+		jlog.info(s)
+		caplogheader = True
+	s = f'log\t{formatPoint(photo.cbase)}\t{photo.t:.2f}\t{helm.helm:.2f}\t{throttle.throttle:.2f}\t{sensor.heading:.2f}\t{sensor.roll:.2f}'
 	captains_log.append(s)
 	jlog.info(s)
 
@@ -491,11 +510,11 @@ def pilot():
 		if error < -180:
 			error += 360
 		helm_adj = helmpid( error)
-		jlog.info(f'pilot: new_helm:{helm_adj}, err:{error}, bearing:{bearing}, heading:{sensor.heading}')
+		jlog.info(f'pilot: new helm line:{helm_adj}, err:{error}, bearing:{bearing}, heading:{sensor.heading}')
 		helm.set( helm_adj)
 
 	elif arena.leg['shape'] == 'arc':
-		jlog.info(f'pilot: arc, heading:{sensor.heading}, cbase:{photo.cbase}, leg-to:{arena.leg["to"]}')
+		jlog.debug(f'pilot: not helm arc, heading:{sensor.heading}, cbase:{photo.cbase}, leg-to:{arena.leg["to"]}')
 
 	caplog()
 
@@ -529,20 +548,35 @@ def startUI():
 	ui.fname = f'{args.mediaout}/arena_%timestamp%.png'
 
 	# setup artists
-	ui.fig, ui.ax = plt.subplots()
+	ui.fig = plt.figure()
+	ui.ax = ui.fig.add_axes((0,0,1,1))
+
 	plt.xlim(-132,+132)
 	plt.ylim(-132,+132)
+
 	plt.autoscale(False)  # if True it will adapt x,ylim to the data
 	plt.tick_params(left=False, right=False, labelleft=False, labelbottom= False, bottom=False)
 	ui.ax.set_aspect('equal', anchor='C')  # keep fixed aspect ratio on window resize
+
+	plt.tick_params(left=False, right=False, labelleft=False, labelbottom= False, bottom=False)
+	plt.tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False) 
+	plt.tick_params(axis='y', which='both', right=False, left=False, labelleft=False) 
+
+	ui.fig.set_size_inches(6,6)  # savefig with dpi=100, for a 600x600 image to match aerial
+	mpl.rcParams['savefig.dpi'] = 100
+	mpl.rcParams['savefig.pad_inches'] = 0.0
+	mpl.rcParams['savefig.transparent'] = True
+	mpl.rcParams['savefig.bbox'] = 'tight'
+
 	ui.fig.canvas.mpl_connect('key_press_event', onpress) # keypress event handler
 
-	# cones
+	# cones in cone order left to right
 	for pt in arena.cones:
-		circ = plt.Circle(pt, 10, color='y')
+		circ = plt.Circle(pt, specs.cone_diameter/2, color='y')
 		ui.ax.add_artist(circ)
 		ui.cones.append(circ)
-		t = plt.text(pt[0], pt[1], str(len(ui.cones)), fontsize='12', ha='center', va='center', color='black')
+		textnum = str(len(ui.cones)) # left to right
+		t = plt.text(pt[0], pt[1], textnum, fontsize='12', ha='center', va='center', color='black')
 		ui.conetexts.append(t)
 		ui.conesChanged = True
 		
@@ -580,7 +614,7 @@ def startUI():
 				if t1 == t2: # ? avoid full circle ?
 					t2 -= .001
 
-			arc = matplotlib.patches.Arc(C, r*2, r*2, 0, math.degrees(t1), math.degrees(t2), color='blue')
+			arc = mpl.patches.Arc(C, r*2, r*2, 0, math.degrees(t1), math.degrees(t2), color='blue')
 
 			ui.ax.add_patch(arc)
 			ui.legs.append(arc)
@@ -588,9 +622,22 @@ def startUI():
 		ui.routeChanged = True
 
 	# skate
-	ui.skateline = ui.ax.scatter([0,0,0,0,0],[0,0,0,0,0], c=['r','r','r','r','b'])
-	ui.sprite = matplotlib.patches.Polygon(specs.skateSprite, color='black')
+	#ui.skateline = ui.ax.scatter([0,0,0,0,0],[0,0,0,0,0], c=['r','r','r','r','b'])
+
+	# sprite
+	ui.sprite = mpl.patches.Polygon(specs.skateSprite, facecolor='none', edgecolor='black')
 	ui.ax.add_patch(ui.sprite)
+
+	# donut
+	ui.donutouter = plt.Circle(photo.donut, specs.donut_outer_dia/2, facecolor='white', edgecolor='black')
+	ui.donutinner = plt.Circle(photo.donut, specs.donut_inner_dia/2, color='magenta')
+	ui.ax.add_artist(ui.donutouter)
+	ui.ax.add_artist(ui.donutinner)
+
+	# cbase
+	#ui.cbase = plt.Circle(photo.donut, 3, color='black')
+	#ui.ax.add_artist(ui.cbase)
+
 	ui.cbaseChanged = True
 
 def refreshUI():
@@ -640,18 +687,36 @@ def refreshUI():
 			ui.routeChanged = False
 	
 		if ui.cbaseChanged:
+			# skateline
 			#bow,stern = nav.lineFromHeading(cbase, heading, specs.deck_length/2)
-			bow,stern = nav.lineFromHeading(photo.cbase, sensor.heading, specs.deck_length)
-			diff = (bow - stern) / 5  # add 4 dots between bow and stern
-			points = [[0,0],[0,0],[0,0],[0,0],[0,0]]
-			for i in range(5): points[i] = stern + (np.array(diff) * i)
-			#points = np.transpose(points); 
-			ui.skateline.set_offsets(points)
-			r = matplotlib.transforms.Affine2D().rotate_deg(360-sensor.heading)
-			t = matplotlib.transforms.Affine2D().translate(photo.cbase[0], photo.cbase[1])
+	#		bow,stern = nav.lineFromHeading(photo.cbase, sensor.heading, specs.deck_length)
+	#		diff = (bow - stern) / 5  # add 4 dots between bow and stern
+	#		points = [[0,0],[0,0],[0,0],[0,0],[0,0]]
+	#		for i in range(5): points[i] = stern + (np.array(diff) * i)
+	#		#points = np.transpose(points); 
+	#		ui.skateline.set_offsets(points)
+
+			# cbase sprite
+			r = mpl.transforms.Affine2D().rotate_deg(360-sensor.heading)
+			t = mpl.transforms.Affine2D().translate(photo.cbase[0], photo.cbase[1])
 			tra = r + t + ui.ax.transData
 			ui.sprite.set_transform(tra)
+
+			# donut
+			ui.donutinner.center = photo.donut
+			ui.donutouter.center = photo.donut
+
+			# cbase
+	#		ui.cbase.center = photo.cbase
+
 			ui.cbaseChanged = False
+
+			if not args.novideo:
+				timestamp = time.time()
+				stime = f'{jlog.selapsed()}'.replace('.','_')
+				fname = f'{args.mediaout}/{stime}.png'
+				ui.fig.savefig(fname)
+				jlog.debug(f'UI: screen capture {fname}')
 
 		ui.t = time.time()
 

@@ -15,8 +15,11 @@ timestart = 0.0
 unit = 'setup'
 logger = None
 
+def selapsed():
+	return f'{time.time() - timestart:011.5f}'
+
 def _log(msg, level):
-	st = f'{time.time() - timestart:.5f} {level} {unit}: {msg}'
+	st = f'{selapsed()} {level} {unit}: {msg}'
 	logger.log(level, st)	
 
 def setup(component, verbose, quiet, dirname='.'):

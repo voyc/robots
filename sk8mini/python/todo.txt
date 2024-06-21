@@ -1,52 +1,66 @@
 
-x keep multiple logs, named same as awacs photo dir
-x linesegs use tighter turning radius than arcs
-x starting out with list to port, bias 19 too high -	added bias to args
-x route plan, make sure the northmost cone is slightly to the west
-x skate does not reposition itself after calibration
-x skateline does not redraw
-x git commit
-x run without nosave
-x 	capture photos in tight circle around a mark
-x	measure turning radius, cone diameter, skate center to donut edge
-		9227_83: 9238_67
-		x: 392-285=107 px
-		y: 234-126=108 px
-		turning radius = 54px * .44 = 23.76cm
-		center wheel base to donut edge: 318-285=33 px * .44 =  14.5cm 
-x replace global heading and roll
-x rename AHRS to Sensor (IMU, AHRS, BRO055, etc)
-x rename gmem to smem
-x remove heading and roll from smem
-x integrate jlog and caplog
-x bug: skate correct, UI skateline wrong
-x normalize anles to 0:360 by taking the input value mod 360.
 
-cannot handle ccw loop
+listing to starboard
+
+when approaching a cw mark
+	the error to starboard has the boat aimed right at the cone
+	as the error gets greater, so the correction gets greater
+	so now it is aimed away to port
+	then it enters the arc but is too far out to port
+	so it makes a circle to port of the mark, never goes around the mark, never gets to end theta
+
+	in fact,
+	in one test this morning, 
+	it missed the end point of a line,
+	and went about seemingly in a circle around the mark
+	just using the stay-on-course logic of correcting the bearing towards the end point
+
+	now it did it a second time, but went the wrong dirction for the arc
+	so we need some logic that forces it into the correct rdir
+	before going for the endpoint of the arc
+
+	in the same way we use theta for an arc
+	why not use a perpendicular line for a line
+	know when we discover we have crossed the line,
+	then measure how far from the endpoint we are to port or starboard
+
+	the reason it misses the end-of-line point
+	is because it is listed so far to starboard, true?
+
+	comparing bearing to heading
+		the longer the distance to the endpoint
+		the smaller the error, the smaller the correction
+	we need to look at a waypoint at a shorter distance in front of the vehicle
+		to get a larger error and a quicker correction
+
+	ditto for going around marks
+		we need waypoints along the arc, to make him go in the right rdir
+
+when approaching a ccw mark
+	?, same in reverse
+
+replay
+	manual control
+		step forward and back
+		speed up, slow down
+	display log simultaneously
 
 
-streamline info log
-save video
-find latest media output folder
 
-draw proper skate
-wheelbase       = 13.0  # cm
-wheeltrack      = 16.5  # cm
-wheel_width     =  2.6  # cm
-deck_width      = 10.0  # cm
-deck_length     = 28.0  # cm
+possible solutions:
+1 more helm bias: fixed amount or integral
+
+2 keep on course around the arc, 
+	bearing should point straight to the endpoint of the arc
+	error will be great, so helm will be at maximum
+	its only coincidence that the vehicle follows an arc
+
+3 when in a cw arc leg, keep the helm to starboard
+
 
 
 
 measure time diff between onSensor and onPhoto
-
-in UI, when entering arc leg, skateline jumps closer to the cone
-
-does not meet onMark() for exit of leg2, the arc
-	use theta
-	
-ccw rounding a mark jerks back and forth between -90 and +90
-
 Timing
 	AWACS .3 sec, is limiting factor camera or http?
 	Skate 

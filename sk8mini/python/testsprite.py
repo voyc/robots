@@ -98,6 +98,9 @@ def startUI():
 	ui.sprite = matplotlib.patches.Polygon(specs.skateSprite, color='black')
 	ui.ax.add_patch(ui.sprite)
 
+	ui.circ = plt.Circle((0,0), 3, color='y')
+	ui.ax.add_artist(ui.circ)
+
 	#t = matplotlib.transforms.Affine2D().translate(-22,-32)
 	#tra = t + ui.ax.transData
 	#ui.sprite.set_transform(tra)
@@ -126,9 +129,9 @@ def startUI():
 		tra = r + t + ui.ax.transData
 		ui.sprite.set_transform(tra)
 
-		plt.pause(.1)	
-	
+		ui.circ.center = (x,y)	
 
+		plt.pause(.1)	
 
 
 def main():
