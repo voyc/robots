@@ -161,6 +161,11 @@ def linePerpendicular(A,B,r):
 	L,R = lineFromHeading(B, headLR, 2*r)
 	return L,R
 
+#def distancePointFromLine(line,pt):
+#	length = 0
+#	CD = linePerpendicular(A,B,pt)
+#	return length
+
 #---------- functions above this line are in unit test ----------------#
 
 def isPointPastLine(A,B,C):

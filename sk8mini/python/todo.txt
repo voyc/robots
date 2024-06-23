@@ -1,4 +1,60 @@
 
+gate
+firstCone
+n-1 additional cones
+gate
+
+
+Is on mark, line, 
+    use theta from of next leg.
+    x  Or use perpendicular of end point
+
+On course around mark 
+    x Use radius as error, straighten out if too close
+    If too far, stay at max helm
+    Or halfway through the arc, use line algorithm
+
+
+Keep line and arc separate, or jump ahead?
+
+
+run continuous circle around mark
+
+
+continuous routing
+	When one pattern ends, do a new one
+	Choice of patterns can be restricted 
+	Num patterns can be restricted 
+	on q finish pattern and go to gate
+	on ctrlC stop immediately 
+
+	Each pattern can have a range of numcones
+	Oval,2,cw
+	When to set up next pattern
+		Leg end cannot be calculated until next mark is known
+	Patterns
+		Oval, perimeter, outer, inner
+		Figure8, cloverleaf
+		Barrel race, 3 cloverleaf's
+		3 random
+		2 random
+	
+	Repeat n times
+		Pick 2
+		Repeat 4
+		All cw, oval
+		All CCW, oval
+		Alternate cw,CCW - figure8
+		Random cw, CCW
+----------
+waypoints
+	calc waypoints during routing
+	def stayOnCourse():
+		current waypoint
+		next waypoint	
+		waypoint could be a perpendicular line across the from-to line
+
+----------
 
 listing to starboard
 
