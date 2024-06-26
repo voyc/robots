@@ -145,10 +145,6 @@ class Arena:
 	marks = []
 	waypts = []
 	wayndx = -1
-	#plan = []      # plan, route, leg - replaced with marks and waypts
-	#route = []	# list of legs
-	#routendx = 0	# current index into the route list
-	#leg = {}	# current leg
 	on_mark_distance = 8
 	steady_helm_distance = 12
 
@@ -452,220 +448,12 @@ def configArena():
 	#arena.addPattern(0,0,0,0)
 	arena.addPattern( 'oval', [2,1], 'cw', 4)
 
-#	# route: plan, calc, plot
-#	order, sides = planRoute(arena.cones, 3)
-#	#order = [0,1]
-#	#sides = ['cw', 'cw']
-#	jlog.debug(f'order: {order}, sides: {sides}')
-#
-#	arena.plan = calcPlan(arena.cones, order, sides)
-#	jlog.debug(f'plan: {arena.plan}')
-#
-#	arena.route = plotRoute(arena.plan)
-#	arena.routendx = -1
-#	jlog.debug(f'route: {arena.route}')
-
-#def shortestAngleBetweenTwoHeadings(a,b): # cw or ccw
-#	angle1 = ((a - b) + 360) % 360
-#	angle2 = ((b - a) + 360) % 360
-#	return min(angle1,angle2)
-#
-#def firstCone(cones, pos, heading):
-#	errs = []
-#	jlog.info(f'len cones {len(cones)}')
-#	for i in range(len(cones)):
-#		cone = cones[i]
-#		bearing = nav.headingOfLine(pos, cone)
-#		err = shortestAngleBetweenTwoHeadings(bearing, heading)
-#		errs.append([err, i])
-#	jlog.info(f'len errs {len(errs)}')
-#	ndx = sorted(errs)[0][1]
-#	return ndx
-
-#def planRoute(cones, num):
-#	arena.route
-#	newroute
-#
-#	ndx = -1
-#	if arena.routendx < 0:
-#		ndx = firstCone(cones, photo.cbase, sensor.heading)
-#	else:
-#		route.pop[len(route)-1]  # remove last line of the arena.route (to gate)
-#
-#		leg = route[len(route)-1) # modify last arc of the previous route
-#		# change to point
-#
-#		choose first cone of new route
-#		could be anywhere ?
-#		can it really be anywhere?
-#		heading was fixed on the starting gate, 
-#		but when rounding a cone, heading is not fixed
-#		
-#
-#
-#		A,B = nav.linePerpendicular(leg['center'], leg['to'], specs.turning_radius)
-#		headAB = headingOfLine(A,B)
-#		cones.pop[leg['center']
-#		ndx = firstCone(cones, leg['to'], headAB)
-#		#conenums, conendx  ?
-#		
-#		ki
-#
-#
-#	candidates = [i for i in range(len(cones))]
-#	order = []
-#	candidates.pop(ndx)
-#	order.append(ndx)
-#	while len(order) < num:
-#		r = random.randrange(0,len(candidates))
-#		ndx = candidates[r]
-#		order.append(ndx)
-#		candidates.pop(r)
-#
-#	sides = []
-#	for cone in cones:
-#		rdir = np.random.choice(['ccw','cw'])
-#		sides.append(rdir)
-#	return order, sides
-#	
-#def calcPlan(cones, order, sides):
-#	# combine cones, order, sides into a list of dicts, sorted by order
-#	plan = []
-#	for i in range(len(order)):  # 0 thru n
-#		n = order[i] 
-#		plan.append({
-#			'center':cones[n], 
-#			'rdir':sides[n], 
-#		})
-#
-#	# add entry and exit points to each cone
-#	r = specs.turning_radius
-#	localgate = { 'center': arena.gate }
-#	for i in range(len(plan)):
-#		cone = plan[i]
-#		prevcone = localgate if i <= 0 else plan[i-1]
-#		nextcone = localgate if i+1 >= len(plan) else plan[i+1] 
-#
-#		# entry point
-#		A = prevcone['center']
-#		B = cone['center']
-#		L, R = nav.linePerpendicular(A, B, r)
-#		entry = {
-#			'L': L,
-#			'R': R,
-#		}
-#	
-#		# exit point
-#		A = nextcone['center']
-#		B = cone['center']
-#		L, R = nav.linePerpendicular(A,B,r)
-#		exit = {
-#			'L': L,
-#			'R': R,
-#		}
-#	
-#		if cone['rdir'] == 'cw':
-#			cone['entry'] = entry['L']
-#			cone['exit']  = exit['R']
-#		else:
-#			cone['entry'] = entry['R']
-#			cone['exit']  = exit['L']
-#	return plan
-#
-#def plotRoute(plan):
-#	route = []
-#	prevexit = arena.gate
-#	for i in range(0,len(plan)):
-#		cone = plan[i]
-#
-#		lineleg = {
-#			'shape': 'line',
-#			'from': prevexit,
-#			'to': cone['entry'],
-#		}
-#		route.append(lineleg)
-#
-#		arcleg = {
-#			'shape': 'arc',
-#			'from': cone['entry'],
-#			'to': cone['exit'],
-#			'center': cone['center'],
-#			'rdir': cone['rdir'],
-#		}
-#		route.append(arcleg)
-#		
-#		prevexit = cone['exit']
-#	
-#	# back to starting gate
-#	jlog.debug(f'back to starting gate: {prevexit}, {arena.gate}')
-#	route.append({
-#		'shape': 'line',
-#		'from': prevexit,
-#		'to': arena.gate,
-#	})
-#	return route
-#
-#def plotRoute(plan):
-##	legnum = 0
-##	prevexit = arena.gate
-##	if len(arena.route) > 0:
-##		legnum = len(routendx) - 1
-##		prevexit = 
-##
-#	route = []
-#	prevexit = arena.gate
-#	for i in range(0,len(plan)):
-#		cone = plan[i]
-#
-#		lineleg = {
-#			'shape': 'line',
-#			'from': prevexit,
-#			'to': cone['entry'],
-#		}
-#		route.append(lineleg)
-#
-#		arcleg = {
-#			'shape': 'arc',
-#			'from': cone['entry'],
-#			'to': cone['exit'],
-#			'center': cone['center'],
-#			'rdir': cone['rdir'],
-#		}
-#		route.append(arcleg)
-#		
-#		prevexit = cone['exit']
-#	
-#	# back to starting gate
-#	jlog.debug(f'back to starting gate: {prevexit}, {arena.gate}')
-#	route.append({
-#		'shape': 'line',
-#		'from': prevexit,
-#		'to': arena.gate,
-#	})
-#	return route
-
 # ----------------------------------------
 #    pilot
 # ----------------------------------------
 
 def nextWay():
 	arena.wayndx += 1
-	#helm.set( 0)
-
-# replaced by nextWay
-#def nextLeg():
-#	arena.routendx += 1
-#	arena.leg = arena.route[arena.routendx]
-#
-#	jlog.info(f'next leg {arena.routendx}: {arena.leg}')
-#
-#	if arena.leg['shape'] == 'arc':
-#		if arena.leg['rdir'] == 'cw':
-#			helm.set( +90)
-#		elif arena.leg['rdir'] == 'ccw':
-#			helm.set( -90)
-#	elif arena.leg['shape'] == 'line':
-#		helm.set( 0)
 
 def normalizeTheta(tfrom, tto, tat, rdir):
 	tcirc = 2*np.pi
@@ -678,10 +466,6 @@ def normalizeTheta(tfrom, tto, tat, rdir):
 	if ntat > 5.5:
 		ntat = 0.001
 	return ntat, ntto
-
-#
-# ------------------
-# 
 
 def distanceToDest(cbase, leg):
 	# assume leg['shape'] == 'line':
@@ -711,6 +495,7 @@ def distanceToDest(cbase, leg):
 #		on_mark = (ntbase > ntto)
 #		jlog.info(f'on mark arc {on_mark} {arena.routendx}, tbase:{tbase} tfrom:{tfrom} tto:{tto} rdir:{leg["rdir"]}')
 #	return on_mark
+
 def isOnMark(cbase):
 	on_mark = False
 	tot = nav.lengthOfLine(arena.waypts[arena.wayndx], arena.waypts[arena.wayndx-1])
@@ -718,47 +503,6 @@ def isOnMark(cbase):
 	on_mark = sofar > tot
 	return on_mark
 
-#def calcCourseError(vehicle, leg):
-#	error = 0
-#
-#	if leg.shape == 'line':
-#		# headingerror
-#		bearing = nav.headingOfLine(photo.cbase, arena.leg['to'])
-#		headingerror = bearing - sensor.heading
-#		if headingerror > 180: headingerror -= 360
-#		if headingerror < -180: headingerror += 360
-#
-#		# error = distance off the from-to line
-#		bearing = nav.headingOfLine(photo.cbase, arena.leg['to'])
-#		distance = nav.lengthOfLine(cbase, leg['to'])
-#		
-#		#point on the bearing line distance from 
-#		#pointOnLineDistanceFromEnd
-#
-#		AB = [leg['from'], leg['to']]
-#
-#
-#	elif leg.shape == 'arc':
-#		# an arc is specified by ABC
-#		# measure distance from center along the arc
-#		# keep max helm except to avoid clobbering the cone
-#		pass
-#	return error
-
-#def helmPid(leg,error):  # pid control of steering
-#	# see https://docs.google.com/spreadsheets/d/1oKY4mz-0K-BwVNZ7Tu-k9PsOq_LeORR270-ICXyz-Rw/edit#gid=0
-#	jlog.debug('helm PID')
-#	if leg['shape'] == 'line':
-#		Kp = 2
-#		Ki = 0
-#		Kd = 0
-#	elif leg['shape'] == 'arc':
-#		Kp = 2  # turning_radius of 23.7 => 90 helm, error must be negative or positive
-#		Ki = 0
-#		Kd = 0
-#	helmadj = Kp * error
-#	helmadj = max(-90,min(90,helmadj))
-#	return helmadj
 def helmPid(error):  # pid control of steering
 	# see https://docs.google.com/spreadsheets/d/1oKY4mz-0K-BwVNZ7Tu-k9PsOq_LeORR270-ICXyz-Rw/edit#gid=0
 	jlog.debug('helm PID')
@@ -827,11 +571,6 @@ def pilot():
 			nextWay()   #nextLeg()
 
 	# stay on course
-	#error = calcCourseError()
-	#helm_adj = helmPid(error)
-	#helm.set(helm_adj
-
-	# stay on course
 	if (tot - sofar) > arena.steady_helm_distance:
 		bearing = nav.headingOfLine(photo.cbase, arena.waypts[arena.wayndx])
 		error = bearing - sensor.heading
@@ -842,25 +581,6 @@ def pilot():
 		helm_adj = helmPid( error)
 		jlog.info(f'pilot: new helm line:{helm_adj}, err:{error}, bearing:{bearing}, heading:{sensor.heading}')
 		helm.set( helm_adj)
-
-	#if arena.leg['shape'] == 'line':
-	#	toDest = distanceToDest(photo.cbase, arena.leg)
-	#	if toDest > arena.steady_helm_distance:
-	#		bearing = nav.headingOfLine(photo.cbase, arena.leg['to'])
-	#		error = bearing - sensor.heading
-	#		if error > 180:
-	#			error -= 360
-	#		if error < -180:
-	#			error += 360
-	#		helm_adj = helmPid(arena.leg, error)
-	#		jlog.info(f'pilot: new helm line:{helm_adj}, err:{error}, bearing:{bearing}, heading:{sensor.heading}')
-	#		helm.set( helm_adj)
-	#elif arena.leg['shape'] == 'arc':
-	#	error = nav.lengthOfLine(photo.cbase, arena.leg['center']) - specs.turning_radius
-	#	error = max(error,0) # too far from cone, ignore
-	#	helm_adj = helmPid(arena.leg, error) # too close, straighten course so not to hit cone
-	#	jlog.info(f'pilot: new helm arc:{helm.helm} {helm_adj}, err:{error}')
-#	#	helm.set( helm_adj)
 
 	caplog()
 
@@ -1046,16 +766,7 @@ def refreshUI():
 			#ui.routeChanged = False
 	
 		if ui.cbaseChanged:
-			# skateline
-			#bow,stern = nav.lineFromHeading(cbase, heading, specs.deck_length/2)
-	#		bow,stern = nav.lineFromHeading(photo.cbase, sensor.heading, specs.deck_length)
-	#		diff = (bow - stern) / 5  # add 4 dots between bow and stern
-	#		points = [[0,0],[0,0],[0,0],[0,0],[0,0]]
-	#		for i in range(5): points[i] = stern + (np.array(diff) * i)
-	#		#points = np.transpose(points); 
-	#		ui.skateline.set_offsets(points)
-
-			# cbase sprite
+			# sprite
 			r = mpl.transforms.Affine2D().rotate_deg(360-sensor.heading)
 			t = mpl.transforms.Affine2D().translate(photo.cbase[0], photo.cbase[1])
 			tra = r + t + ui.ax.transData
@@ -1064,10 +775,6 @@ def refreshUI():
 			# donut
 			ui.donutinner.center = photo.donut
 			ui.donutouter.center = photo.donut
-
-			# cbase
-	#		ui.cbase.center = photo.cbase
-
 			ui.cbaseChanged = False
 
 			if not args.novideo:
