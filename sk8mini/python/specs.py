@@ -94,17 +94,16 @@ vcones = {
 	[0,-100], # bottom
 	[-100,0], # left
 	[+100,0], # right
-	[0,0]     # center
+	[1,1]     # center
 ],
 'square': [
 	[-100,+100], # NW
 	[+100,+100], # NE
 	[+100,-100], # SE
 	[-100,-100], # SW
-	[0,0]	     # Center
+	[1,1]	     # Center
 ],
 }
-
 
 #skateSpriteDataPx = [
 #	[ 0,11],

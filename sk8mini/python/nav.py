@@ -51,6 +51,7 @@ def quadFromVector(vector):
 	elif dx <= 0 and dy >  0: quad = 2
 	elif dx <  0 and dy <= 0: quad = 3
 	elif dx >= 0 and dy <  0: quad = 4
+	elif dx == 0 and dy == 0: quad = 1  # ?
 	return quad
 
 def quadFromTheta(theta): 
