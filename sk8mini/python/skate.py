@@ -102,10 +102,10 @@ class Mark:
 	entry = [0,0]
 	exit = [0,0]
 	firstwaypt = 0
-	numwaypts = 0
+	lastwaypt = 0
 
 	def __str__(self):
-		return f'{self.conendx}, {self.rdir}, {self.center}, {self.entry}, {self.exit}, {self.numwaypts}, {self.firstwaypt}'
+		return f'{self.conendx}, {self.rdir}, {self.center}, {self.entry}, {self.exit}, {self.firstwaypt}, {self.lastwaypt}'
 
 	def __init__(self, ndx, rdir, ctr):
 		self.conendx = ndx
@@ -145,8 +145,10 @@ class Arena:
 	marks = []	# list of Mark objects
 	waypts = []	# list of points
 	ndxpattern = 0	# index into patterns, current pattern
+	ndxmark = 0	# index into marks, current mark
 	ndxwaypt = 0	# index into waypts, current waypt
 	on_mark_distance = 8
+	on_mark_theta = 0.2
 	steady_helm_distance = 12
 	continuous = False
 
@@ -161,6 +163,9 @@ class Arena:
 	def currentMark(self):   return self.marks[self.ndxmark]
 	def currentWaypt(self):  return self.waypts[self.ndxwaypt]
 
+	def isWayptInMark(self, ndxwaypt, mark): 
+		return mark.firstwaypt <= ndxwaypt <= mark.lastwaypt
+	
 	def isWayptInPattern(self, ndxwaypt, pattern): 
 		return pattern.firstwaypt <= ndxwaypt <= pattern.lastwaypt
 	
@@ -168,11 +173,17 @@ class Arena:
 		if self.ndxwaypt < (len(self.waypts)-1):
 			self.ndxwaypt += 1
 			ui.wayptChanged = True
+
+			if not self.isWayptInMark(self.ndxwaypt, self.currentMark()):
+				self.ndxmark += 1
+
 			if not self.isWayptInPattern(self.ndxwaypt, self.currentPattern()):
 				self.ndxpattern += 1
 				ui.patternChanged = True
-			jlog.debug(f'nextWaypt: {self.ndxwaypt} {ui.patternChanged} {self.ndxpattern}')
+
 			jlog.info(f'nextWaypt: {self.ndxwaypt} {self.waypts[self.ndxwaypt-1]} {self.waypts[self.ndxwaypt]} {self.waypts[self.ndxwaypt+1]}')
+		else:
+			kill('completed')
 	
 	def firstCone(self, pos, heading):
 		def shortestAngleBetweenTwoHeadings(a,b): # cw or ccw
@@ -275,7 +286,7 @@ class Arena:
 			for ndxmark in range(pat.firstmark, pat.lastmark):
 				waypts = []
 				mark = self.marks[ndxmark]
-				mark.firstwaypt = len(self.waypts)-1
+				mark.firstwaypt = len(self.waypts)
 
 				# calc entry and exit points for each mark
 				prevmark = gatemark if ndxmark <= 0 else self.marks[ndxmark-1]
@@ -551,41 +562,25 @@ def normalizeTheta(tfrom, tto, tat, rdir):
 		ntat = 0.001
 	return ntat, ntto
 
-def distanceToDest(cbase, leg):
-	# assume leg['shape'] == 'line':
-	tot = nav.lengthOfLine(leg['to'], leg['from'])
-	sofar = nav.lengthOfLine(cbase, leg['from'])
-	togo = tot - sofar
-	return togo
+def isOnMark(cbase, ndxwaypt):
+	onmark = False
+	mark = arena.currentMark()
+	if ndxwaypt == mark.firstwaypt: # shape line
+		tot = nav.lengthOfLine(arena.waypts[ndxwaypt], arena.waypts[ndxwaypt-1])
+		sofar = nav.lengthOfLine(cbase, arena.waypts[ndxwaypt-1])
+		onmark = (sofar+arena.on_mark_distance) > tot
+		jlog.info(f'isonmark line {onmark} {tot} {sofar}')
 
-#def isOnMark(cbase, leg):
-#	on_mark = False
-#	if leg['shape'] == 'line':
-#		#err = nav.lengthOfLine(cbase, leg['to'])
-#		#on_mark = (err < arena.on_mark_distance)
-#		#jlog.info(f'on mark line {on_mark} {arena.routendx}, {err} {cbase} {leg["to"]}')
-#
-#		tot = nav.lengthOfLine(leg['to'], leg['from'])
-#		sofar = nav.lengthOfLine(cbase, leg['from'])
-#		on_mark = sofar > tot
-#		jlog.info(f'on mark line {on_mark} {arena.routendx}, {tot} {sofar} {cbase} {leg["to"]}')
-#	
-#	elif leg['shape'] == 'arc':
-#		# here using theta in radians
-#		tbase,_ = nav.thetaFromPoint(cbase, leg['center'])
-#		tto,_ = nav.thetaFromPoint(leg['to'], leg['center'])
-#		tfrom,_ = nav.thetaFromPoint(leg['from'], leg['center'])
-#		ntbase,ntto = normalizeTheta(tfrom, tto, tbase, leg['rdir'])
-#		on_mark = (ntbase > ntto)
-#		jlog.info(f'on mark arc {on_mark} {arena.routendx}, tbase:{tbase} tfrom:{tfrom} tto:{tto} rdir:{leg["rdir"]}')
-#	return on_mark
-
-def isOnMark(cbase):
-	on_mark = False
-	tot = nav.lengthOfLine(arena.waypts[arena.ndxwaypt], arena.waypts[arena.ndxwaypt-1])
-	sofar = nav.lengthOfLine(cbase, arena.waypts[arena.ndxwaypt-1])
-	on_mark = sofar > tot
-	return on_mark
+	else: # shape arc
+		ctr = mark.center
+		tbase,_ = nav.thetaFromPoint(cbase, ctr)
+		tto,_ = nav.thetaFromPoint(arena.waypts[ndxwaypt], ctr)
+		tfrom,_ = nav.thetaFromPoint(arena.waypts[ndxwaypt-1], ctr)
+		ntbase,ntto = normalizeTheta(tfrom, tto, tbase, mark.rdir)
+		onmark = (ntbase+arena.on_mark_theta) > ntto
+		jlog.info(f'isonmark arc {onmark} {arena.waypts[ndxwaypt]}, tfrom:{tfrom} tbase:{tbase} tto:{tto} rdir:{mark.rdir}')
+	jlog.info(f'isonmark {ndxwaypt} {arena.ndxmark} {mark.firstwaypt}') 
+	return onmark
 
 def helmPid(error):  # pid control of steering
 	# see https://docs.google.com/spreadsheets/d/1oKY4mz-0K-BwVNZ7Tu-k9PsOq_LeORR270-ICXyz-Rw/edit#gid=0
@@ -643,14 +638,8 @@ def pilot():
 		return
 
 	# on rounding mark
-	tot = nav.lengthOfLine(arena.waypts[arena.ndxwaypt], arena.waypts[arena.ndxwaypt-1])
-	sofar = nav.lengthOfLine(photo.cbase, arena.waypts[arena.ndxwaypt-1])
-	if (sofar+arena.on_mark_distance) > tot:
-		if arena.ndxwaypt >= len(arena.waypts) - 1:  # journey's end
-			kill('route completed')
-			return
-		else:
-			arena.nextWaypt()
+	if isOnMark(photo.cbase, arena.ndxwaypt):
+		arena.nextWaypt()
 
 	# stay on course
 	#elif sofar > (tot - arena.steady_helm_distance):
