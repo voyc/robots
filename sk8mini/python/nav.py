@@ -162,19 +162,21 @@ def linePerpendicular(A,B,r):
 	L,R = lineFromHeading(B, headLR, 2*r)
 	return L,R
 
-#def distancePointFromLine(line,pt):
-#	length = 0
-#	CD = linePerpendicular(A,B,pt)
-#	return length
+#---------- functions above this line are in unit test  ../archive/testnav.py  --------------#
 
-#---------- functions above this line are in unit test ----------------#
+#---------- functions below this line are in unit test  testnav2.py  ------------------------#
 
-def isPointPastLine(A,B,C):
-	# is pt C past the line from A to B, yes or no
+def distancePointFromLine(A,B,pt):
+	ax,ay = A
+	bx,by = B
+	x,y = pt
+	d = abs((bx-ax)*(ay-y) - (ax-x)*(by-ay)) / np.sqrt(np.square(bx-ax) + np.square(by-ay))
+	return d
+
+def isPointPastLine(A,B,pt):
 	ab = lengthOfLine(A,B)
-	ac = lengthOfLine(A,C)
+	ac = lengthOfLine(A,pt)
 	return (ac > ab)
-
 
 def reckonLine(startpos, heading, distance):
 	# dead reckoning, return new position along a line
@@ -183,24 +185,25 @@ def reckonLine(startpos, heading, distance):
 	endpos = startpos + np.array([dx,dy])
 	return endpos
 
-def lengthOfArc(tfrom, tto, r, rdir):
-	tcircle = 2*np.pi
-	lencircle = 2 * np.pi * r  # circumference
-	tarc = lengthOfArcTheta(tfrom, tto, r, rdir)
-	lenarc =  (tarc/tcircle) * lencircle  # tarc/tcircle = lenarc/lencircle
+def lengthOfArc(tfrom, tto, rdir, r):
+	lencircle = math.tau * r  # circumference
+	tarc = lengthOfArcTheta(tfrom, tto, rdir)
+	lenarc =  (tarc/math.tau) * lencircle  # tarc/tcircle = lenarc/lencircle
 	return lenarc
 
-def lengthOfArcTheta(tfrom, tto, r, rdir):
+def lengthOfArcTheta(tfrom, tto, rdir):
 	if rdir == 'ccw':
 		tdiff = tto - tfrom
 		if tdiff < 0:  # if from == to, ccw goes nowhere
-			tdiff += 2*np.pi
+			tdiff += math.tau
 	elif rdir == 'cw':
 		tdiff = tfrom - tto
 		if tdiff <= 0:  # if from == to, cw goes all the way around
-			tdiff += 2*np.pi
+			tdiff += math.tau
 	else: raise Exception(f'bad rdir={rdir}')
 	return tdiff
+
+#---------- functions below this line are not yet tested  ------------------------#
 
 def reckonArc(theta1, distance, r, rdir):  # no center?
 	# find next theta given distance, distance == arc length

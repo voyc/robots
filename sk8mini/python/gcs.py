@@ -78,6 +78,7 @@ def getArgs(): # get command-line arguments
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--verbose'  ,action='store_true'  ,help='verbose comments'                 ) 
 	parser.add_argument('--quiet'    ,action='store_true'  ,help='suppress all output'              )
+	parser.add_argument('--sim'	 ,action='store_true'  ,help='simulation mode'                  )
 	parser.add_argument('--mediaout' ,default='/home/john/media/webapps/sk8mini/awacs/photos' ,help='folder out for images, log')
 
 	awacs.setupArgParser(parser)

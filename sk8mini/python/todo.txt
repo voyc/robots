@@ -1,25 +1,99 @@
 
-draw square gate
 
-read pattern list from file
+to do:
+        1. Count rpm at each speed setting
+        2. Measure actual distance and time 
+                x Get photo save working
+                x Get pilot commands working
+        3.  Math circum of turning radius,
+                throttle, throttle left, throttle right
+
+add onRoll: adjust right-throttle
+	write math to adjust throttle depending on roll
+
+finish figure 8 pattern for calibration, with right throttle adjustment
+
+dead reckoning
+	keep list of recent commands
+	with each new command, calc new position by adding previous command
+
+who sets up the arena, pilot?  navigator?, captain?
+
+x read pattern list from file
+x move entry and exit points out in front
+x insert intermediate arc waypts
+x highlight current leg of route 
+x draw square gate
+
+- continuous routing, When one pattern ends, add a new one
+	when calcing waypts for a pattern
+	if continuous
+		always have two patterns after the current one
+	else
+		add gate to last pattern
+
+x continuous routing, draw current pattern only
+
+- continuous routing, when cones move, adapt by recalcing waypts
+
+line 220, same 226
+# first time, this comes up 1, because of the start and finish gate already added
+
+line 280
+self.waypts has not been updated yet, still 2 gates only
+
+calc waypoints for all marks in all patterns starting with the current one
+	maybe the first pattern, maybe the last one, maybe only one, maybe many
+	called on addPattern(), for only the pattern just added
+	called on conesChanged, for all of the patterns starting with the current one
+		(because the cones moved, we have to recalc)
+		or, do we want to start over an create new patterns?
+	
+	pause: what happens when cones move?
+		a human would react immediately to any change in the cones
+		only a machine would continue mechanically without a reaction
+		find the one cone that changed and circle or spiral around it
+		use it in next patterns
+		at least use it as first cone in next pattern
+
+		onConesChanged
+		 	delete all patterns after the current one
+		if changed cone is upcoming in the current pattern	
+		 	recalc waypts for the pattern
+		 	or abandon pattern, and create new patterns, starting from vehicle position
+
+	I want to know at all times, which pattern, which mark, and which waypt I'm in
+		on nextWaypt, recalc pattern and mark within pattern
+		arena has list of all marks, all waypts, correct?
+		draw way for one pattern in one color, next pattern in lighter color
+
+	how do we keep track of marks and waypoints
+		structured lists, waypts within marks within patterns	
+		or master lists
+		or some combination
+
+	def getWayptsPerPattern(ndxpat)
+		return self.waypts[first:last]
+
+
+
 
 ccw oval 
 	late reaching entry pt
 	overcorrecting as approaching entry pt
 
-consider halfway marks on long legs
-
 consider on mark calculations on arc vs line
 
 spin pattern, continuous circle around mark
 
-continuous routing, When one pattern ends, do a new one
-
 perimeter pattern
 
 listing to starboard
+	motor is on starboard side (that would make it list to port)
+	turning to starboard, cw,  is faster
 
 dead reckoning for faster decision making
+	if roll is non-zero, distance will be measured along an arc
 
 --------------
 

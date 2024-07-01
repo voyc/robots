@@ -31,7 +31,6 @@ organization:  by roles, or brain parts:
 	brain parts:
 		hippocampus - 
 		frontal cortex - 
-
 	event-driven:
 		On roll, adjust throttle
 		On heading, dead reckon
@@ -49,28 +48,7 @@ sources
 	~/webapps/robots/robots/sk8mini/pilot
 		pilot.ino - helm and throttle implemented via espwebserver
 		pilot.py - manual piloting via keyboard as webserver client, using curses
-
-to do:
-        1. Count rpm at each speed setting
-        2. Measure actual distance and time 
-                x Get photo save working
-                x Get pilot commands working
-        3.  Math circum of turning radius,
-                throttle, throttle left, throttle right
-
-add onRoll: adjust right-throttle
-	write math to adjust throttle depending on roll
-
-finish figure 8 pattern for calibration, with right throttle adjustment
-
-dead reckoning
-	keep list of recent commands
-	with each new command, calc new position by adding previous command
-
-who sets up the arena, pilot?  navigator?, captain?
-
 '''
-
 import signal
 import os
 import sys
@@ -83,12 +61,12 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import math
+import ast
 
 import jlog
 import smem
 import specs
 import nav
-#from arena import Arena, Mark 
 
 # global shared inter-process memory
 gmem_timestamp = None
@@ -123,8 +101,11 @@ class Mark:
 	center = [0,0]   # copy of cones[conendx]
 	entry = [0,0]
 	exit = [0,0]
+	firstwaypt = 0
+	numwaypts = 0
+
 	def __str__(self):
-		return f'{self.conendx}, {self.rdir}, {self.center}, {self.entry}, {self.exit}'
+		return f'{self.conendx}, {self.rdir}, {self.center}, {self.entry}, {self.exit}, {self.numwaypts}, {self.firstwaypt}'
 
 	def __init__(self, ndx, rdir, ctr):
 		self.conendx = ndx
@@ -138,16 +119,61 @@ class Mark:
 		self.center = gate
 		return self
 
+class Pattern:
+	name = None
+	numcones = 0
+	rdir = 0
+	reps = 1
+	firstmark = 0
+	lastmark = 0
+	firstwaypt = 0
+	lastwaypt = 0
+
+	def __str__(self):
+		return f'{self.name}, {self.numcones}, {self.rdir}, {self.reps}, {self.firstwaypt}, {self.lastwaypt}'
+
+	def __init__(self, name, numcones, rdir, reps):
+		self.name = name
+		self.numcones = numcones
+		self.rdir = rdir
+		self.reps = reps
+
 class Arena:
-	gate = [0,0]
-	cones = []
-	numcones = len(cones)
-	marks = []
-	waypts = []
-	wayndx = -1
+	gate = [0,0]	# start and finish point
+	cones = []	# list of points
+	patterns = []	# list of Pattern objects
+	marks = []	# list of Mark objects
+	waypts = []	# list of points
+	ndxpattern = 0	# index into patterns, current pattern
+	ndxwaypt = 0	# index into waypts, current waypt
 	on_mark_distance = 8
 	steady_helm_distance = 12
+	continuous = False
 
+	def nextPattern(self):
+		ret = False
+		ndx = self.ndxpattern + 1
+		if ndx <= len(self.patterns)-1:
+			ret = self.patterns[ndx]
+		return ret
+
+	def currentPattern(self):return self.patterns[self.ndxpattern]
+	def currentMark(self):   return self.marks[self.ndxmark]
+	def currentWaypt(self):  return self.waypts[self.ndxwaypt]
+
+	def isWayptInPattern(self, ndxwaypt, pattern): 
+		return pattern.firstwaypt <= ndxwaypt <= pattern.lastwaypt
+	
+	def nextWaypt(self):
+		if self.ndxwaypt < (len(self.waypts)-1):
+			self.ndxwaypt += 1
+			ui.wayptChanged = True
+			if not self.isWayptInPattern(self.ndxwaypt, self.currentPattern()):
+				self.ndxpattern += 1
+				ui.patternChanged = True
+			jlog.debug(f'nextWaypt: {self.ndxwaypt} {ui.patternChanged} {self.ndxpattern}')
+			jlog.info(f'nextWaypt: {self.ndxwaypt} {self.waypts[self.ndxwaypt-1]} {self.waypts[self.ndxwaypt]} {self.waypts[self.ndxwaypt+1]}')
+	
 	def firstCone(self, pos, heading):
 		def shortestAngleBetweenTwoHeadings(a,b): # cw or ccw
 			angle1 = ((a - b) + 360) % 360
@@ -163,20 +189,18 @@ class Arena:
 		ndx = sorted(errs)[0][1]
 		return ndx
 
-	
-	def addPattern(self, pattern, numcones, rdir, reps):
-		# ------------------
-		# create a list of cone-index numbers, with a given count and order
+	def addPattern(self, name, numcones, rdir, reps):
+		# create a tempory list of cone-index numbers, with a given count and order
 		conendxs = None
 		if type(numcones) is list: # caller has specified the list explicitly
 			conendxs = list(np.array(numcones) - 1)
 		else:
 			if numcones == 0:
-				if pattern == 'spin': numcones = 1
-				elif pattern == 'oval': numcones = 2
-				elif pattern == 'figure-8': numcones = 2
-				elif pattern == 'barrel-race' : numcones = 3
-				else: numcones = random.randrange(1, self.numcones)
+				if name == 'spin': numcones = 1
+				elif name == 'oval': numcones = 2
+				elif name == 'figure-8': numcones = 2
+				elif name == 'barrel-race' : numcones = 3
+				else: numcones = random.randrange(1, len(self.cones))
 		
 			allconendxs = [i for i in range(len(self.cones))]  # population
 			conendxs = random.sample(allconendxs,  numcones)    # sample
@@ -194,8 +218,7 @@ class Arena:
 					conendxs.pop(0)
 					conendxs.append(lastcone)
 
-		# --------------------------
-		# create a list of rotational-directions, one for each cone-index
+		# create a tempory list of rotational-directions, one for each cone-index
 		# input rdir can be 0, 'alt', 'cw', or 'ccw'
 		def alt(rdir): return 'cw' if rdir == 'ccw' else 'ccw'
 		rdirs = []
@@ -206,77 +229,116 @@ class Arena:
 			else: thisrdir = random.choice(['cw','ccw'])
 	
 			if i>0:
-				if pattern in ['figure-8','slalom'] or rdir == 'alt':
-					thisrdir = alt(rdir[i-1])
-				elif pattern in ['oval','perimeter']:
+				if name in ['figure-8','slalom'] or rdir == 'alt':
+					thisrdir = alt(rdirs[i-1])
+				elif name in ['oval','perimeter']:
 					thisrdir = rdirs[0]
 	
 			rdirs.append(thisrdir)
 			i += 1
 	
-		# --------------------------
-		# create a list of marks for this pattern, and add it to master mark list
+		# add a pattern for each rep
 		if reps == 0: reps = random.randrange(1,5)
-		marks = []
 		for i in range(reps):
+			pat = Pattern(name, numcones, rdir, reps)
+			self.patterns.append(pat)
+			jlog.info(f'add pattern {pat}')
+
+			# create a list of marks for each pattern
+			marks = []
 			for j in range(len(conendxs)):
 				mark = Mark(conendxs[j], rdirs[j], self.cones[conendxs[j]])
 				marks.append(mark)
-		self.marks += marks # add this pattern to the master
 
-		# --------------------------
-		# add entry and exit points to each mark
+			# add these marks to the arena mark list
+			pat.firstmark = len(self.marks)
+			pat.lastmark = len(self.marks) + len(marks)
+			self.marks += marks
+
+	def recalcWaypts(self):
 		r = specs.turning_radius
 		gatemark = Mark.fromGate(self.gate)
 
-		for i in range(len(self.marks)):
-			mark = self.marks[i]
-			prevmark = gatemark if i <= 0 else self.marks[i-1]
-			nextmark = gatemark if i+1 >= len(self.marks) else self.marks[i+1] 
+		firstwaypt = arena.currentPattern().firstwaypt
+		del arena.waypts[firstwaypt:]
+
+		# loop thru patterns, starting with the current
+		for ndxpat in range(arena.ndxpattern, len(arena.patterns)):
+			pat = arena.patterns[ndxpat]
+
+			if len(self.waypts) <= 0:  # first-time
+				self.waypts.append( gatemark.center)  # starting gate
+
+			pat.firstwaypt = len(self.waypts)
+
+			# loop thru marks in each pattern
+			for ndxmark in range(pat.firstmark, pat.lastmark):
+				waypts = []
+				mark = self.marks[ndxmark]
+				mark.firstwaypt = len(self.waypts)-1
+
+				# calc entry and exit points for each mark
+				prevmark = gatemark if ndxmark <= 0 else self.marks[ndxmark-1]
+				nextmark = gatemark if ndxmark+1 >= len(self.marks) else self.marks[ndxmark+1] 
+		
+				A = prevmark.center
+				B = mark.center
+				L, R = nav.linePerpendicular(A, B, r)
+				entry = {
+					'L': L,
+					'R': R,
+				}
+			
+				A = nextmark.center
+				B = mark.center
+				L, R = nav.linePerpendicular(A,B,r)
+				exit = {
+					'L': L,
+					'R': R,
+				}
+			
+				if mark.rdir == 'cw':
+					mark.entry = entry['L']
+					mark.exit  = exit['R']
+				else:
+					mark.entry = entry['R']
+					mark.exit  = exit['L']
 	
-			# entry point
-			A = prevmark.center
-			B = mark.center
-			L, R = nav.linePerpendicular(A, B, r)
-			entry = {
-				'L': L,
-				'R': R,
-			}
-		
-			# exit point
-			A = nextmark.center
-			B = mark.center
-			L, R = nav.linePerpendicular(A,B,r)
-			exit = {
-				'L': L,
-				'R': R,
-			}
-		
-			if mark.rdir == 'cw':
-				mark.entry = entry['L']
-				mark.exit  = exit['R']
-			else:
-				mark.entry = entry['R']
-				mark.exit  = exit['L']
+				# calc waypts for each mark
+				thetaEntry,_ = nav.thetaFromPoint(mark.entry, mark.center)
+				thetaExit,_ = nav.thetaFromPoint(mark.exit, mark.center)
+				thetaDiff = nav.lengthOfArcTheta(thetaEntry, thetaExit, mark.rdir)
+	
+				thetaPre = (thetaEntry + .5) % math.tau
+				thetaPost = (thetaExit - .5) % math.tau
+				if mark.rdir == 'ccw':
+					thetaPre = (thetaEntry - .5) % math.tau
+					thetaPost = (thetaExit + .5) % math.tau
+	
+				preentry = nav.pointFromTheta(mark.center, thetaPre, specs.turning_radius*1.5)
+				waypts.append( preentry)
+				n = int(thetaDiff/(math.pi/2))
+				thetaIncr = thetaDiff / (n+1)
+				for mult in range(1, n+1):
+					if mark.rdir == 'cw':
+						thetaEx = (thetaEntry - (thetaIncr*mult)) % math.tau
+					else:
+						thetaEx = (thetaEntry + (thetaIncr*mult)) % math.tau
+					intermediate = nav.pointFromTheta(mark.center, thetaEx, specs.turning_radius)
+					waypts.append( intermediate)
+	
+				postexit = nav.pointFromTheta(mark.center, thetaPost, specs.turning_radius*1.5)
+				waypts.append( postexit)
 
-		# --------------------------
-		# create a list of waypointss for this pattern, and add it to master waypoint list
-		if len(self.waypts) <= 0:  # first-time
-			self.waypts.append( gatemark.center)  # starting gate
-			self.waypts.append( gatemark.center)  # finish gate
+				self.waypts += waypts   # add these waypts to master list
+				mark.lastwaypt = len(self.waypts)-1  # last for the mark
+	
+			if (not self.continuous) and (ndxpat >= len(self.patterns)-1): # last time
+				self.waypts.append( gatemark.center)  # finish gate
 
-		waypts = []
-		for i in range(len(marks)):
-			mark = marks[i]
-			waypts.append( mark.entry)
-			waypts.append( mark.exit)
-
-		# insert these waypoints into the master list, just before the finish gate
-		gate = self.waypts.pop()
-		self.waypts += waypts
-		self.waypts.append(gate)
-
-		jlog.info(f'add-pattern {pattern}, {numcones}, {rdir}, {reps}, {len(waypts)}')
+			pat.lastwaypt = len(self.waypts)-1  # last for the pattern
+		ui.patternChanged = True
+		jloglist(self.patterns)
 
 class Sensor:
 	heading	= 9999.0
@@ -436,6 +498,14 @@ def getCones():
 		pos += 2
 	return list(sorted(cones))
 	
+def convertLine(line):
+	spat, sncones, srdir, sreps = line.split(', ')
+	pat = int(spat) if spat.isnumeric() else spat
+	ncones = ast.literal_eval(sncones) if sncones[0] == '[' else int(sncones)
+	rdir = srdir if srdir in ['cw', 'ccw'] else int(srdir)
+	reps = int(sreps) 
+	return pat, ncones, rdir, reps
+
 def configArena():
 	arena.cones = photo.cones
 	arena.gate = photo.cbase
@@ -445,15 +515,29 @@ def configArena():
 	jlog.debug(f'cbase: {photo.cbase}')
 	jlog.debug(f'gate:  {arena.gate}')
 
-	#arena.addPattern(0,0,0,0)
-	arena.addPattern( 'oval', [2,1], 'cw', 4)
+	# read patterns from filename
+	fname = f'{args.mediaout}/../pattern.txt'
+	try:
+		with open(fname) as fp:
+			for line in fp:
+				if line[0] == '#':
+					continue
+				name, ncones, rdir, reps = convertLine(line)
+				if name == 'continue':
+					arena.addPattern(0,0,0,1)
+					arena.continuous = True
+				else:
+					arena.addPattern(name, ncones, rdir, reps)
+			arena.recalcWaypts()
+	except FileNotFoundError:
+		arena.addPattern(0,0,0,1)
+		arena.addPattern(0,0,0,1)
+		arena.recalcWaypts()
+		arena.continuous = True
 
 # ----------------------------------------
 #    pilot
 # ----------------------------------------
-
-def nextWay():
-	arena.wayndx += 1
 
 def normalizeTheta(tfrom, tto, tat, rdir):
 	tcirc = 2*np.pi
@@ -498,8 +582,8 @@ def distanceToDest(cbase, leg):
 
 def isOnMark(cbase):
 	on_mark = False
-	tot = nav.lengthOfLine(arena.waypts[arena.wayndx], arena.waypts[arena.wayndx-1])
-	sofar = nav.lengthOfLine(cbase, arena.waypts[arena.wayndx-1])
+	tot = nav.lengthOfLine(arena.waypts[arena.ndxwaypt], arena.waypts[arena.ndxwaypt-1])
+	sofar = nav.lengthOfLine(cbase, arena.waypts[arena.ndxwaypt-1])
 	on_mark = sofar > tot
 	return on_mark
 
@@ -547,9 +631,9 @@ def pilot():
 	position_changed = False
 
 	# first time
-	if arena.wayndx == -1:
+	if arena.ndxwaypt <= 0:
 		throttle.set( throttle.CRUISE)
-		nextWay()  #nextLeg()
+		arena.nextWaypt()
 
 	# get new position
 	if photo.hasNewPhoto():	
@@ -559,30 +643,33 @@ def pilot():
 		return
 
 	# on rounding mark
-	tot = nav.lengthOfLine(arena.waypts[arena.wayndx], arena.waypts[arena.wayndx-1])
-	sofar = nav.lengthOfLine(photo.cbase, arena.waypts[arena.wayndx-1])
-	if sofar > tot:   #if isOnMark(photo.cbase):
-		if arena.wayndx >= len(arena.waypts) - 1:  # journey's end
-			throttle.set(throttle.STOP)
-			helm.set(0)
+	tot = nav.lengthOfLine(arena.waypts[arena.ndxwaypt], arena.waypts[arena.ndxwaypt-1])
+	sofar = nav.lengthOfLine(photo.cbase, arena.waypts[arena.ndxwaypt-1])
+	if (sofar+arena.on_mark_distance) > tot:
+		if arena.ndxwaypt >= len(arena.waypts) - 1:  # journey's end
 			kill('route completed')
 			return
 		else:
-			nextWay()   #nextLeg()
+			arena.nextWaypt()
 
 	# stay on course
-	if (tot - sofar) > arena.steady_helm_distance:
-		bearing = nav.headingOfLine(photo.cbase, arena.waypts[arena.wayndx])
-		error = bearing - sensor.heading
-		if error > 180:
-			error -= 360
-		if error < -180:
-			error += 360
-		helm_adj = helmPid( error)
-		jlog.info(f'pilot: new helm line:{helm_adj}, err:{error}, bearing:{bearing}, heading:{sensor.heading}')
-		helm.set( helm_adj)
+	#elif sofar > (tot - arena.steady_helm_distance):
+	bearing = nav.headingOfLine(photo.cbase, arena.waypts[arena.ndxwaypt])
+	error = bearing - sensor.heading
+	if error > 180:
+		error -= 360
+	if error < -180:
+		error += 360
+	helm_adj = helmPid( error)
+	jlog.info(f'pilot: new helm line:{helm_adj}, err:{error}, bearing:{bearing}, heading:{sensor.heading}')
+	helm.set( helm_adj)
 
 	caplog()
+
+	#if arena.continuous and (arena.ndxwaypt >= len(arena.waypts))-3:
+	if arena.continuous and (arena.ndxpattern >= len(arena.patterns)-1):
+		arena.addPattern(0,0,0,1) 
+		arena.recalcWaypts() 
 
 # ----------------------------------------
 #    UI
@@ -593,13 +680,15 @@ class UI:
 	ax = None
 	skateline = None
 	wayline = None
+	nextline = None
 	cones = []
 	conerings = []
 	conetexts = []
 	legs = []
 	conesChanged = True
-	routeChanged = True
 	cbaseChanged = True
+	wayptChanged = True
+	patternChanged = True
 	t = 0.0
 	eventkey = False
 	fps = 0
@@ -651,53 +740,13 @@ def startUI():
 		ui.conetexts.append(t)
 		ui.conesChanged = True
 		
-	# legs
+	# line connecting waypoints
 	x,y = np.array(arena.waypts).T
-	ui.wayline, = ui.ax.plot([0,0,0,0,0],[0,0,0,0,0])
-	jlog.info(ui.wayline)
-		
-	#for leg in arena.route:
+	ui.nextline, = ui.ax.plot(x,y, linestyle='-', marker='.', color='b', linewidth=.5)
+	ui.wayline, = ui.ax.plot(x,y, linestyle='-', marker='.', color='b')
 
-	#	if leg['shape'] == 'line':
-	#		A = (leg['from'])
-	#		B = (leg['to'])
-	#		xd,yd = np.transpose([A,B]); 
-	#		linesegs = plt.plot(xd,yd, color='blue', lw=1) # returns list of line2D objects
-	#		ui.legs.append(linesegs[0])
-
-	#	elif leg['shape'] == 'arc':
-	#		# in matplotlib, Arc subclasses Ellipse
-	#		# define Ellipse as center, width, height, angle:
-	#		C = (leg['center'])       # center x,y
-	#		r = specs.turning_radius  # width and height, both r, angle=0
-
-	#		# add two points to define the Arc along the ellipse
-	#		A = (leg['from'])
-	#		B = (leg['to'])
-	#		tA,_ = nav.thetaFromPoint(A, C)
-	#		tB,_ = nav.thetaFromPoint(B, C)
-	#		rdir = leg['rdir']
-
-	#		# in matplotlib, the Arc must be drawn ccw
-	#		# in a skateRouteLeg, the arc can be traversed either cw or ccw
-	#		# ergo, when drawing, we draw a cw arc backwards
-	#		t1 = tA
-	#		t2 = tB
-	#		if rdir == 'cw': 
-	#			t1 = tB # reverse
-	#			t2 = tA
-	#			if t1 == t2: # ? avoid full circle ?
-	#				t2 -= .001
-
-	#		arc = mpl.patches.Arc(C, r*2, r*2, 0, math.degrees(t1), math.degrees(t2), color='blue')
-
-	#		ui.ax.add_patch(arc)
-	#		ui.legs.append(arc)
-
-	#	ui.routeChanged = True
-
-	# skate
-	#ui.skateline = ui.ax.scatter([0,0,0,0,0],[0,0,0,0,0], c=['r','r','r','r','b'])
+	# current waypoint
+	ui.hiway, = ui.ax.plot([0,0],[0,0], color='r')
 
 	# sprite
 	ui.sprite = mpl.patches.Polygon(specs.skateSprite, facecolor='none', edgecolor='black')
@@ -709,16 +758,18 @@ def startUI():
 	ui.ax.add_artist(ui.donutouter)
 	ui.ax.add_artist(ui.donutinner)
 
-	# cbase
-	#ui.cbase = plt.Circle(photo.donut, 3, color='black')
-	#ui.ax.add_artist(ui.cbase)
+	# gate
+	w = arena.on_mark_distance
+	h = arena.on_mark_distance
+	anchor = (photo.cbase[0]-(w/2), photo.cbase[1]-(h/2))
+	ui.gate = plt.Rectangle(anchor, w, h, color='black', fill=False)
+	ui.ax.add_artist(ui.gate)
 
 	ui.cbaseChanged = True
 
 def refreshUI():
-	jlog.debug(f'refresuUI, {time.time()}, {ui.t}')
 	if time.time() - ui.t >= ui.delay:  # slow down to desired fps
-		jlog.debug(f'inside refresuUI, {ui.conesChanged}, {ui.routeChanged}, {ui.cbaseChanged}')
+		jlog.debug(f'inside refresuUI, {ui.conesChanged}, {ui.cbaseChanged}, {ui.wayptChanged}, {ui.patternChanged}')
 
 		# first, adjust the data that defines the shape
 		# second, call plt.pause() which does the drawing
@@ -731,40 +782,30 @@ def refreshUI():
 				ui.conetexts[i]._y = arena.cones[i][1]
 			ui.conesChanged = False
 	
-		if ui.routeChanged:
-			points = np.transpose(arena.waypts); 
+		if ui.patternChanged:
+			pat = arena.currentPattern()
+			points = arena.waypts[pat.firstwaypt:pat.lastwaypt+2]
+			points = np.transpose(points) 
 			ui.wayline.set_data(points)
 
-			## for a line, change the two end points
-			#for i in range(len(arena.route)):
-			#	leg = arena.route[i]
-			#	if leg['shape'] == 'line':
-			#		A = (leg['from'])
-			#		B = (leg['to'])
-			#		xd,yd = np.transpose([A,B]); 
-			#		ui.legs[i].set_data(xd,yd)
+			pat = arena.nextPattern()
+			if pat:
+				points = arena.waypts[pat.firstwaypt:pat.lastwaypt+2]
+				points = np.transpose(points) 
+			else:
+				points = [[0,0],[0,0]]
+			ui.nextline.set_data(points)
 
-			## for an arc, change center and two thetas
-			#for leg in arena.route:
-			#	if leg['shape'] == 'arc':
-			#		C = (leg['center'])
-
-			#		if leg['rdir'] == 'ccw':
-			#			A = (leg['from'])
-			#			B = (leg['to'])
-			#		else:
-			#			B = (leg['from'])
-			#			A = (leg['to'])
-
-			#		tA,_ = nav.thetaFromPoint(A, C)
-			#		tB,_ = nav.thetaFromPoint(B, C)
-
-			#		ui.legs[i].center = C
-			#		ui.legs[i].theta1 = tA
-			#		ui.legs[i].theta2 = tB
-
-			#ui.routeChanged = False
+			ui.patternChanged = False
 	
+		if ui.wayptChanged:
+			end = max(0, arena.ndxwaypt)
+			end = min(end, len(arena.waypts)-1)
+			start = max(0, end-1)
+			hiway = np.transpose([arena.waypts[start], arena.waypts[end]])
+			ui.hiway.set_data(hiway)
+			ui.wayptChanged = False
+
 		if ui.cbaseChanged:
 			# sprite
 			r = mpl.transforms.Affine2D().rotate_deg(360-sensor.heading)
@@ -775,6 +816,7 @@ def refreshUI():
 			# donut
 			ui.donutinner.center = photo.donut
 			ui.donutouter.center = photo.donut
+
 			ui.cbaseChanged = False
 
 			if not args.novideo:
@@ -786,7 +828,6 @@ def refreshUI():
 
 		ui.t = time.time()
 
-	jlog.debug(f'plt pause')
 	plt.pause(ui.PAUSE)  # redraw and time.sleep()
 
 def respondToKeyboard():
@@ -835,6 +876,10 @@ def respondToKeyboard():
 		configArena()
 		jlog.info('UI: reconfigure arena')
 
+	elif key == 'w':
+		arena.nextWaypt()
+		jlog.info('UI: next waypt')
+
 	return key
 
 # ----------------------------------------
@@ -848,7 +893,7 @@ def kill(msg):
 def isKilled():
 	return (gmem_timestamp[smem.TIME_KILLED] > 0)
 	
-def printlist(olist): 
+def jloglist(olist): 
 	for o in olist: jlog.info(o)
 
 def skate_main(timestamp, positions):
@@ -858,12 +903,35 @@ def skate_main(timestamp, positions):
 		jlog.info(f'starting process id: {os.getpid()}')
 		gmem_timestamp = timestamp
 		gmem_positions = positions
-		signal.signal(signal.SIGINT, signal.SIG_IGN) # ignore KeyboardInterrupt
 		setupObjectModel()
 		jlog.info(f'object model initialized')
 
-		# begin temp testing
-		# end temp testing
+		if args.sim:
+			photo.donut = [-130, -130]
+			photo.cbase = [-120, -120]
+			photo.cones = specs.vcones['iron-cross']
+			sensor.heading = 5
+	
+			configArena()
+
+			jloglist(arena.patterns)
+			jloglist(arena.waypts)
+
+			startUI()
+			while True:
+				if isKilled():
+					break
+				refreshUI()
+				key = respondToKeyboard()
+
+				# copy from pilot()
+				if arena.continuous and (arena.ndxpattern >= len(arena.patterns)-1):
+					arena.addPattern(0,0,0,1) 
+					arena.recalcWaypts() 
+			quit()
+
+		# ignore KeyboardInterrupt, leave for gcs
+		signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 		# serial port
 		rc = comm.connectSerial()
@@ -944,4 +1012,21 @@ def skate_main(timestamp, positions):
 			helm.set(0)
 			comm.serial_port.close()
 	jlog.info(f'main exit')
+
+if __name__ == '__main__':
+	parser = argparse.ArgumentParser()
+	parser.add_argument('--sim'      ,action='store_true'  ,help='simulation mode'                  ) 
+	parser.add_argument('--verbose'  ,action='store_true'  ,help='verbose comments'                 ) 
+	parser.add_argument('--quiet'    ,action='store_true'  ,help='suppress all output'              )
+	parser.add_argument('--mediaout' ,default='/home/john/media/webapps/sk8mini/awacs/photos' ,help='folder out for images, log')
+	setupArgParser(parser)
+	args = parser.parse_args() # returns Namespace object, use dot-notation
+
+	args.mediaout = f'{args.mediaout}/{time.strftime("%Y%m%d-%H%M%S")}'
+	os.mkdir(args.mediaout)
+
+	import multiprocessing
+	smem_timestamp = multiprocessing.Array('d', smem.TIME_ARRAY_SIZE) # initialized with zeros
+	smem_positions = multiprocessing.Array('i', smem.POS_ARRAY_SIZE)  # initialized with zeros
+	skate_main(smem_timestamp, smem_positions)
 
