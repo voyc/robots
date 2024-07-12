@@ -1,23 +1,89 @@
+1968, Count Basie, Basie Straight Ahead
+	Hay Burner, arr Sammy Nestico
+
+1970, Thad Jones Mel Lewis, Consummation
+	Tiptoe, arr Thad Jones
+
+1973, Patrick Williams, Threshold
+	And on the Sixth Day, arr Pat Williams, feat Tom Scott, Larry Carlton
+
+1973, Don Ellis, Soaring
+	Whiplash, Hank Levy
+	Go Back Home
+
+Tom Kubis, At Last
+	Bill Bailey
+
+2003, Gordon Goodwin, XXL
+	A Game of Inches, comp/arr Gordon Goodwin, feat Michael Brecker
+
+1985, Bob Mintzer, Incredible Journey
+	Computer, written and arr by Bob Mintzer
+
+2005, Clayton Hamilton Jazz Orchestra, Live at MCG
+	Sqatty Roo, Johnny Hodges, arr John Clayton (arco bass)
+	Jeff Clayton, lead alto
+	Jeff Hamilton, drums (boomy bass drum) 
+
+Roy Hargroves, Hardgroove
+	Hardgroove?
+
+1974, Buddy Rich Big Band, The Roar of 74
+	Nutville, Horace Silver, arr Greg Hopkins?
+	Time Check, Don Menza (saxophone)
+	Backwoods Sideman, John La Barbera (trumpet)
 
 
 
-Photography 
+
+
+videography
+	Vehicle, Arena, Slalom cones 
+	Drone,  Aerial camera
+	Object detection
+	Choreography 
+	Navigation
+	Piloting
+
 Dead reckoning
-    Speed calculation
-    Throttle control per roll
-Bias and PID
+	Speed calculation
+	Throttle control per roll
+	captains log, calculations
+Calc center wheelbase, including roll
+piloting, Bias and PID
 	listing to starboard
-Move cones
-Trails
-Patterns 
-    Slalom
-    Perimeter 
-    Collision detect and avoid
-    Star from center
-    spin
+choreography
+	Feedback mechanism per unit, pattern combination
+	keep track of how many times you've done each maneuver
+	classify cones
+		perimeter
+		interior
+		central
+		collision
+	Move cones, identify moved cone, spin, other patterns 
+	Trails
+	Slalom, identify line of cones, alt rdir
+	Perimeter, identify perimeter cones, same rdir for all
+	Star from center, identify a center cone
+	spin
+Collision detect and avoid
+	check every line between every pair of cones
+	insert crossed cone
+Calc Entry and Exit
+	geometry problem, drop perpendicular from exit to new entry x, not center to center
 Draw
-    Route and points
-    Fade forward and back
+	x see temparcdraw.py
+	x keep multiple styles
+	x Route and points
+	Fade forward and back
+	remove large yellow circles around cones, after geometry problem solved
+Replay
+	step forward, back
+	show log, synced
+
+
+before checkin, test live
+20240702 add getvideo.sh, draw=pretty
 
 --------------
 
@@ -193,4 +259,21 @@ Should the USA provoke Russia into a nuclear war?
 How much money should the US government borrow everyday to give to Zelensky for Ukraine military operations?
 ditto Netanyahu for Israeli military operations?
 ditto Sudan, Yemen, Syria, Libya, Jordan, Saudi Arabia
+
+
+
+===========================
+
+Autonomous Driving Software
+
+https://www.nvidia.com,  NVIDIA DRIVE AGX, NVIDIA DRIVE OS
+
+https://waymo.com
+
+https://autoware.org
+
+https://oxa.tech
+
+https://waymo.com microsoft
+
 

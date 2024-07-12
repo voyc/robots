@@ -84,6 +84,7 @@ def setupArgParser(parser):
 	parser.add_argument('--nocal'          ,action='store_true'           ,help='suppress calibration'             )
 	parser.add_argument('--novideo'        ,action='store_true'           ,help='suppress UI screen save'          )
 	parser.add_argument('--helmbias'       ,default=specs.helm_bias,type=int,help='helm value giving straight line')
+	parser.add_argument('--draw'	,default='nav', choices=['nav','pretty'],help='drawing style')
 
 def setupObjectModel():
 	global  sensor, comm, helm, throttle, photo, arena, ui
@@ -117,6 +118,8 @@ class Mark:
 		self.conendx = -1
 		self.rdir = -1
 		self.center = gate
+		self.exit = gate
+		self.entry = gate
 		return self
 
 class Pattern:
@@ -151,6 +154,8 @@ class Arena:
 	on_mark_theta = 0.2
 	steady_helm_distance = 12
 	continuous = False
+	draw_nahead = 5
+	draw_nback = 3
 
 	def nextPattern(self):
 		ret = False
@@ -176,6 +181,7 @@ class Arena:
 
 			if not self.isWayptInMark(self.ndxwaypt, self.currentMark()):
 				self.ndxmark += 1
+				ui.markChanged = True
 
 			if not self.isWayptInPattern(self.ndxwaypt, self.currentPattern()):
 				self.ndxpattern += 1
@@ -233,20 +239,23 @@ class Arena:
 		# input rdir can be 0, 'alt', 'cw', or 'ccw'
 		def alt(rdir): return 'cw' if rdir == 'ccw' else 'ccw'
 		rdirs = []
-		i = 0
-		for ndx in conendxs:
-			thisrdir = None
-			if rdir in ['cw','ccw']: thisrdir = rdir  
-			else: thisrdir = random.choice(['cw','ccw'])
-	
-			if i>0:
-				if name in ['figure-8','slalom'] or rdir == 'alt':
-					thisrdir = alt(rdirs[i-1])
-				elif name in ['oval','perimeter']:
-					thisrdir = rdirs[0]
-	
-			rdirs.append(thisrdir)
-			i += 1
+		if type(rdir) is list: # caller has specified the list explicitly
+			rdirs = rdir
+		else:
+			i = 0
+			for ndx in conendxs:
+				thisrdir = None
+				if rdir in ['cw','ccw']: thisrdir = rdir  
+				else: thisrdir = random.choice(['cw','ccw'])
+		
+				if i>0:
+					if name in ['figure-8','slalom'] or rdir == 'alt':
+						thisrdir = alt(rdirs[i-1])
+					elif name in ['oval','perimeter']:
+						thisrdir = rdirs[0]
+		
+				rdirs.append(thisrdir)
+				i += 1
 	
 		# add a pattern for each rep
 		if reps == 0: reps = random.randrange(1,5)
@@ -289,9 +298,14 @@ class Arena:
 				mark.firstwaypt = len(self.waypts)
 
 				# calc entry and exit points for each mark
+				#   the two points define a common tangent line of the two circles
+				#   four solutions: two external, two internal, depending on rdirs
+				#   complicated problem involving matrix math
+				#   so, we use a simplified method, taking the perpendicular
+
 				prevmark = gatemark if ndxmark <= 0 else self.marks[ndxmark-1]
 				nextmark = gatemark if ndxmark+1 >= len(self.marks) else self.marks[ndxmark+1] 
-		
+
 				A = prevmark.center
 				B = mark.center
 				L, R = nav.linePerpendicular(A, B, r)
@@ -299,7 +313,7 @@ class Arena:
 					'L': L,
 					'R': R,
 				}
-			
+				
 				A = nextmark.center
 				B = mark.center
 				L, R = nav.linePerpendicular(A,B,r)
@@ -307,7 +321,7 @@ class Arena:
 					'L': L,
 					'R': R,
 				}
-			
+				
 				if mark.rdir == 'cw':
 					mark.entry = entry['L']
 					mark.exit  = exit['R']
@@ -349,7 +363,6 @@ class Arena:
 
 			pat.lastwaypt = len(self.waypts)-1  # last for the pattern
 		ui.patternChanged = True
-		jloglist(self.patterns)
 
 class Sensor:
 	heading	= 9999.0
@@ -513,7 +526,12 @@ def convertLine(line):
 	spat, sncones, srdir, sreps = line.split(', ')
 	pat = int(spat) if spat.isnumeric() else spat
 	ncones = ast.literal_eval(sncones) if sncones[0] == '[' else int(sncones)
-	rdir = srdir if srdir in ['cw', 'ccw'] else int(srdir)
+	if srdir[0] == '[':
+		rdir = srdir.strip('[]').split(',')
+	elif srdir in ['cw', 'ccw']:
+		rdir   = srdir
+	else: 
+		rdir = int(srdir)
 	reps = int(sreps) 
 	return pat, ncones, rdir, reps
 
@@ -537,6 +555,7 @@ def configArena():
 				if name == 'continue':
 					arena.addPattern(0,0,0,1)
 					arena.continuous = True
+					break
 				else:
 					arena.addPattern(name, ncones, rdir, reps)
 			arena.recalcWaypts()
@@ -677,6 +696,7 @@ class UI:
 	conesChanged = True
 	cbaseChanged = True
 	wayptChanged = True
+	markChanged = True
 	patternChanged = True
 	t = 0.0
 	eventkey = False
@@ -721,21 +741,48 @@ def startUI():
 		circ = plt.Circle(pt, specs.cone_diameter/2, color='y')
 		ui.ax.add_artist(circ)
 		ui.cones.append(circ)
-		circ = plt.Circle(pt, specs.turning_radius, fill=False, color='y')
-		ui.ax.add_artist(circ)
-		ui.conerings.append(circ)
+		if args.draw == 'nav':
+			circ = plt.Circle(pt, specs.turning_radius, fill=False, color='y')
+			ui.ax.add_artist(circ)
+			ui.conerings.append(circ)
 		textnum = str(len(ui.cones)) # left to right
 		t = plt.text(pt[0], pt[1], textnum, fontsize='12', ha='center', va='center', color='black')
 		ui.conetexts.append(t)
 		ui.conesChanged = True
 		
 	# line connecting waypoints
+	if args.draw == 'nav':
+		linestyle = '-'
+		marker = '.'
+	elif args.draw == 'pretty':
+		linestyle = ''
+		marker = ''
 	x,y = np.array(arena.waypts).T
-	ui.nextline, = ui.ax.plot(x,y, linestyle='-', marker='.', color='b', linewidth=.5)
-	ui.wayline, = ui.ax.plot(x,y, linestyle='-', marker='.', color='b')
+	ui.nextline, = ui.ax.plot(x,y, linestyle=linestyle, marker=marker, color='b', linewidth=.5)
+	ui.wayline, = ui.ax.plot(x,y, linestyle=linestyle, marker=marker, color='b')
 
 	# current waypoint
-	ui.hiway, = ui.ax.plot([0,0],[0,0], color='r')
+	if args.draw == 'nav':
+		linestyle = '-'
+		marker = '.'
+		color = 'r'
+	elif args.draw == 'pretty':
+		linestyle = ''
+		marker = ''
+		color = 'b'
+	ui.hiway, = ui.ax.plot([0,0],[0,0], linestyle=linestyle, marker=marker, color=color)
+
+	# pretty legs
+	if args.draw == 'pretty':
+		# one leg for each mark to be displayed.  each leg has one line and one arc.
+		dia = specs.turning_radius * 2
+		numlegs = arena.draw_nback + arena.draw_nahead + 1
+		for i in range(numlegs):
+			leg = {}
+			leg['line'], = plt.plot([0,0], [0,0], color='blue', lw=1) # returns list of line2D objects
+			leg['arc'] = mpl.patches.Arc([0,0], dia, dia, 0, 0, 0, color='blue')
+			ui.ax.add_patch(leg['arc'])
+			ui.legs.append(leg)
 
 	# sprite
 	ui.sprite = mpl.patches.Polygon(specs.skateSprite, facecolor='none', edgecolor='black')
@@ -766,12 +813,13 @@ def refreshUI():
 			i = 0
 			for i in range(len(ui.cones)):
 				ui.cones[i].center = arena.cones[i]
-				ui.conerings[i].center = arena.cones[i]
+				if args.draw == 'nav':
+					ui.conerings[i].center = arena.cones[i]
 				ui.conetexts[i]._x = arena.cones[i][0]
 				ui.conetexts[i]._y = arena.cones[i][1]
 			ui.conesChanged = False
 	
-		if ui.patternChanged:
+		if ui.patternChanged and args.draw == 'nav':
 			pat = arena.currentPattern()
 			points = arena.waypts[pat.firstwaypt:pat.lastwaypt+2]
 			points = np.transpose(points) 
@@ -784,13 +832,55 @@ def refreshUI():
 			else:
 				points = [[0,0],[0,0]]
 			ui.nextline.set_data(points)
-
 			ui.patternChanged = False
+
+		if ui.markChanged and args.draw == 'pretty':
+			lastmark = arena.ndxmark + arena.draw_nahead
+			firstmark= arena.ndxmark - arena.draw_nback
+
+			numlegs = lastmark - firstmark
+			firstmark = max(0, firstmark)
+			lastmark = min(lastmark, len(arena.marks)-1)
+
+			i = 0
+			for ndxmark in range(firstmark,lastmark+1):
+				if ndxmark == 0:
+					A = arena.gate
+				else:
+					A = arena.marks[ndxmark-1].exit
+				B = arena.marks[ndxmark].entry
+				xd,yd = np.transpose([A,B]); 
+				ui.legs[i]['line'].set_data(xd,yd)
+
+				mark = arena.marks[ndxmark]
+				C = mark.center
+				t1,_ = nav.thetaFromPoint(mark.entry,C)
+				t2,_ = nav.thetaFromPoint(mark.exit,C)
+				if mark.rdir == 'cw':
+					t2,t1 = (t1, t2)  # reverse (mpl.Arc draws ccw)
+					if t1 == t2:
+						t2 -= .001  # avoid full circle
+				ui.legs[i]['arc'].center = C
+				ui.legs[i]['arc'].theta1 = math.degrees(t1)
+				ui.legs[i]['arc'].theta2 = math.degrees(t2)
+
+				i += 1
+
+			# one more line from prev exit to gate, if not continuous
+			A = arena.marks[ndxmark].exit
+			B = arena.gate
+			xd,yd = np.transpose([A,B]); 
+			ui.legs[i]['line'].set_data(xd,yd)
+			ui.markChanged = False
 	
 		if ui.wayptChanged:
 			end = max(0, arena.ndxwaypt)
 			end = min(end, len(arena.waypts)-1)
-			start = max(0, end-1)
+			start = end
+
+			if args.draw == 'nav':
+				start = max(0, end-1)
+
 			hiway = np.transpose([arena.waypts[start], arena.waypts[end]])
 			ui.hiway.set_data(hiway)
 			ui.wayptChanged = False
@@ -904,6 +994,7 @@ def skate_main(timestamp, positions):
 			configArena()
 
 			jloglist(arena.patterns)
+			jloglist(arena.marks)
 			jloglist(arena.waypts)
 
 			startUI()

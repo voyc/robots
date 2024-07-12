@@ -43,13 +43,16 @@ def startUI():
 	return fig, ax
 
 def main():	
-	fig, ax = startUI()
-
-	# list of jpgs and pngs in order by timestamp embedded in the 
-	dirs = glob.glob(basedir)
-	lastdir = list(reversed(sorted(dirs)))[0]
+	import sys
+	lastdir = ''
+	if len(sys.argv) > 1:
+		lastdir = sys.argv[1]
+	else:	
+		dirs = glob.glob(basedir)
+		lastdir = list(reversed(sorted(dirs)))[0]
 	print(f'replay folder {lastdir}')
 
+	# list of jpgs and pngs in order by timestamp embedded in the 
 	pattern1 = f'{lastdir}*.jpg'
 	pattern2 = f'{lastdir}*.png'
 
@@ -60,6 +63,7 @@ def main():
 	files = sorted(files)
 
 	# create two image objects, jpg underneath, transparent png on top
+	fig, ax = startUI()
 	fname = files[0] 
 	mat = plt.imread(fname)
 	imgJpg =  plt.imshow(mat, extent=data_extent)

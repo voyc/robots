@@ -124,6 +124,13 @@ def headingOfLine(A,B):  # calc compass heading of a line
 	heading = headingFromTheta(theta)
 	return heading
 
+def thetaFromVector(vector):
+	dx,dy = vector
+	slope = slopeFromVector([dx,dy])
+	angle = angleFromSlope(slope)
+	theta = thetaFromAngle(angle, dx, dy)
+	return theta
+
 def thetaFromPoint(pt,center):
 	dx,dy = vectorOfLine(center, pt)
 	length = lengthOfLine(center, pt)
