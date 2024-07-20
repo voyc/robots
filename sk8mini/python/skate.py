@@ -62,6 +62,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import math
 import ast
+import re
 
 import jlog
 import smem
@@ -84,7 +85,8 @@ def setupArgParser(parser):
 	parser.add_argument('--nocal'          ,action='store_true'           ,help='suppress calibration'             )
 	parser.add_argument('--novideo'        ,action='store_true'           ,help='suppress UI screen save'          )
 	parser.add_argument('--helmbias'       ,default=specs.helm_bias,type=int,help='helm value giving straight line')
-	parser.add_argument('--draw'	,default='nav', choices=['nav','pretty'],help='drawing style')
+	parser.add_argument('--drawpretty'     ,action='store_true'           ,help='draw lines and arcs'              )
+	parser.add_argument('--drawnav'        ,action='store_true'           ,help='draw waypoints'                   )
 
 def setupObjectModel():
 	global  sensor, comm, helm, throttle, photo, arena, ui
@@ -117,9 +119,9 @@ class Mark:
 	def fromGate(self, gate):
 		self.conendx = -1
 		self.rdir = -1
-		self.center = gate
-		self.exit = gate
-		self.entry = gate
+		self.center = np.array(gate)
+		self.exit =  np.array(gate)
+		self.entry = np.array(gate)
 		return self
 
 class Pattern:
@@ -187,7 +189,7 @@ class Arena:
 				self.ndxpattern += 1
 				ui.patternChanged = True
 
-			jlog.info(f'nextWaypt: {self.ndxwaypt} {self.waypts[self.ndxwaypt-1]} {self.waypts[self.ndxwaypt]} {self.waypts[self.ndxwaypt+1]}')
+			jlog.info(f'nextWaypt: {self.ndxwaypt} {self.waypts[self.ndxwaypt-1]} {self.waypts[self.ndxwaypt]}')
 		else:
 			kill('completed')
 	
@@ -206,7 +208,12 @@ class Arena:
 		ndx = sorted(errs)[0][1]
 		return ndx
 
-	def addPattern(self, name, numcones, rdir, reps):
+	def addRandomPattern(self):
+		self.addPattern([0,0,0,1])
+
+	def addPattern(self, patn):
+		name, numcones, rdir, reps = patn
+
 		# create a tempory list of cone-index numbers, with a given count and order
 		conendxs = None
 		if type(numcones) is list: # caller has specified the list explicitly
@@ -236,7 +243,7 @@ class Arena:
 					conendxs.append(lastcone)
 
 		# create a tempory list of rotational-directions, one for each cone-index
-		# input rdir can be 0, 'alt', 'cw', or 'ccw'
+		# 	input rdir can be 0, 'alt', 'cw', or 'ccw'
 		def alt(rdir): return 'cw' if rdir == 'ccw' else 'ccw'
 		rdirs = []
 		if type(rdir) is list: # caller has specified the list explicitly
@@ -491,7 +498,7 @@ class Comm:
 		sensor.heading = adjheading
 
 # ----------------------------------------
-#    navigator
+#    navigator - choreographer
 # ----------------------------------------
 
 def formatPoint(pt):
@@ -522,18 +529,65 @@ def getCones():
 		pos += 2
 	return list(sorted(cones))
 	
-def convertLine(line):
-	spat, sncones, srdir, sreps = line.split(', ')
+def parsePatternLine(line):
+	# split by comma, keep sections within braces[]
+	spat, sncones, srdir, sreps = re.findall(r'\[.*?\]|[\w-]+', line)
+
 	pat = int(spat) if spat.isnumeric() else spat
 	ncones = ast.literal_eval(sncones) if sncones[0] == '[' else int(sncones)
+
 	if srdir[0] == '[':
 		rdir = srdir.strip('[]').split(',')
-	elif srdir in ['cw', 'ccw']:
+	elif srdir in ['cw', 'ccw', 'alt']:
 		rdir   = srdir
 	else: 
 		rdir = int(srdir)
+
 	reps = int(sreps) 
 	return pat, ncones, rdir, reps
+
+def parsePatternFile():
+	fname = f'{args.mediaout}/../pattern.csv'
+	patterns = []
+	cones = []
+	gate = []
+	try:
+		with open(fname) as fp:
+			section = ''
+			for line in fp:
+				sline = line[:line.index('#')] if '#' in line else line
+				sline = sline.strip()
+				if not len(sline):
+					continue
+
+				if sline[0] == '!':
+					section = sline[1:]
+					if section == 'patterns':
+						patterns = []
+					elif section == 'cones':
+						cones = []
+					elif section == 'gate':
+						gate = []
+					continue
+
+				if section == 'cones':
+					sx, sy = sline.split(',')
+					x = int(sx)
+					y = int(sy)
+					cones.append([x,y])
+
+				if section == 'gate':
+					sx, sy = sline.split(',')
+					x = int(sx)
+					y = int(sy)
+					gate = [x,y]
+
+				if section == 'patterns':
+					name, ncones, rdir, reps = parsePatternLine(line)
+					patterns.append([ name, ncones, rdir, reps])
+	except FileNotFoundError:
+		jlog.info('no pattern file')
+	return patterns, cones, gate
 
 def configArena():
 	arena.cones = photo.cones
@@ -544,24 +598,40 @@ def configArena():
 	jlog.debug(f'cbase: {photo.cbase}')
 	jlog.debug(f'gate:  {arena.gate}')
 
-	# read patterns from filename
-	fname = f'{args.mediaout}/../pattern.txt'
+	# read cones and patterns from filename
+	fname = f'{args.mediaout}/../pattern.csv'
 	try:
 		with open(fname) as fp:
+			section = ''
 			for line in fp:
-				if line[0] == '#':
+				sline = (line[:line.index('#')] if '#' in line else line).strip()
+				if not len(sline):
 					continue
-				name, ncones, rdir, reps = convertLine(line)
-				if name == 'continue':
-					arena.addPattern(0,0,0,1)
-					arena.continuous = True
-					break
-				else:
-					arena.addPattern(name, ncones, rdir, reps)
+
+				if sline[0] == '!':
+					section = sline[1:]
+					if section == 'patterns':
+						arena.patterns = []
+					elif section == 'cones':
+						#arena.cones = []
+						pass
+					continue
+
+				if section == 'cones':
+					pass
+
+				if section == 'patterns':
+					name, ncones, rdir, reps = convertLine(line)
+					if name == 'continue':
+						arena.addRandomPattern()
+						arena.continuous = True
+						break
+					else:
+						arena.addPattern([name, ncones, rdir, reps])
 			arena.recalcWaypts()
 	except FileNotFoundError:
-		arena.addPattern(0,0,0,1)
-		arena.addPattern(0,0,0,1)
+		arena.addRandomPattern()
+		arena.addRandomPattern()
 		arena.recalcWaypts()
 		arena.continuous = True
 
@@ -676,7 +746,7 @@ def pilot():
 
 	#if arena.continuous and (arena.ndxwaypt >= len(arena.waypts))-3:
 	if arena.continuous and (arena.ndxpattern >= len(arena.patterns)-1):
-		arena.addPattern(0,0,0,1) 
+		arena.addRandomPattern() 
 		arena.recalcWaypts() 
 
 # ----------------------------------------
@@ -741,7 +811,7 @@ def startUI():
 		circ = plt.Circle(pt, specs.cone_diameter/2, color='y')
 		ui.ax.add_artist(circ)
 		ui.cones.append(circ)
-		if args.draw == 'nav':
+		if args.drawnav:
 			circ = plt.Circle(pt, specs.turning_radius, fill=False, color='y')
 			ui.ax.add_artist(circ)
 			ui.conerings.append(circ)
@@ -751,32 +821,30 @@ def startUI():
 		ui.conesChanged = True
 		
 	# line connecting waypoints
-	if args.draw == 'nav':
-		linestyle = '-'
-		marker = '.'
-	elif args.draw == 'pretty':
-		linestyle = ''
-		marker = ''
+	wp_linestyle = ''
+	wp_marker = ''
+	wp_color = 'g'
+	hi_linestyle = ''
+	hi_marker = ''
+	hi_color = 'r'
+	if args.drawnav:
+		wp_linestyle = '-'
+		wp_marker = '.'
+		hi_linestyle = '-'
+		hi_marker = '.'
 	x,y = np.array(arena.waypts).T
-	ui.nextline, = ui.ax.plot(x,y, linestyle=linestyle, marker=marker, color='b', linewidth=.5)
-	ui.wayline, = ui.ax.plot(x,y, linestyle=linestyle, marker=marker, color='b')
-
-	# current waypoint
-	if args.draw == 'nav':
-		linestyle = '-'
-		marker = '.'
-		color = 'r'
-	elif args.draw == 'pretty':
-		linestyle = ''
-		marker = ''
-		color = 'b'
-	ui.hiway, = ui.ax.plot([0,0],[0,0], linestyle=linestyle, marker=marker, color=color)
+	ui.nextline, = ui.ax.plot(x,y, linestyle=wp_linestyle, marker=wp_marker, color=wp_color, linewidth=.5)
+	ui.wayline, = ui.ax.plot(x,y, linestyle=wp_linestyle, marker=wp_marker, color=wp_color)
+	ui.hiway, = ui.ax.plot([0,0],[0,0], linestyle=hi_linestyle, marker=hi_marker, color=hi_color)
 
 	# pretty legs
-	if args.draw == 'pretty':
+	if args.drawpretty:
 		# one leg for each mark to be displayed.  each leg has one line and one arc.
 		dia = specs.turning_radius * 2
-		numlegs = arena.draw_nback + arena.draw_nahead + 1
+		if arena.continuous:
+			numlegs = arena.draw_nback + arena.draw_nahead + 1
+		else:
+			numlegs = len(arena.marks) + 1
 		for i in range(numlegs):
 			leg = {}
 			leg['line'], = plt.plot([0,0], [0,0], color='blue', lw=1) # returns list of line2D objects
@@ -813,15 +881,18 @@ def refreshUI():
 			i = 0
 			for i in range(len(ui.cones)):
 				ui.cones[i].center = arena.cones[i]
-				if args.draw == 'nav':
+				if args.drawnav:
 					ui.conerings[i].center = arena.cones[i]
 				ui.conetexts[i]._x = arena.cones[i][0]
 				ui.conetexts[i]._y = arena.cones[i][1]
 			ui.conesChanged = False
 	
-		if ui.patternChanged and args.draw == 'nav':
+		if ui.patternChanged and args.drawnav:
 			pat = arena.currentPattern()
-			points = arena.waypts[pat.firstwaypt:pat.lastwaypt+2]
+			firstpoint = pat.firstwaypt
+			if arena.ndxpattern == 0:
+				firstpoint = 0 # back up from 1 to 0 to start at gate
+			points = arena.waypts[firstpoint:pat.lastwaypt+2]
 			points = np.transpose(points) 
 			ui.wayline.set_data(points)
 
@@ -834,9 +905,13 @@ def refreshUI():
 			ui.nextline.set_data(points)
 			ui.patternChanged = False
 
-		if ui.markChanged and args.draw == 'pretty':
-			lastmark = arena.ndxmark + arena.draw_nahead
-			firstmark= arena.ndxmark - arena.draw_nback
+		if ui.markChanged and args.drawpretty:
+			if arena.continuous:
+				lastmark = arena.ndxmark + arena.draw_nahead
+				firstmark= arena.ndxmark - arena.draw_nback
+			else:
+				lastmark = len(arena.marks)-1
+				firstmark= 0
 
 			numlegs = lastmark - firstmark
 			firstmark = max(0, firstmark)
@@ -867,10 +942,12 @@ def refreshUI():
 				i += 1
 
 			# one more line from prev exit to gate, if not continuous
-			A = arena.marks[ndxmark].exit
-			B = arena.gate
-			xd,yd = np.transpose([A,B]); 
-			ui.legs[i]['line'].set_data(xd,yd)
+			if not arena.continuous:
+				A = arena.marks[ndxmark].exit
+				B = arena.gate
+				xd,yd = np.transpose([A,B]); 
+				ui.legs[i]['line'].set_data(xd,yd)
+
 			ui.markChanged = False
 	
 		if ui.wayptChanged:
@@ -878,7 +955,7 @@ def refreshUI():
 			end = min(end, len(arena.waypts)-1)
 			start = end
 
-			if args.draw == 'nav':
+			if args.drawnav:
 				start = max(0, end-1)
 
 			hiway = np.transpose([arena.waypts[start], arena.waypts[end]])
@@ -986,12 +1063,25 @@ def skate_main(timestamp, positions):
 		jlog.info(f'object model initialized')
 
 		if args.sim:
-			photo.donut = [-130, -130]
-			photo.cbase = [-120, -120]
-			photo.cones = specs.vcones['iron-cross']
+			patterns, cones, gate = parsePatternFile()
+			arena.cones = cones
+			arena.gate = gate
+
+			# these three items position the skate at the gate
+			photo.donut = gate
+			photo.cbase = gate
 			sensor.heading = 5
-	
-			configArena()
+
+			for pat in patterns:
+				if pat[0] == 'continue':
+					arena.addRandomPattern()
+					arena.continuous = True
+					break
+				else:
+					arena.addPattern(pat)
+			arena.recalcWaypts()
+			arena.nextWaypt() # from pilot()
+
 
 			jloglist(arena.patterns)
 			jloglist(arena.marks)
@@ -1006,7 +1096,7 @@ def skate_main(timestamp, positions):
 
 				# copy from pilot()
 				if arena.continuous and (arena.ndxpattern >= len(arena.patterns)-1):
-					arena.addPattern(0,0,0,1) 
+					arena.addRandomPattern() 
 					arena.recalcWaypts() 
 			quit()
 
